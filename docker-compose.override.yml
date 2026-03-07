@@ -1,0 +1,11 @@
+services:
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    volumes:
+      - ./server/src:/src/src

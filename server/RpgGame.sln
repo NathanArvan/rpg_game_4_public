@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Api", "src\RpgGame.Api\RpgGame.Api.csproj", "{1D6F1D77-977C-4084-B858-5FC1806659C3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Domain", "src\RpgGame.Domain\RpgGame.Domain.csproj", "{4F7CAD90-176C-4812-A458-3470B2C6AAA4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Infrastructure", "src\RpgGame.Infrastructure\RpgGame.Infrastructure.csproj", "{94D89645-7696-4F59-867B-753B2A0A2D22}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1D6F1D77-977C-4084-B858-5FC1806659C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D6F1D77-977C-4084-B858-5FC1806659C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D6F1D77-977C-4084-B858-5FC1806659C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D6F1D77-977C-4084-B858-5FC1806659C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F7CAD90-176C-4812-A458-3470B2C6AAA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F7CAD90-176C-4812-A458-3470B2C6AAA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F7CAD90-176C-4812-A458-3470B2C6AAA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F7CAD90-176C-4812-A458-3470B2C6AAA4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94D89645-7696-4F59-867B-753B2A0A2D22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94D89645-7696-4F59-867B-753B2A0A2D22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94D89645-7696-4F59-867B-753B2A0A2D22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94D89645-7696-4F59-867B-753B2A0A2D22}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1D6F1D77-977C-4084-B858-5FC1806659C3} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}
+		{4F7CAD90-176C-4812-A458-3470B2C6AAA4} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}
+		{94D89645-7696-4F59-867B-753B2A0A2D22} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}
+	EndGlobalSection
+EndGlobal
