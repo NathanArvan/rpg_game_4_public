@@ -1,0 +1,1539 @@
+Great choices! A tabletop D&D-style game with 5–10 players is a really well-scoped problem — small enough that you don't need MMO-scale infrastructure, but complex enough that the data architecture genuinely matters.
+
+Let me walk through the PostgreSQL schema layer first, organized by domain.
+
+---
+
+## Core Concepts Before the Schema
+
+In a tabletop RPG, you have two distinct "worlds" of data that need to stay separate:
+
+- **Template/Definition data** — the static rulebook: what spells exist, what items exist, what monster types exist. This changes rarely and is shared across all games.
+- **Instance/State data** — what's actually happening in *your* game right now: your character's current HP, what's in your inventory, where you are on the map.
+
+Keeping these cleanly separated in your schema pays dividends everywhere else in the stack.
+
+---
+
+## PostgreSQL Schema — Persistent Layer
+
+### 1. Identity & Lobby
+
+```sql
+users (
+  id UUID PK,
+  username TEXT,
+  email TEXT,
+  password_hash TEXT,
+  created_at TIMESTAMPTZ
+)
+
+campaigns (
+  id UUID PK,
+  name TEXT,
+  game_master_user_id UUID → users,
+  ruleset TEXT,           -- e.g. 'dnd5e', 'pathfinder2e'
+  created_at TIMESTAMPTZ,
+  status TEXT             -- 'active' | 'paused' | 'completed'
+)
+
+campaign_members (
+  id UUID PK,
+  campaign_id UUID → campaigns,
+  user_id UUID → users,
+  role TEXT,              -- 'gm' | 'player'
+  joined_at TIMESTAMPTZ
+)
+```
+
+### 2. Character Definitions (the persistent truth of a character)
+
+```sql
+characters (
+  id UUID PK,
+  campaign_id UUID → campaigns,
+  user_id UUID → users,
+  name TEXT,
+  race TEXT,
+  class TEXT,
+  level INT,
+  base_stats JSONB,       -- { str, dex, con, int, wis, cha }
+  max_hp INT,
+  max_spell_slots JSONB,  -- { "1st": 4, "2nd": 3, ... }
+  proficiencies JSONB,
+  backstory TEXT,
+  updated_at TIMESTAMPTZ
+)
+
+character_inventory (
+  id UUID PK,
+  character_id UUID → characters,
+  item_definition_id UUID → item_definitions,
+  quantity INT,
+  equipped BOOLEAN,
+  custom_properties JSONB -- per-item enchantments, notes, etc.
+)
+
+character_known_spells (
+  id UUID PK,
+  character_id UUID → characters,
+  spell_definition_id UUID → spell_definitions
+)
+```
+
+### 3. Template/Definition Tables (the "rulebook")
+
+```sql
+item_definitions (
+  id UUID PK,
+  name TEXT,
+  category TEXT,          -- 'weapon' | 'armor' | 'consumable' | 'misc'
+  rarity TEXT,
+  properties JSONB,       -- damage dice, AC bonus, weight, etc.
+  description TEXT,
+  ruleset TEXT
+)
+
+spell_definitions (
+  id UUID PK,
+  name TEXT,
+  level INT,
+  school TEXT,
+  casting_time TEXT,
+  range TEXT,
+  components TEXT,
+  duration TEXT,
+  description TEXT,
+  ruleset TEXT
+)
+
+monster_definitions (
+  id UUID PK,
+  name TEXT,
+  challenge_rating DECIMAL,
+  stat_block JSONB,       -- all stats, saves, skills
+  actions JSONB,          -- attacks, special abilities
+  loot_table JSONB,       -- probability-weighted drops
+  ruleset TEXT
+)
+```
+
+### 4. Sessions & Encounters (durable game history)
+
+```sql
+game_sessions (
+  id UUID PK,
+  campaign_id UUID → campaigns,
+  started_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  session_notes TEXT      -- GM notes, session summary
+)
+
+encounters (
+  id UUID PK,
+  session_id UUID → game_sessions,
+  name TEXT,
+  map_data JSONB,         -- grid size, terrain, fog-of-war mask
+  status TEXT,            -- 'preparing' | 'active' | 'completed'
+  started_at TIMESTAMPTZ
+)
+
+encounter_combatants (
+  id UUID PK,
+  encounter_id UUID → encounters,
+  combatant_type TEXT,    -- 'character' | 'monster' | 'npc'
+  character_id UUID → characters (nullable),
+  monster_definition_id UUID → monster_definitions (nullable),
+  instance_name TEXT,     -- "Goblin #3" for multiple of same type
+  position JSONB,         -- { x, y } on the grid
+  initiative_roll INT
+)
+```
+
+### 5. Audit & Event Log (important for a shared game)
+
+```sql
+game_events (
+  id UUID PK,
+  session_id UUID → game_sessions,
+  encounter_id UUID → encounters (nullable),
+  actor_id UUID,          -- user or system
+  event_type TEXT,        -- 'attack', 'spell_cast', 'item_used', 'death', etc.
+  payload JSONB,          -- full event detail
+  occurred_at TIMESTAMPTZ
+)
+```
+
+This event log is crucial — it's your source of truth for replaying combat history, showing the activity feed in the UI, and debugging desyncs between clients.
+
+---
+
+## Key Design Decisions Worth Calling Out
+
+**JSONB vs. normalized columns** — Stats, spell slots, and loot tables are stored as JSONB rather than individual columns. For a tabletop RPG, the "shape" of these properties varies enormously by ruleset and class, and normalizing them fully leads to dozens of narrow tables that are painful to query. JSONB gives you flexibility while still being indexable in Postgres.
+
+**Template/Instance separation** — Notice that `monster_definitions` holds the rulebook entry, while `encounter_combatants` holds the *instance* of that monster in a live fight (with its position, initiative, etc.). The live HP and status of that combatant during a fight lives in Redis, not Postgres — we'll cover that next.
+
+**`game_events` as an append-only log** — Rather than constantly mutating character state mid-session, you write events. This makes it straightforward to show a combat log, undo actions (for the GM), and reconstruct state if Redis ever needs to be rebuilt.
+
+---
+
+## What Doesn't Live in Postgres
+
+To set up the next conversation, here's what is deliberately *absent* from Postgres because it belongs in Redis:
+
+- Current HP of characters and monsters mid-encounter
+- Whose turn it is in initiative order
+- Active spell effects and conditions (poisoned, stunned, etc.)
+- Connected player session tokens
+- Dice roll results that haven't been "committed" yet
+
+These are all high-frequency, ephemeral writes that would hammer Postgres unnecessarily and don't need to survive a server restart permanently — though they do get flushed to `game_events` at key checkpoints.
+
+---
+
+Want to move on to the **Redis layer** next, or do you have questions or changes to the Postgres schema first?
+
+## Redis Layer — Session & Live Game State
+
+Redis serves a fundamentally different purpose than Postgres here. The guiding principle is: **if it changes multiple times per minute during active play, it belongs in Redis.** Postgres is your ledger; Redis is your whiteboard.
+
+With 5–10 players, a single encounter might generate dozens of state mutations per minute — movement, HP changes, condition tracking, turn advancement. Redis handles all of that without breaking a sweat, and the WebSocket layer (which we'll cover next) will read from Redis constantly.
+
+---
+
+## Key Design Philosophy: Redis as Namespaced JSON Documents
+
+Rather than trying to normalize data in Redis (it's not a relational store), you organize it around **coarse-grained documents keyed by meaningful namespaces.** Each key holds a JSON blob representing a coherent unit of state.
+
+The naming convention becomes your "schema":
+
+```
+{domain}:{id}:{sub-entity}
+```
+
+---
+
+## The Key Namespaces
+
+### 1. Active Session State
+```
+session:{session_id}
+
+{
+  "sessionId": "uuid",
+  "campaignId": "uuid",
+  "status": "active",           // 'lobby' | 'active' | 'paused' | 'ended'
+  "activeEncounterId": "uuid",  // null if in roleplay/exploration mode
+  "connectedPlayers": [
+    {
+      "userId": "uuid",
+      "characterId": "uuid",
+      "socketId": "abc123",     // current WebSocket connection ID
+      "connectedAt": "iso8601",
+      "isOnline": true
+    }
+  ],
+  "lastActivityAt": "iso8601"
+}
+
+TTL: 24 hours (sliding), refreshed on any activity
+```
+
+This is the heartbeat of the session. The WebSocket server reads this to know who is connected and where to route messages.
+
+---
+
+### 2. Live Character State
+```
+character:live:{character_id}
+
+{
+  "characterId": "uuid",
+  "sessionId": "uuid",
+  "currentHp": 34,
+  "maxHp": 45,
+  "temporaryHp": 5,
+  "currentSpellSlots": {
+    "1st": 2, "2nd": 1, "3rd": 0
+  },
+  "conditions": [
+    {
+      "name": "poisoned",
+      "appliedAt": "iso8601",
+      "expiresAt": "iso8601",   // null if indefinite
+      "sourceId": "uuid"        // what applied this condition
+    }
+  ],
+  "deathSaves": {
+    "successes": 1,
+    "failures": 0
+  },
+  "concentrating_on": "spell_definition_id or null",
+  "isDead": false
+}
+
+TTL: duration of session + 1 hour buffer
+```
+
+Notice that `maxHp` is duplicated here from Postgres. This is intentional — Redis should be self-contained enough that the WebSocket server doesn't need to join to Postgres on every read. The Postgres value is the authority; Redis is the working copy.
+
+---
+
+### 3. Encounter State
+```
+encounter:live:{encounter_id}
+
+{
+  "encounterId": "uuid",
+  "sessionId": "uuid",
+  "status": "active",           // 'preparing' | 'active' | 'completed'
+  "round": 3,
+  "initiativeOrder": [
+    {
+      "combatantId": "uuid",    // maps to encounter_combatants in Postgres
+      "name": "Aragorn",
+      "type": "character",
+      "initiativeRoll": 18,
+      "isDelaying": false,
+      "hasTakenTurn": true
+    },
+    {
+      "combatantId": "uuid",
+      "name": "Goblin #2",
+      "type": "monster",
+      "initiativeRoll": 12,
+      "hasTakenTurn": false
+    }
+  ],
+  "activeTurnCombatantId": "uuid",
+  "turnStartedAt": "iso8601",   // for turn timers
+  "turnTimeoutSeconds": 60      // optional, configurable by GM
+}
+
+TTL: duration of encounter + 2 hours
+```
+
+---
+
+### 4. Monster Instance State (per encounter)
+```
+monster:live:{encounter_id}:{combatant_id}
+
+{
+  "combatantId": "uuid",
+  "monsterDefinitionId": "uuid",
+  "instanceName": "Goblin #2",
+  "currentHp": 4,
+  "maxHp": 7,
+  "conditions": [],
+  "position": { "x": 5, "y": 3 },
+  "isVisible": true,            // GM can hide monsters from players
+  "isDefeated": false,
+  "concentrating_on": null
+}
+
+TTL: duration of encounter + 2 hours
+```
+
+Monsters get their own keys per combatant (not one big blob for all monsters) so that individual monster updates don't require rewriting the entire encounter document.
+
+---
+
+### 5. Map & Positioning State
+```
+encounter:map:{encounter_id}
+
+{
+  "encounterId": "uuid",
+  "gridWidth": 30,
+  "gridHeight": 20,
+  "positions": {
+    "{combatant_id}": { "x": 4, "y": 7 },
+    "{combatant_id}": { "x": 9, "y": 2 }
+  },
+  "fogOfWar": {
+    "enabled": true,
+    "revealedCells": [[0,0], [0,1], [1,0]]  // GM-revealed cells
+  },
+  "aoeEffects": [
+    {
+      "id": "uuid",
+      "type": "sphere",
+      "center": { "x": 5, "y": 5 },
+      "radiusInCells": 3,
+      "label": "Fireball",
+      "color": "#FF4400",
+      "sourceCharacterId": "uuid"
+    }
+  ]
+}
+
+TTL: duration of encounter + 2 hours
+```
+
+Positions are stored separately from the encounter initiative document because movement updates are extremely frequent and you don't want to rewrite the full encounter blob every time someone moves a token.
+
+---
+
+### 6. Dice Roll Buffer
+```
+roll:pending:{session_id}:{roll_id}
+
+{
+  "rollId": "uuid",
+  "requestedBy": "userId",
+  "characterId": "uuid",
+  "rollType": "attack",         // 'attack' | 'damage' | 'save' | 'skill' | 'initiative'
+  "diceExpression": "1d20+5",
+  "result": {
+    "rolls": [14],
+    "modifier": 5,
+    "total": 19,
+    "isNatural20": false,
+    "isNatural1": false
+  },
+  "context": {
+    "targetCombatantId": "uuid",
+    "spellId": "uuid"
+  },
+  "status": "pending_gm_approval", // 'pending' | 'confirmed' | 'rejected'
+  "rolledAt": "iso8601"
+}
+
+TTL: 5 minutes (rolls must be acted on quickly)
+```
+
+This is a short-lived staging area. Once a roll is confirmed (GM approves or it's auto-resolved), the result gets applied to the relevant live state keys and a `game_events` record is written to Postgres.
+
+---
+
+### 7. Chat & Action Feed Buffer
+```
+session:feed:{session_id}
+
+Redis List (LPUSH / LRANGE)
+
+Each entry:
+{
+  "id": "uuid",
+  "type": "chat" | "action" | "roll" | "system",
+  "actorId": "uuid",
+  "actorName": "Gimli",
+  "message": "rolls to attack the Orc...",
+  "payload": { ... },           // roll result, damage, etc.
+  "timestamp": "iso8601"
+}
+
+Keep last 200 entries (LTRIM after each push)
+TTL: 24 hours
+```
+
+Using a Redis List here gives you an efficient feed that new joiners can hydrate from without hitting Postgres. The full history lives in `game_events` in Postgres; this is just the hot recent window.
+
+---
+
+## The Flush-to-Postgres Pattern
+
+This is the critical bridge between the two layers:
+
+```
+Trigger                          → What gets written to Postgres
+─────────────────────────────────────────────────────────────────
+Encounter ends                   → Final HP/conditions → characters
+                                   All events → game_events
+Player disconnects mid-session   → Snapshot character:live → characters
+GM explicitly saves               → Full state snapshot on demand
+Session ends                     → Everything flushes, Redis keys expire
+Turn resolves (attack/spell)      → Append to game_events immediately
+```
+
+The key insight is that **you don't flush on every mutation** — that defeats the purpose of Redis. You flush at meaningful checkpoints, and the `game_events` log gives you enough to reconstruct anything in between if needed.
+
+---
+
+## What This Looks Like in Practice (One Turn)
+
+To make this concrete, here's what happens in Redis when a player attacks:
+
+1. Player clicks "Attack" → WebSocket message received by server
+2. Server reads `encounter:live:{id}` → confirms it's their turn
+3. Server reads `character:live:{id}` → checks for conditions that affect attack
+4. Roll is computed, written to `roll:pending:{session_id}:{roll_id}`
+5. If attack hits: `monster:live:{encounter_id}:{combatant_id}` HP decremented
+6. If monster dies: `isDefeated: true` written, position cleared from `encounter:map:{id}`
+7. Turn advanced in `encounter:live:{id}` → next combatant's `hasTakenTurn` flips
+8. Feed entry pushed to `session:feed:{session_id}`
+9. `game_events` record written to Postgres (async, non-blocking)
+10. WebSocket broadcasts the state delta to all connected clients
+
+Steps 2–9 happen in well under 100ms. Postgres only touches step 9 and never blocks the player experience.
+
+---
+
+## A Note on Redis Data Structures Used
+
+| Namespace | Redis Type | Why |
+|---|---|---|
+| `session:*`, `character:live:*`, `encounter:live:*`, `monster:live:*` | String (JSON) | Atomic reads/writes of full documents |
+| `encounter:map:*` | String (JSON) | Updated frequently but always read as a whole |
+| `session:feed:*` | List | Ordered, trimmed, efficient range reads |
+| `roll:pending:*` | String (JSON) | Short TTL, simple get/set/delete lifecycle |
+
+---
+
+Ready to move on to the **WebSocket message contracts** — how all of this state flows between the .NET server and the Angular clients in real time?
+
+
+## WebSocket Layer — Real-Time Communication Contracts
+
+The WebSocket layer is the nervous system connecting everything. In .NET you'll use **SignalR** — it's the natural choice, gives you Hub-based organization, handles connection lifecycle cleanly, and has a first-class Angular client library. It also abstracts the underlying transport so it can fall back gracefully if needed.
+
+---
+
+## SignalR Conceptual Model
+
+Before the message contracts, it's worth being precise about the SignalR primitives you'll lean on:
+
+```
+Hub Method     → Client calls server (player takes an action)
+Client Method  → Server pushes to client(s) (broadcast state change)
+Groups         → SignalR's built-in concept of "everyone in this session"
+                 You'll have one group per active session_id
+```
+
+The server never pushes unsolicited data except in response to something — either a client action, or a timer/system event. This keeps the flow predictable.
+
+---
+
+## Connection Lifecycle
+
+### Client → Server: Join Session
+```typescript
+// Angular client calls this on load
+hubConnection.invoke('JoinSession', {
+  sessionId: 'uuid',
+  characterId: 'uuid',
+  authToken: 'jwt'
+})
+```
+
+### Server → Client: Session Hydration (response to join)
+```typescript
+// Server sends this only to the joining client
+// This is the full state dump they need to render the UI cold
+{
+  event: 'SessionHydrated',
+  payload: {
+    session: { ...session:live Redis doc },
+    myCharacter: { ...character:live Redis doc },
+    allCharacters: [ ...character:live for each connected player ],
+    activeEncounter: { ...encounter:live Redis doc } | null,
+    mapState: { ...encounter:map Redis doc } | null,
+    recentFeed: [ last 50 entries from session:feed ]
+  }
+}
+```
+
+This hydration event is important — it means a reconnecting player can get back to a fully rendered state in a single round trip without a cascade of HTTP calls.
+
+### Server → Group: Player Presence Broadcast
+```typescript
+// Server broadcasts to the session group when anyone joins/leaves
+{
+  event: 'PlayerPresenceChanged',
+  payload: {
+    userId: 'uuid',
+    characterName: 'Aragorn',
+    isOnline: true,         // false on disconnect
+    connectedCount: 4
+  }
+}
+```
+
+---
+
+## Message Contract Design Principle
+
+Rather than one giant message type, use **narrow delta messages** — each message describes exactly one thing that changed. The Angular client applies the delta to its local state rather than replacing entire documents.
+
+The pattern for every message:
+
+```typescript
+interface GameMessage<T> {
+  event: string           // what happened
+  sessionId: string       // scope guard
+  actorId: string         // who caused it (user or 'system')
+  timestamp: string       // iso8601
+  payload: T              // the delta
+}
+```
+
+---
+
+## Combat Messages
+
+### Client → Server: Roll Initiative
+```typescript
+hubConnection.invoke('RollInitiative', {
+  sessionId: 'uuid',
+  characterId: 'uuid'
+})
+```
+
+### Server → Group: Initiative Rolled
+```typescript
+{
+  event: 'InitiativeRolled',
+  payload: {
+    combatantId: 'uuid',
+    characterName: 'Legolas',
+    roll: 17,
+    modifier: 3,
+    total: 20
+  }
+}
+```
+
+### Server → Group: Encounter Started (GM triggers this)
+```typescript
+{
+  event: 'EncounterStarted',
+  payload: {
+    encounterId: 'uuid',
+    initiativeOrder: [
+      { combatantId: 'uuid', name: 'Legolas', total: 20, type: 'character' },
+      { combatantId: 'uuid', name: 'Orc #1', total: 14, type: 'monster' },
+    ],
+    activeTurnCombatantId: 'uuid',
+    round: 1
+  }
+}
+```
+
+### Client → Server: Declare Attack
+```typescript
+hubConnection.invoke('DeclareAttack', {
+  sessionId: 'uuid',
+  attackerCombatantId: 'uuid',
+  targetCombatantId: 'uuid',
+  weaponOrSpellId: 'uuid',
+  advantage: 'normal'       // 'advantage' | 'disadvantage' | 'normal'
+})
+```
+
+### Server → Group: Attack Resolved
+```typescript
+{
+  event: 'AttackResolved',
+  payload: {
+    attackerName: 'Gimli',
+    targetName: 'Orc #1',
+    attackRoll: { rolls: [14], modifier: 5, total: 19, isNatural20: false },
+    hit: true,
+    damageRoll: { rolls: [6, 4], modifier: 3, total: 13, damageType: 'slashing' },
+    targetHpDelta: -13,
+    targetCurrentHp: 2,
+    targetMaxHp: 15,
+    targetDefeated: false
+  }
+}
+```
+
+### Server → Group: Combatant Defeated
+```typescript
+{
+  event: 'CombatantDefeated',
+  payload: {
+    combatantId: 'uuid',
+    name: 'Orc #1',
+    type: 'monster',
+    killedBy: 'uuid',       // characterId
+    position: { x: 5, y: 3 }
+  }
+}
+```
+
+### Server → Group: Turn Advanced
+```typescript
+{
+  event: 'TurnAdvanced',
+  payload: {
+    previousCombatantId: 'uuid',
+    activeTurnCombatantId: 'uuid',
+    activeTurnName: 'Orc #2',
+    round: 3,
+    turnStartedAt: 'iso8601',
+    turnTimeoutSeconds: 60
+  }
+}
+```
+
+---
+
+## Spell & Condition Messages
+
+### Client → Server: Cast Spell
+```typescript
+hubConnection.invoke('CastSpell', {
+  sessionId: 'uuid',
+  casterId: 'uuid',
+  spellDefinitionId: 'uuid',
+  spellSlotLevel: 2,
+  targetIds: ['uuid', 'uuid'],    // can be multi-target
+  aoeCenter: { x: 5, y: 5 }      // null if not AoE
+})
+```
+
+### Server → Group: Spell Cast
+```typescript
+{
+  event: 'SpellCast',
+  payload: {
+    casterName: 'Gandalf',
+    spellName: 'Fireball',
+    spellSlotUsed: 3,
+    casterRemainingSlots: { '3rd': 1, '4th': 2 },
+    targets: [
+      { combatantId: 'uuid', name: 'Goblin #1', hpDelta: -22, currentHp: 0, defeated: true },
+      { combatantId: 'uuid', name: 'Goblin #2', hpDelta: -11, currentHp: 3, defeated: false }
+    ],
+    aoeEffect: {
+      type: 'sphere',
+      center: { x: 5, y: 5 },
+      radiusInCells: 3,
+      color: '#FF4400',
+      label: 'Fireball'
+    }
+  }
+}
+```
+
+### Server → Group: Condition Applied / Removed
+```typescript
+{
+  event: 'ConditionChanged',
+  payload: {
+    combatantId: 'uuid',
+    combatantName: 'Frodo',
+    condition: 'poisoned',
+    action: 'applied',            // 'applied' | 'removed'
+    sourceId: 'uuid',
+    expiresAt: 'iso8601'          // null if indefinite
+  }
+}
+```
+
+---
+
+## Movement Messages
+
+### Client → Server: Move Token
+```typescript
+hubConnection.invoke('MoveToken', {
+  sessionId: 'uuid',
+  combatantId: 'uuid',
+  path: [                         // full path walked, not just destination
+    { x: 4, y: 7 },
+    { x: 5, y: 7 },
+    { x: 5, y: 6 }
+  ],
+  movementUsed: 20                // feet, for validation server-side
+})
+```
+
+### Server → Group: Token Moved
+```typescript
+{
+  event: 'TokenMoved',
+  payload: {
+    combatantId: 'uuid',
+    name: 'Aragorn',
+    previousPosition: { x: 4, y: 7 },
+    newPosition: { x: 5, y: 6 },
+    path: [ ... ],
+    movementRemaining: 10
+  }
+}
+```
+
+---
+
+## GM Control Messages
+
+These are server-only broadcasts — only the GM's client can invoke them, enforced server-side by checking `campaign_members.role`.
+
+### Client → Server (GM only): Reveal Fog of War
+```typescript
+hubConnection.invoke('RevealFogArea', {
+  sessionId: 'uuid',
+  encounterId: 'uuid',
+  cells: [[3,3],[3,4],[4,3],[4,4]]
+})
+```
+
+### Server → Group: Fog Updated
+```typescript
+{
+  event: 'FogOfWarUpdated',
+  payload: {
+    newlyRevealedCells: [[3,3],[3,4],[4,3],[4,4]]
+  }
+}
+```
+
+### Client → Server (GM only): Override HP
+```typescript
+hubConnection.invoke('GmOverrideHp', {
+  sessionId: 'uuid',
+  combatantId: 'uuid',
+  newHp: 25,
+  reason: 'Healing potion applied off-turn'
+})
+```
+
+---
+
+## Chat & Roleplay Messages
+
+```typescript
+// Client → Server
+hubConnection.invoke('SendMessage', {
+  sessionId: 'uuid',
+  type: 'in-character',           // 'in-character' | 'out-of-character' | 'whisper'
+  toUserId: 'uuid',               // only for whisper, otherwise null
+  message: 'I attack the darkness.'
+})
+
+// Server → Group (or individual for whisper)
+{
+  event: 'MessageReceived',
+  payload: {
+    fromUserId: 'uuid',
+    fromCharacterName: 'Aragorn',
+    type: 'in-character',
+    message: 'I attack the darkness.',
+    timestamp: 'iso8601'
+  }
+}
+```
+
+---
+
+## Error & System Messages
+
+```typescript
+// Server → Client (individual, not group) when something is rejected
+{
+  event: 'ActionRejected',
+  payload: {
+    originalAction: 'DeclareAttack',
+    reason: 'NOT_YOUR_TURN',        // machine-readable code
+    message: 'You cannot act until your turn in initiative order.'
+  }
+}
+
+// Server → Group for system events
+{
+  event: 'SystemNotification',
+  payload: {
+    level: 'info',                  // 'info' | 'warning' | 'error'
+    message: 'Encounter ended. Returning to exploration mode.',
+    encounterId: 'uuid'
+  }
+}
+```
+
+---
+
+## Server-Side Validation Flow
+
+Every `Client → Server` message goes through the same pipeline before anything touches Redis:
+
+```
+Receive Hub method call
+        ↓
+Authenticate (JWT from connection handshake)
+        ↓
+Authorize (is this user in this session? is it their turn?)
+        ↓
+Validate (is the move legal? enough spell slots? in range?)
+        ↓
+Apply to Redis (write the deltas)
+        ↓
+Write to game_events in Postgres (async)
+        ↓
+Broadcast delta to SignalR group
+```
+
+Validation is always server-side. The Angular client can optimistically render locally for responsiveness, but the server is the authority. If the server rejects, an `ActionRejected` message corrects the client.
+
+---
+
+## SignalR Group Strategy
+
+```
+One group per active session:   "session:{session_id}"
+One group per GM:               "gm:{session_id}"   ← gets extra visibility
+```
+
+The GM group receives everything the player group does, plus:
+- Hidden monster HP values
+- Hidden map information
+- Roll results before they're confirmed
+- Player whisper messages
+
+---
+
+Ready to move on to the **Angular UI state management** layer — how the client consumes all of this and organizes it for rendering?
+
+
+## Angular UI State Management
+
+NGXS is a solid choice here — stick with it. It's well-suited to this problem because your game state has clear boundaries, predictable mutations driven by WebSocket events, and you need time-travel/snapshot capability for things like the combat log. NgRx would give you the same power but with significantly more boilerplate; NGXS gets you there faster without sacrificing structure.
+
+---
+
+## How the Layers Map to NGXS
+
+The key insight is that your WebSocket messages map almost 1:1 to NGXS actions. The SignalR service receives a message, dispatches an action, and the state slice updates. The component never talks to SignalR directly.
+
+```
+SignalR Message Received
+        ↓
+SignalR Service translates → NGXS Action dispatched
+        ↓
+State slice handles action → updates immutable state
+        ↓
+Component selectors react → Angular re-renders
+```
+
+This keeps components completely decoupled from the transport layer, which matters a lot when you're debugging — you can replay any sequence of actions in isolation.
+
+---
+
+## State Slice Architecture
+
+You want one slice per domain, mirroring the Redis namespace structure you already designed:
+
+```
+AppState
+├── SessionState          ← who's connected, lobby, campaign info
+├── MyCharacterState      ← the local player's own character
+├── PartyState            ← all other players' characters
+├── EncounterState        ← initiative, round, turn tracking
+├── MapState              ← grid, positions, fog, AoE effects
+└── FeedState             ← chat + action log
+```
+
+Each slice is independently selectable and independently updated. Components subscribe only to what they need.
+
+---
+
+## Slice Definitions
+
+### SessionState
+```typescript
+interface SessionStateModel {
+  sessionId: string | null;
+  campaignId: string | null;
+  status: 'disconnected' | 'connecting' | 'lobby' | 'active' | 'paused';
+  connectedPlayers: ConnectedPlayer[];
+  localUserId: string | null;
+  localCharacterId: string | null;
+  isGm: boolean;
+}
+
+// Actions
+class JoinSession { static type = '[Session] Join' }
+class SessionHydrated { static type = '[Session] Hydrated' }
+class PlayerPresenceChanged { static type = '[Session] Player Presence Changed' }
+class SessionStatusChanged { static type = '[Session] Status Changed' }
+```
+
+### MyCharacterState
+```typescript
+interface MyCharacterStateModel {
+  characterId: string | null;
+  name: string;
+  currentHp: number;
+  maxHp: number;
+  temporaryHp: number;
+  currentSpellSlots: Record<string, number>;
+  conditions: ActiveCondition[];
+  concentratingOn: string | null;
+  deathSaves: { successes: number; failures: number };
+  movementRemaining: number;    // calculated each turn, reset on turn start
+  hasActed: boolean;            // reset on turn start
+  hasBonusActed: boolean;
+}
+
+// Actions — these all come from WebSocket events
+class MyCharacterHpChanged { static type = '[MyCharacter] HP Changed' }
+class MyCharacterSpellSlotUsed { static type = '[MyCharacter] Spell Slot Used' }
+class MyCharacterConditionApplied { static type = '[MyCharacter] Condition Applied' }
+class MyCharacterConditionRemoved { static type = '[MyCharacter] Condition Removed' }
+class MyCharacterTurnStarted { static type = '[MyCharacter] Turn Started' }
+class MyCharacterTurnEnded { static type = '[MyCharacter] Turn Ended' }
+```
+
+### PartyState
+```typescript
+interface PartyStateModel {
+  characters: Record<string, PartyCharacter>;  // keyed by characterId
+}
+
+interface PartyCharacter {
+  characterId: string;
+  userId: string;
+  name: string;
+  currentHp: number;
+  maxHp: number;
+  conditions: ActiveCondition[];
+  isOnline: boolean;
+  isMyTurn: boolean;
+}
+
+// Actions
+class PartyCharacterUpdated { static type = '[Party] Character Updated' }
+class PartyCharacterConditionChanged { static type = '[Party] Condition Changed' }
+```
+
+### EncounterState
+```typescript
+interface EncounterStateModel {
+  encounterId: string | null;
+  status: 'none' | 'preparing' | 'active' | 'completed';
+  round: number;
+  initiativeOrder: CombatantSummary[];
+  activeTurnCombatantId: string | null;
+  turnStartedAt: string | null;
+  turnTimeoutSeconds: number | null;
+  monsters: Record<string, MonsterInstance>;  // keyed by combatantId
+  pendingRoll: PendingRoll | null;
+}
+
+// Actions
+class EncounterStarted { static type = '[Encounter] Started' }
+class TurnAdvanced { static type = '[Encounter] Turn Advanced' }
+class AttackResolved { static type = '[Encounter] Attack Resolved' }
+class SpellCast { static type = '[Encounter] Spell Cast' }
+class CombatantDefeated { static type = '[Encounter] Combatant Defeated' }
+class EncounterEnded { static type = '[Encounter] Ended' }
+```
+
+### MapState
+```typescript
+interface MapStateModel {
+  gridWidth: number;
+  gridHeight: number;
+  positions: Record<string, GridPosition>;    // combatantId → {x, y}
+  fogOfWar: { enabled: boolean; revealedCells: [number, number][] };
+  aoeEffects: AoeEffect[];
+  selectedCombatantId: string | null;         // purely local UI selection
+  hoveredCell: GridPosition | null;           // purely local UI hover
+  pendingMovePath: GridPosition[] | null;     // local: player is planning a move
+}
+
+// Actions
+class MapHydrated { static type = '[Map] Hydrated' }
+class TokenMoved { static type = '[Map] Token Moved' }
+class FogOfWarUpdated { static type = '[Map] Fog Updated' }
+class AoeEffectAdded { static type = '[Map] AoE Effect Added' }
+class AoeEffectRemoved { static type = '[Map] AoE Effect Removed' }
+
+// These three are LOCAL only — never touch the server
+class CombatantSelected { static type = '[Map] Combatant Selected' }
+class CellHovered { static type = '[Map] Cell Hovered' }
+class MovementPathPlanned { static type = '[Map] Movement Path Planned' }
+```
+
+### FeedState
+```typescript
+interface FeedStateModel {
+  entries: FeedEntry[];               // capped at 200, matches Redis
+  unreadCount: number;                // for notification badge
+  filter: 'all' | 'combat' | 'chat'; // local filter, never hits server
+}
+
+// Actions
+class FeedEntryReceived { static type = '[Feed] Entry Received' }
+class FeedHydrated { static type = '[Feed] Hydrated' }
+class FeedFilterChanged { static type = '[Feed] Filter Changed' }
+class FeedMarkRead { static type = '[Feed] Mark Read' }
+```
+
+---
+
+## The SignalR → NGXS Bridge
+
+This is the most important piece of wiring. One service owns the connection and translates every incoming message into a dispatch:
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class GameHubService {
+  private connection: HubConnection;
+
+  constructor(private store: Store) {}
+
+  connect(sessionId: string, token: string) {
+    this.connection = new HubConnectionBuilder()
+      .withUrl('/hubs/game', { accessTokenFactory: () => token })
+      .withAutomaticReconnect()
+      .build();
+
+    this.registerHandlers();
+    this.connection.start();
+  }
+
+  private registerHandlers() {
+    this.connection.on('SessionHydrated', payload =>
+      this.store.dispatch(new SessionHydrated(payload))
+    );
+
+    this.connection.on('AttackResolved', payload =>
+      this.store.dispatch(new AttackResolved(payload))
+    );
+
+    this.connection.on('TurnAdvanced', payload =>
+      this.store.dispatch(new TurnAdvanced(payload))
+    );
+
+    this.connection.on('TokenMoved', payload =>
+      this.store.dispatch(new TokenMoved(payload))
+    );
+
+    // ... one registration per server → client message contract
+  }
+
+  // Client → Server invocations stay here too
+  declareAttack(payload: DeclareAttackPayload) {
+    this.connection.invoke('DeclareAttack', payload);
+  }
+
+  moveToken(payload: MoveTokenPayload) {
+    this.connection.invoke('MoveToken', payload);
+  }
+}
+```
+
+Components inject `GameHubService` only to invoke server actions. They never call `connection.on()` themselves. All state reading goes through selectors.
+
+---
+
+## Local vs. Synchronized State
+
+This distinction is critical and easy to get wrong. Some state in Angular **never goes to the server** — it's purely UI:
+
+| State | Local only? | Reason |
+|---|---|---|
+| `selectedCombatantId` | ✅ Yes | Each player can have different selection |
+| `hoveredCell` | ✅ Yes | Purely cosmetic |
+| `pendingMovePath` | ✅ Yes | Preview before committing the move |
+| `feedFilter` | ✅ Yes | Each player can filter differently |
+| `unreadCount` | ✅ Yes | Per-client notification tracking |
+| `currentHp` | ❌ No | Server authoritative, synced via Redis |
+| `initiativeOrder` | ❌ No | Server authoritative |
+| `positions` | ❌ No | Server authoritative |
+
+Local-only state still lives in NGXS — it just comes from local user interactions rather than WebSocket events. This keeps your components pure and all state observable.
+
+---
+
+## Selectors Worth Calling Out
+
+Derived state via selectors keeps your components thin:
+
+```typescript
+// Is it the local player's turn right now?
+@Selector([EncounterState, SessionState])
+static isMyTurn(encounter: EncounterStateModel, session: SessionStateModel) {
+  return encounter.activeTurnCombatantId === session.localCharacterId;
+}
+
+// Can the local player move? (their turn + movement remaining)
+@Selector([EncounterState, MyCharacterState, SessionState])
+static canMove(encounter, myChar, session) {
+  return this.isMyTurn(encounter, session) 
+    && myChar.movementRemaining > 0
+    && !myChar.hasActed;          // some systems lock movement after action
+}
+
+// Full initiative order with online status merged in
+@Selector([EncounterState, PartyState, SessionState])
+static enrichedInitiativeOrder(encounter, party, session) {
+  return encounter.initiativeOrder.map(combatant => ({
+    ...combatant,
+    isOnline: party.characters[combatant.combatantId]?.isOnline ?? true,
+    isLocalPlayer: combatant.combatantId === session.localCharacterId
+  }));
+}
+
+// Visible monsters (players can't see GM-hidden ones)
+@Selector([EncounterState, SessionState])
+static visibleMonsters(encounter, session) {
+  return Object.values(encounter.monsters)
+    .filter(m => session.isGm || m.isVisible);
+}
+```
+
+These selectors are memoized by NGXS so components re-render only when the relevant slices actually change.
+
+---
+
+## Optimistic Updates
+
+For actions like movement where you want instant visual feedback, you apply the change locally first and roll it back if the server rejects:
+
+```typescript
+// In MapState handler
+@Action(MovementPathPlanned)
+planMovement(ctx, { path, combatantId }) {
+  // Immediately update local preview position
+  ctx.patchState({ pendingMovePath: path });
+}
+
+// When user confirms the move
+commitMove(path: GridPosition[]) {
+  // Optimistically apply to local state
+  this.store.dispatch(new TokenMoved({ combatantId: '...', path }));
+  // Send to server
+  this.hubService.moveToken({ path });
+}
+
+// If server sends ActionRejected
+@Action(ActionRejected)
+revertOptimisticUpdate(ctx, { originalAction }) {
+  if (originalAction === 'MoveToken') {
+    // Revert to last known server position
+    ctx.patchState({ pendingMovePath: null });
+  }
+}
+```
+
+---
+
+## Reconnection Handling
+
+This is where the `SessionHydrated` message earns its keep. When a player reconnects, SignalR fires the reconnect event, you rejoin the session group, and the server sends a fresh `SessionHydrated` payload. In NGXS you handle it by resetting all slices to the hydrated values:
+
+```typescript
+@Action(SessionHydrated)
+hydrate(ctx, { payload }) {
+  // Each child state resets itself cleanly
+  ctx.dispatch([
+    new EncounterHydrated(payload.activeEncounter),
+    new MapHydrated(payload.mapState),
+    new PartyHydrated(payload.allCharacters),
+    new FeedHydrated(payload.recentFeed),
+    new MyCharacterHydrated(payload.myCharacter)
+  ]);
+}
+```
+
+A reconnecting player is indistinguishable from a fresh joiner from the state machine's perspective — they always start from a clean server snapshot.
+
+---
+
+## Summary of the Full Stack Data Flow
+
+Now that we've covered all four layers, here's how they connect end to end:
+
+```
+Angular Component
+  ↕ Selectors / Actions
+NGXS State Slices
+  ↕ GameHubService bridge
+SignalR WebSocket
+  ↕ .NET Hub (auth → validate → apply)
+Redis (live game state)
+  ↕ Flush on checkpoints
+PostgreSQL (permanent record)
+```
+
+Every layer has a clear, single responsibility. Want to talk through anything specific next — like how to structure the .NET Hub and service layer, Docker/deployment architecture, or dive deeper into any particular slice?
+
+
+
+This is a great question to ask before diving into implementation. The answer shapes how you structure your work and avoid the classic trap of building layers in isolation that don't fit together.
+
+---
+
+## The Core Principle: Work Vertically, Not Horizontally
+
+The biggest mistake on projects like this is building entire layers independently — finishing all of Postgres, then all of Redis, then all of SignalR, then all of Angular. By the time you wire them together, everything needs adjustment and you've lost the feedback loop that tells you if your design actually works.
+
+Instead, **every feature should cut through all layers in one focused iteration.** A thin, working slice of "player can move their token" is more valuable than a complete map system that's never been tested end to end.
+
+```
+❌ Horizontal (layer by layer)        ✅ Vertical (feature by feature)
+
+Sprint 1: All Postgres schema         Sprint 1: Player can join a session
+Sprint 2: All Redis keys              Sprint 2: GM can start an encounter  
+Sprint 3: All SignalR contracts       Sprint 3: Player can move a token
+Sprint 4: All Angular state           Sprint 4: Player can make an attack
+Sprint 5: Wire it all together        Sprint 5: Spells + conditions
+          (everything breaks)                   (each one already works)
+```
+
+---
+
+## The Four Phases of the Project
+
+### Phase 1 — Walking Skeleton
+*Goal: Get all five technologies talking to each other with real data, no game logic yet.*
+
+This is the most important phase because it de-risks the infrastructure before you build anything meaningful on top of it. It should feel uncomfortably thin.
+
+What "done" looks like:
+- Angular app connects to .NET via SignalR WebSocket
+- .NET reads and writes a single record in Postgres
+- .NET reads and writes a single key in Redis
+- A user can "join a session" and see their name appear on another browser tab in real time
+- Everything runs in Docker locally with a single `docker-compose up`
+
+No game logic. No combat. Just proof that the pipes work.
+
+---
+
+### Phase 2 — Core Game Loop (Vertical Slices)
+*Goal: The minimum set of features that constitutes a playable session.*
+
+Each slice follows the same pattern — you're always touching Postgres, Redis, SignalR, and Angular together. Suggested order matters here because each slice depends on the previous:
+
+**Slice 1: Session & Lobby**
+- GM creates a campaign (Postgres)
+- Players join via a code/link
+- Connected players list updates in real time for all clients (Redis + SignalR + Angular)
+
+**Slice 2: Character Sheet**
+- Characters exist in Postgres
+- Local player can see their own character sheet in Angular
+- No live state yet — pure Postgres reads
+
+**Slice 3: Encounter Setup**
+- GM starts an encounter (Postgres + Redis)
+- Initiative rolls happen and order is broadcast (SignalR)
+- Angular renders initiative tracker updating live
+
+**Slice 4: Movement**
+- Player can move token on grid (Redis position update)
+- All clients see the token move in real time (SignalR broadcast)
+- Movement range is enforced server-side
+- This is your first real test of optimistic UI updates
+
+**Slice 5: Basic Attack**
+- Player declares attack, roll resolves, HP updates
+- All clients see the result broadcast
+- Feed entry appears for all clients
+- This is the first time all four layers exercise together under real game logic
+
+After Slice 5 you have something genuinely playable, even if limited. That milestone matters — it means your architecture is validated.
+
+---
+
+### Phase 3 — Feature Depth
+*Goal: Expand each slice into the full feature set.*
+
+Now you iterate within each domain, still vertically but with smaller scope since the infrastructure is stable:
+
+- Spells → AoE → Concentration → Saving throws
+- Conditions → Duration tracking → Condition interactions
+- Fog of war → Vision ranges → Dynamic reveal
+- Inventory → Equipping items → Item effects
+- GM tools → HP override → Hidden rolls → NPC control
+
+The pattern for each feature is consistent:
+
+```
+1. Does this need a new Postgres table or column?
+   → Write migration first
+
+2. Does this need a new Redis key or modify an existing one?
+   → Update the key structure
+
+3. What SignalR messages does this introduce?
+   → Add Hub method + broadcast contract
+
+4. What NGXS actions and state changes does this require?
+   → Add slice changes + selectors
+
+5. Build the Angular component last
+   → It should just be reading selectors at this point
+```
+
+Starting from the database and working up means you never build UI for state that doesn't exist yet.
+
+---
+
+### Phase 4 — Hardening
+*Goal: Make it production-worthy.*
+
+This phase is often underestimated. For a multiplayer real-time game, hardening includes:
+
+- **Reconnection resilience** — drop and rejoin mid-combat without losing state
+- **Conflict resolution** — two players act simultaneously, server must serialize correctly
+- **Redis persistence config** — decide your RDB/AOF strategy so a restart doesn't wipe live sessions
+- **Load testing** — simulate 5-10 concurrent WebSocket connections under combat load
+- **Auth & authorization** — GM-only actions truly locked down server-side
+
+---
+
+## The Feature Development Workflow in Practice
+
+Once you're in Phase 3, each feature follows a consistent rhythm:
+
+```
+1. Define the data shape
+   Write the Postgres migration (if needed)
+   Sketch the Redis key (if needed)
+
+2. Define the contracts
+   SignalR Hub method signature (client → server)
+   SignalR broadcast shape (server → client)
+
+3. Implement server-side
+   .NET service layer: validate → apply to Redis → async write to Postgres
+   .NET Hub: wire the service, broadcast the result
+
+4. Implement client-side
+   NGXS action + state handler
+   Selector (if derived state needed)
+   Angular component (consumes selector, invokes hub service)
+
+5. Test the full slice
+   Open two browser tabs
+   Trigger the action in one
+   Verify the other updates correctly
+```
+
+Step 5 is non-negotiable for every feature. The two-tab test is your integration test for the entire stack and it catches problems no unit test will.
+
+---
+
+## A Practical Note on Postgres Migrations
+
+As you iterate, your Postgres schema will evolve constantly in Phase 2 and 3. Set up a migration tool early — **EF Core migrations** or **Flyway** are both good choices with .NET. The rule is simple: never manually alter your database schema. Every change is a migration file committed to source control. This becomes critical once you have Docker involved and need the schema to be reproducible.
+
+---
+
+## Where People Usually Get Stuck
+
+A few common traps specific to this kind of project worth flagging early:
+
+**Over-designing Redis before you need it.** Start with simple JSON string keys. Only reach for Redis-specific data structures (Lists, Sorted Sets, Pub/Sub) when a concrete performance need emerges. Your feed as a Redis List is fine; you don't need Streams until you actually need replay guarantees.
+
+**Building the Angular UI before the WebSocket contract is stable.** UI work feels productive but is expensive to redo. Lock down your message contracts first, even informally on paper, before building components that depend on them.
+
+**Skipping the two-tab test until late.** Bugs in shared session state are much cheaper to find in Slice 3 than in Phase 4 after you've built twenty features on top of a flawed broadcast model.
+
+---
+
+What would be most useful to dig into next — the walking skeleton setup, the Docker/infrastructure layout, or starting on a specific vertical slice?
+
+
+Great question to ask before you start — a few things worth thinking through before you open Claude Code.
+
+---
+
+## Things Worth Deciding Before You Start
+
+### SignalR Transport & Scaling
+
+In development, SignalR works fine out of the box. But the moment you run more than one .NET container instance, SignalR's in-memory backplane breaks — a client connected to instance A won't receive broadcasts from instance B. You need a **Redis backplane** for SignalR from day one, because retrofitting it later is painful.
+
+```csharp
+builder.Services.AddSignalR()
+    .AddStackExchangeRedis(connectionString);
+```
+
+You already have Redis in your stack, so this is free. Just don't forget it.
+
+---
+
+### Authentication Strategy
+
+Decide your auth approach before writing any Hub code, because it affects how every server-side action is authorized. JWT bearer tokens are the standard choice — they work cleanly with SignalR's `accessTokenFactory` on the client. The question is whether you're building auth yourself or using something like **ASP.NET Core Identity**. If this game is for private use among known players, a simple JWT implementation is fine. If it's public-facing, Identity or an external provider (Auth0, etc.) saves you a lot of security footwork.
+
+---
+
+### Monorepo vs. Separate Repos
+
+Decide this before creating any folders. Given the tight contract coupling between your .NET server and Angular client (shared message shapes, shared type definitions), a **monorepo** is strongly worth considering. It lets you share TypeScript types and keep the frontend/backend in sync as contracts evolve. A structure like:
+
+```
+/
+├── client/          ← Angular app
+├── server/          ← .NET solution
+├── shared/          ← shared type contracts (optional)
+└── docker-compose.yml
+```
+
+---
+
+### Shared Type Contracts
+
+Relatedly — your SignalR message payloads are defined in C# on the server and TypeScript on the client. These will drift apart over time if you maintain them separately. Consider either generating TypeScript types from your C# models (tools like **NSwag** or **TypeGen** can do this), or at minimum keeping a `contracts/` folder that you treat as the source of truth and update both sides from.
+
+---
+
+### PostgreSQL Migration Tool
+
+Pick this on day one. **EF Core migrations** is the natural choice for .NET and integrates well with Docker — you can run migrations automatically on container startup. If you prefer SQL-first over code-first, **Flyway** is excellent. Either way, commit to one before you create any tables.
+
+---
+
+### Redis Persistence Configuration
+
+Out of the box, Redis is purely in-memory. If the Redis container restarts mid-session, all live game state is gone. Decide early whether you want:
+
+- **RDB snapshots** — periodic point-in-time saves, acceptable data loss window
+- **AOF (Append Only File)** — logs every write, near-zero data loss, slightly more I/O
+
+For a game session, RDB with a short snapshot interval (every 60 seconds) is probably sufficient. Configure this in your `docker-compose.yml` Redis setup rather than leaving it at defaults.
+
+---
+
+### Map Rendering Approach
+
+This is a front-end decision but has architectural implications. Rendering a tactical grid with tokens, fog of war, and AoE effects in Angular means choosing between:
+
+- **Canvas / WebGL** (via a library like **PixiJS**) — high performance, handles complex rendering, but more work to integrate with Angular's change detection
+- **SVG** — easier Angular integration, fine for simpler grids, starts to struggle with large maps
+- **CSS Grid + DOM elements** — simplest to implement, reasonable for 20x20 grids, won't scale to large maps
+
+This choice affects your `MapState` selectors and how you bind NGXS state to the view. Worth deciding before you build anything visual.
+
+---
+
+## Things You Might Have Overlooked
+
+### Turn Timer Enforcement
+
+You have `turnTimeoutSeconds` in your Redis model, but consider where enforcement actually lives. If the timer runs in Angular, a browser tab in the background will throttle it. The timer needs to be enforced **server-side** — a .NET background service checks Redis, advances the turn when time expires, and broadcasts `TurnAdvanced`. Angular just renders the countdown.
+
+### Concurrent Action Prevention
+
+What happens when two players try to act simultaneously? Your server needs to serialize writes to encounter state. Redis supports atomic operations, but you need to be deliberate — consider using a **Redis distributed lock** (Redlock pattern) on the encounter key during turn processing. This is easy to add early and hard to retrofit.
+
+### Game State Versioning
+
+If a player reconnects and receives `SessionHydrated`, how do you know their local state isn't already current? Consider adding a `stateVersion` counter to your Redis session document — an incrementing integer that bumps on every mutation. The client can compare its known version against the server's and skip redundant hydration.
+
+### The GM Experience
+
+You've thought about the GM's elevated visibility but the GM also needs controls that are qualitatively different from player controls — managing the encounter, controlling NPCs, running multiple "characters" simultaneously. Consider whether the GM needs a **separate Angular route/layout** rather than a modified version of the player view. This affects your routing and component architecture.
+
+### Offline / Disconnection UX
+
+What does a player see when they lose connection? SignalR's `withAutomaticReconnect()` handles reconnection attempts, but you need to think about the Angular UX during that window — a visible reconnecting state, disabling action buttons, and a clear indication to other players that someone dropped. This is easy to design upfront and awkward to bolt on later.
+
+---
+
+## One Practical Suggestion for Claude Code
+
+When you start working with Claude Code, the most effective pattern for a project this complex is to **work one vertical slice at a time and ask Claude Code to implement the full slice** — Postgres migration, Redis key handling, .NET Hub method, NGXS action and state, and Angular component — in a single focused session. It will maintain context across all the layers better that way than if you ask about each layer separately across different sessions.
+
+Having this conversation as a reference document alongside Claude Code will also help — you can point it at your data model decisions when asking it to implement specific features.
+
+Good luck with it — it's a well-thought-out architecture for this kind of game.
