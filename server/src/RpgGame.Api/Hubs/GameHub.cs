@@ -531,11 +531,35 @@ public class GameHub : Hub
         var currentIndex = activeEncounter.Combatants.FindIndex(c => c.Id == activeEncounter.ActiveTurnCombatantId);
         var nextIndex = currentIndex;
 
+        bool foundAlive = false;
         for (int attempt = 0; attempt < activeEncounter.Combatants.Count; attempt++)
         {
             nextIndex = (nextIndex + 1) % activeEncounter.Combatants.Count;
             var isDefeated = await redisDb.SetContainsAsync(defeatedKey, activeEncounter.Combatants[nextIndex].Id);
-            if (!isDefeated) break;
+            if (!isDefeated)
+            {
+                foundAlive = true;
+                break;
+            }
+        }
+
+        if (!foundAlive)
+        {
+            if (Guid.TryParse(activeEncounter.EncounterId, out var endedEncounterGuid))
+            {
+                var encounter = await _db.Encounters.FindAsync(endedEncounterGuid);
+                if (encounter is not null)
+                {
+                    encounter.Status = EncounterStatus.Ended;
+                    await _db.SaveChangesAsync();
+                }
+            }
+
+            await redisDb.KeyDeleteAsync($"session:{gameSession.Id}:active_encounter");
+
+            var groupName2 = $"session:{gameSession.Id}";
+            await Clients.Group(groupName2).SendAsync("EncounterEnded", new EncounterEndedPayload(Guid.Parse(activeEncounter.EncounterId)));
+            return;
         }
 
         var nextCombatantId = activeEncounter.Combatants[nextIndex].Id;
