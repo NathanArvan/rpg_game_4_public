@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { ClearEncounter, EncounterStarted, TurnAdvanced } from './encounter.actions';
+import { AttackResolved, ClearEncounter, CombatantDefeated, EncounterStarted, TurnAdvanced } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
 
 @State<EncounterStateModel>({
@@ -31,12 +31,31 @@ export class EncounterState {
 
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants, activeTurnCombatantId }: EncounterStarted) {
-    ctx.patchState({ encounterId, combatants, active: true, activeTurnCombatantId });
+    const mapped = combatants.map(c => ({ ...c, isDefeated: false }));
+    ctx.patchState({ encounterId, combatants: mapped, active: true, activeTurnCombatantId });
   }
 
   @Action(TurnAdvanced)
   turnAdvanced(ctx: StateContext<EncounterStateModel>, { activeTurnCombatantId }: TurnAdvanced) {
     ctx.patchState({ activeTurnCombatantId });
+  }
+
+  @Action(AttackResolved)
+  attackResolved(ctx: StateContext<EncounterStateModel>, { targetCombatantId, targetNewHp }: AttackResolved) {
+    const state = ctx.getState();
+    const combatants = state.combatants.map(c =>
+      c.id === targetCombatantId ? { ...c, currentHp: targetNewHp } : c
+    );
+    ctx.patchState({ combatants });
+  }
+
+  @Action(CombatantDefeated)
+  combatantDefeated(ctx: StateContext<EncounterStateModel>, { combatantId }: CombatantDefeated) {
+    const state = ctx.getState();
+    const combatants = state.combatants.map(c =>
+      c.id === combatantId ? { ...c, isDefeated: true } : c
+    );
+    ctx.patchState({ combatants });
   }
 
   @Action(ClearEncounter)

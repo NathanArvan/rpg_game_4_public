@@ -39,7 +39,9 @@ interface Cell {
             *ngIf="tokenAt(cell) as combatant"
             class="token"
             [class.active-token]="combatant.id === (activeTurnCombatantId$ | async)"
-            [title]="combatant.characterName">
+            [class.defeated-token]="combatant.isDefeated"
+            [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
+            [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
           </div>
         </div>
@@ -91,6 +93,15 @@ interface Cell {
       background: #e53935;
       box-shadow: 0 0 0 2px #ffeb3b;
     }
+    .token.enemy-token {
+      background: #b71c1c;
+      cursor: crosshair;
+    }
+    .token.defeated-token {
+      background: #9e9e9e;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   `],
 })
 export class GridComponent implements OnInit {
@@ -134,7 +145,7 @@ export class GridComponent implements OnInit {
       map(([activeId, combatants]) => {
         this.combatants = combatants;
         const myCombatant = combatants.find(c => c.userId === this.myUserId);
-        return !!myCombatant && myCombatant.id === activeId;
+        return !!myCombatant && myCombatant.id === activeId && !myCombatant.isDefeated;
       })
     );
 
@@ -174,9 +185,18 @@ export class GridComponent implements OnInit {
     const state = this.store.snapshot();
     const activeTurnId = state.encounter?.activeTurnCombatantId;
     if (myCombatant.id !== activeTurnId) return; // not my turn
+    if (myCombatant.isDefeated) return;
 
-    this.store.dispatch(new SetPendingMove({ x: cell.x, y: cell.y }));
-    this.hub.moveToken(this.joinCode, myCombatant.id, cell.x, cell.y);
+    const targetCombatant = this.tokenAt(cell);
+
+    if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
+      // Click on an enemy token — declare attack
+      this.hub.declareAttack(this.joinCode, targetCombatant.id);
+    } else if (!targetCombatant) {
+      // Empty cell — move
+      this.store.dispatch(new SetPendingMove({ x: cell.x, y: cell.y }));
+      this.hub.moveToken(this.joinCode, myCombatant.id, cell.x, cell.y);
+    }
   }
 
   onEndTurn(): void {

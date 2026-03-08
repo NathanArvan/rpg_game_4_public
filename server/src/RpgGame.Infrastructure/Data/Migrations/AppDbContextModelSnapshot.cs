@@ -301,6 +301,33 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.ToTable("EncounterCombatants");
                 });
 
+            modelBuilder.Entity("RpgGame.Domain.Entities.GameEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EncounterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EncounterId");
+
+                    b.ToTable("GameEvents");
+                });
+
             modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -537,6 +564,17 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Encounter");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.GameEvent", b =>
+                {
+                    b.HasOne("RpgGame.Domain.Entities.Encounter", "Encounter")
+                        .WithMany()
+                        .HasForeignKey("EncounterId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Encounter");

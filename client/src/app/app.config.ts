@@ -10,12 +10,13 @@ import { SessionState } from './state/session/session.state';
 import { CharacterState } from './state/character/character.state';
 import { EncounterState } from './state/encounter/encounter.state';
 import { MapState } from './state/map/map.state';
+import { FeedState } from './state/feed/feed.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideStore([SessionState, CharacterState, EncounterState, MapState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
+    provideStore([SessionState, CharacterState, EncounterState, MapState, FeedState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
   ],
 };

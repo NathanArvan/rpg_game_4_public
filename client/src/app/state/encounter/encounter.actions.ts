@@ -14,6 +14,20 @@ export class TurnAdvanced {
   constructor(public activeTurnCombatantId: string) {}
 }
 
+export class AttackResolved {
+  static readonly type = '[Encounter] Attack Resolved';
+  constructor(
+    public targetCombatantId: string,
+    public targetNewHp: number,
+    public feedText: string
+  ) {}
+}
+
+export class CombatantDefeated {
+  static readonly type = '[Encounter] Combatant Defeated';
+  constructor(public combatantId: string) {}
+}
+
 export class ClearEncounter {
   static readonly type = '[Encounter] Clear';
 }

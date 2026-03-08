@@ -15,6 +15,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Character> Characters => Set<Character>();
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<EncounterCombatant> EncounterCombatants => Set<EncounterCombatant>();
+    public DbSet<GameEvent> GameEvents => Set<GameEvent>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -62,6 +63,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(c => c.EncounterId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Character>().WithMany().HasForeignKey(c => c.CharacterId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<GameEvent>(e =>
+        {
+            e.HasOne(ge => ge.Encounter).WithMany()
+             .HasForeignKey(ge => ge.EncounterId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(ge => ge.Payload).HasColumnType("jsonb");
         });
     }
 }

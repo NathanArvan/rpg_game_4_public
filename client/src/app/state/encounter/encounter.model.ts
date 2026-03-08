@@ -6,6 +6,9 @@ export interface Combatant {
   initiative: number;
   initiativeRoll: number;
   dexModifier: number;
+  currentHp: number;
+  maxHp: number;
+  isDefeated: boolean;
 }
 
 export interface EncounterStateModel {

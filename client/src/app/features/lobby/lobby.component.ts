@@ -17,11 +17,12 @@ import { LoadMyCharacters } from '../../state/character/character.actions';
 import { EncounterState } from '../../state/encounter/encounter.state';
 import { EncounterTrackerComponent } from '../encounter/encounter-tracker.component';
 import { GridComponent } from '../encounter/grid/grid.component';
+import { FeedComponent } from '../encounter/feed/feed.component';
 
 @Component({
   selector: 'app-lobby',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, EncounterTrackerComponent, GridComponent],
+  imports: [CommonModule, FormsModule, RouterLink, EncounterTrackerComponent, GridComponent, FeedComponent],
   template: `
     <div class="lobby">
       <h1>RPG Game Lobby</h1>
@@ -105,6 +106,7 @@ import { GridComponent } from '../encounter/grid/grid.component';
       </div>
 
       <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
+      <app-feed *ngIf="encounterActive$ | async"></app-feed>
       <app-grid
         *ngIf="encounterActive$ | async"
         [joinCode]="activeJoinCode"

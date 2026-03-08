@@ -147,6 +147,8 @@ public class GameHub : Hub
             throw new HubException("No players are connected.");
 
         var combatants = new List<EncounterCombatant>();
+        var characterMap = new Dictionary<Guid, Character>();
+
         foreach (var entry in playerEntries)
         {
             var playerEntry = JsonSerializer.Deserialize<PlayerEntry>(entry.Value.ToString()!);
@@ -157,6 +159,8 @@ public class GameHub : Hub
 
             var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == charGuid);
             if (character is null) continue;
+
+            characterMap[charGuid] = character;
 
             var dexMod = DexModifier(character.BaseStats.Dex);
             var roll = RollD20();
@@ -213,19 +217,39 @@ public class GameHub : Hub
             $"encounter:map:{encounter.Id}",
             JsonSerializer.Serialize(mapEntry, _jsonOptions));
 
+        // Seed character live state in Redis
+        foreach (var c in ordered)
+        {
+            if (characterMap.TryGetValue(c.CharacterId, out var ch))
+            {
+                var liveKey = $"character:live:{c.CharacterId}";
+                await redisDb.HashSetAsync(liveKey, new HashEntry[]
+                {
+                    new("currentHp", ch.CurrentHp),
+                    new("class", ch.Class),
+                });
+            }
+        }
+
         var payload = new
         {
             encounterId = encounter.Id,
             activeTurnCombatantId,
-            combatants = ordered.Select(c => new
+            combatants = ordered.Select(c =>
             {
-                id = c.Id,
-                userId = c.UserId,
-                characterId = c.CharacterId,
-                characterName = c.CharacterName,
-                initiative = c.Initiative,
-                initiativeRoll = c.InitiativeRoll,
-                dexModifier = c.DexModifier,
+                characterMap.TryGetValue(c.CharacterId, out var ch);
+                return new
+                {
+                    id = c.Id,
+                    userId = c.UserId,
+                    characterId = c.CharacterId,
+                    characterName = c.CharacterName,
+                    initiative = c.Initiative,
+                    initiativeRoll = c.InitiativeRoll,
+                    dexModifier = c.DexModifier,
+                    currentHp = ch?.CurrentHp ?? 0,
+                    maxHp = ch?.MaxHp ?? 0,
+                };
             }),
             map = new
             {
@@ -240,6 +264,163 @@ public class GameHub : Hub
 
         var groupName = $"session:{gameSession.Id}";
         await Clients.Group(groupName).SendAsync("EncounterStarted", payload);
+    }
+
+    public async Task DeclareAttack(string joinCode, string targetCombatantId)
+    {
+        var userId = Context.UserIdentifier!;
+
+        var gameSession = await _db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode);
+        if (gameSession is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Invalid join code." });
+            return;
+        }
+
+        var redisDb = _redis.GetDatabase();
+
+        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
+        if (!activeEncounterJson.HasValue)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "No active encounter." });
+            return;
+        }
+
+        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
+        if (activeEncounter is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Encounter data invalid." });
+            return;
+        }
+
+        // Verify it's caller's turn
+        var activeCombatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == activeEncounter.ActiveTurnCombatantId);
+        if (activeCombatantRef is null || activeCombatantRef.UserId != userId)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "It is not your turn." });
+            return;
+        }
+
+        // No self-targeting
+        if (activeCombatantRef.Id == targetCombatantId)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "You cannot attack yourself." });
+            return;
+        }
+
+        // Target must exist
+        var targetRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == targetCombatantId);
+        if (targetRef is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Target not found." });
+            return;
+        }
+
+        // Check defeated set
+        var defeatedKey = $"encounter:{activeEncounter.EncounterId}:defeated";
+        if (await redisDb.SetContainsAsync(defeatedKey, activeCombatantRef.Id))
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "You are defeated." });
+            return;
+        }
+        if (await redisDb.SetContainsAsync(defeatedKey, targetCombatantId))
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Target is already defeated." });
+            return;
+        }
+
+        // Parse encounter Guid
+        if (!Guid.TryParse(activeEncounter.EncounterId, out var encounterGuid))
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Invalid encounter ID." });
+            return;
+        }
+
+        // Parse target combatant Guid
+        if (!Guid.TryParse(targetCombatantId, out var targetCombatantGuid))
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Invalid target ID." });
+            return;
+        }
+
+        // Get attacker's character for class (damage dice)
+        var attackerDbCombatant = await _db.EncounterCombatants
+            .FirstOrDefaultAsync(c => c.EncounterId == encounterGuid && c.UserId == userId);
+        var attackerChar = attackerDbCombatant is not null
+            ? await _db.Characters.FirstOrDefaultAsync(c => c.Id == attackerDbCombatant.CharacterId)
+            : null;
+        var attackerClass = attackerChar?.Class ?? "";
+        var attackerName = attackerChar?.Name ?? "Unknown";
+
+        // Get target's character for name and HP key
+        var targetDbCombatant = await _db.EncounterCombatants
+            .FirstOrDefaultAsync(c => c.Id == targetCombatantGuid);
+        var targetChar = targetDbCombatant is not null
+            ? await _db.Characters.FirstOrDefaultAsync(c => c.Id == targetDbCombatant.CharacterId)
+            : null;
+        var targetName = targetChar?.Name ?? "Unknown";
+
+        if (targetDbCombatant is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Target combatant not found in DB." });
+            return;
+        }
+
+        // Roll damage based on attacker's class
+        var damage = RollDamage(attackerClass);
+        var diceString = DamageDiceString(attackerClass);
+
+        // Decrement target HP in Redis
+        var targetLiveKey = $"character:live:{targetDbCombatant.CharacterId}";
+        var newHpRaw = await redisDb.HashDecrementAsync(targetLiveKey, "currentHp", damage);
+        var newHp = (int)Math.Max(0, newHpRaw);
+        if (newHpRaw < 0)
+            await redisDb.HashSetAsync(targetLiveKey, "currentHp", 0);
+
+        var isDefeated = newHp <= 0;
+
+        // Persist to game_events
+        var eventPayload = JsonSerializer.Serialize(new
+        {
+            attackerId = activeCombatantRef.Id,
+            attackerName,
+            targetId = targetCombatantId,
+            targetName,
+            damageDice = diceString,
+            damage,
+        }, _jsonOptions);
+
+        _db.GameEvents.Add(new GameEvent
+        {
+            Id = Guid.NewGuid(),
+            EncounterId = encounterGuid,
+            OccurredAt = DateTimeOffset.UtcNow,
+            EventType = "attack",
+            Payload = eventPayload,
+        });
+        await _db.SaveChangesAsync();
+
+        if (isDefeated)
+            await redisDb.SetAddAsync(defeatedKey, targetCombatantId);
+
+        var feedText = isDefeated
+            ? $"{attackerName} attacks {targetName} for {damage} damage! {targetName} is defeated!"
+            : $"{attackerName} attacks {targetName} for {damage} damage! ({newHp} HP remaining)";
+
+        var groupName = $"session:{gameSession.Id}";
+        await Clients.Group(groupName).SendAsync("AttackResolved", new
+        {
+            attackerId = activeCombatantRef.Id,
+            attackerName,
+            targetId = targetCombatantId,
+            targetName,
+            damage,
+            targetNewHp = newHp,
+            feedText,
+        });
+
+        if (isDefeated)
+            await Clients.Group(groupName).SendAsync("CombatantDefeated", new { combatantId = targetCombatantId });
     }
 
     public async Task MoveToken(string joinCode, string combatantId, int targetX, int targetY)
@@ -359,9 +540,18 @@ public class GameHub : Hub
         if (activeCombatant is null || activeCombatant.UserId != userId)
             throw new HubException("It is not your turn.");
 
-        // Advance to next combatant (wrap around)
+        // Advance to next combatant (wrap around, skipping defeated)
+        var defeatedKey = $"encounter:{activeEncounter.EncounterId}:defeated";
         var currentIndex = activeEncounter.Combatants.FindIndex(c => c.Id == activeEncounter.ActiveTurnCombatantId);
-        var nextIndex = (currentIndex + 1) % activeEncounter.Combatants.Count;
+        var nextIndex = currentIndex;
+
+        for (int attempt = 0; attempt < activeEncounter.Combatants.Count; attempt++)
+        {
+            nextIndex = (nextIndex + 1) % activeEncounter.Combatants.Count;
+            var isDefeated = await redisDb.SetContainsAsync(defeatedKey, activeEncounter.Combatants[nextIndex].Id);
+            if (!isDefeated) break;
+        }
+
         var nextCombatantId = activeEncounter.Combatants[nextIndex].Id;
 
         var updated = activeEncounter with { ActiveTurnCombatantId = nextCombatantId };
@@ -375,6 +565,20 @@ public class GameHub : Hub
 
     private static int DexModifier(int dex) => (int)Math.Floor((dex - 10) / 2.0);
     private static int RollD20() => Random.Shared.Next(1, 21);
+
+    private static int RollDamage(string characterClass) => characterClass.ToLowerInvariant() switch
+    {
+        "fighter" or "paladin" or "ranger" => Random.Shared.Next(1, 9), // d8
+        "rogue" or "bard" => Random.Shared.Next(1, 7),                  // d6
+        _ => Random.Shared.Next(1, 5),                                   // d4
+    };
+
+    private static string DamageDiceString(string characterClass) => characterClass.ToLowerInvariant() switch
+    {
+        "fighter" or "paladin" or "ranger" => "1d8",
+        "rogue" or "bard" => "1d6",
+        _ => "1d4",
+    };
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {

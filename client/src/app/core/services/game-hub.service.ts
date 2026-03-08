@@ -2,8 +2,9 @@ import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
-import { EncounterStarted, TurnAdvanced } from '../../state/encounter/encounter.actions';
+import { AttackResolved, CombatantDefeated, EncounterStarted, TurnAdvanced } from '../../state/encounter/encounter.actions';
 import { MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
+import { AddFeedEntry } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
@@ -59,6 +60,19 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new ClearPendingMove()));
     });
 
+    this.connection.on('AttackResolved', (payload) => {
+      console.log('[hub] AttackResolved received:', payload);
+      this.ngZone.run(() => {
+        this.store.dispatch(new AttackResolved(payload.targetId, payload.targetNewHp, payload.feedText));
+        this.store.dispatch(new AddFeedEntry(payload.feedText));
+      });
+    });
+
+    this.connection.on('CombatantDefeated', (payload) => {
+      console.log('[hub] CombatantDefeated received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
+    });
+
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
     this.connection.onreconnected((id) => console.log('[hub] reconnected, connectionId:', id));
@@ -86,5 +100,9 @@ export class GameHubService {
 
   async endTurn(joinCode: string): Promise<void> {
     await this.connection.invoke('EndTurn', joinCode);
+  }
+
+  async declareAttack(joinCode: string, targetCombatantId: string): Promise<void> {
+    await this.connection.invoke('DeclareAttack', joinCode, targetCombatantId);
   }
 }
