@@ -5,6 +5,7 @@ import { RouterModule } from '@angular/router';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
 import { CharacterService, CharacterRequest } from '../../core/services/character.service';
+import { DevService } from '../../core/services/dev.service';
 import { LoadMyCharacters, SelectCharacter, SetMyCharacter } from '../../state/character/character.actions';
 import { CharacterSummary } from '../../state/character/character.model';
 import { CharacterState } from '../../state/character/character.state';
@@ -56,6 +57,7 @@ import { CharacterState } from '../../state/character/character.state';
           <div *ngIf="!(characters$ | async)?.length" class="empty">No characters yet.</div>
 
           <button *ngIf="!showCreate" (click)="showCreate = true">+ New Character</button>
+          <button *ngIf="!showCreate" (click)="quickCreateCharacter()" class="dev-btn">⚡ Quick Create Random</button>
 
           <!-- Create Form -->
           <div *ngIf="showCreate" class="create-form">
@@ -99,6 +101,8 @@ import { CharacterState } from '../../state/character/character.state';
     .actions { margin-top: 16px; }
     h3 { margin-bottom: 4px; }
     a { display: inline-block; margin-bottom: 16px; }
+    .dev-btn { background: #d97706; color: white; border: none; }
+    .dev-btn:hover { background: #b45309; }
   `],
 })
 export class CharacterComponent implements OnInit {
@@ -111,7 +115,7 @@ export class CharacterComponent implements OnInit {
 
   form: CharacterRequest = this.emptyForm();
 
-  constructor(private store: Store, private characterService: CharacterService) {
+  constructor(private store: Store, private characterService: CharacterService, private dev: DevService) {
     this.characters$ = store.select(CharacterState.characters);
     this.selected$ = store.select(CharacterState.selected);
     this.loading$ = store.select(CharacterState.loading);
@@ -143,6 +147,17 @@ export class CharacterComponent implements OnInit {
     this.showCreate = false;
     this.form = this.emptyForm();
     this.formError = '';
+  }
+
+  quickCreateCharacter(): void {
+    this.formError = '';
+    this.characterService.createCharacter(this.dev.randomCharacter()).subscribe({
+      next: (c) => {
+        this.store.dispatch(new SetMyCharacter(c));
+        this.store.dispatch(new LoadMyCharacters());
+      },
+      error: (e) => { this.formError = 'Quick create failed: ' + (e?.message ?? 'Unknown error'); },
+    });
   }
 
   createCharacter(): void {

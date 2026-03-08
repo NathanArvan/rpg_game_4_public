@@ -7,6 +7,7 @@ import { Observable } from 'rxjs';
 import { GameHubService } from '../../core/services/game-hub.service';
 import { AuthService } from '../../core/services/auth.service';
 import { CampaignService } from '../../core/services/campaign.service';
+import { DevService } from '../../core/services/dev.service';
 import { JoinSession, SetGmSession } from '../../state/session/session.actions';
 import { ConnectedPlayer } from '../../state/session/session.model';
 import { SessionState } from '../../state/session/session.state';
@@ -32,6 +33,7 @@ import { GridComponent } from '../encounter/grid/grid.component';
         <input [(ngModel)]="password" type="password" placeholder="Password" />
         <button (click)="register()">Register</button>
         <button (click)="login()">Login</button>
+        <button (click)="quickRegister()" class="dev-btn">⚡ Quick Register</button>
         <p *ngIf="authError" class="error">{{ authError }}</p>
       </div>
 
@@ -124,6 +126,8 @@ import { GridComponent } from '../encounter/grid/grid.component';
     .join-code { font-size: 2em; font-weight: bold; letter-spacing: 0.2em; padding: 12px; background: #f0f0f0; border-radius: 4px; text-align: center; margin: 12px 0; }
     .encounter-btn { background: #8b0000; color: white; border: none; }
     .encounter-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .dev-btn { background: #d97706; color: white; border: none; }
+    .dev-btn:hover { background: #b45309; }
   `],
 })
 export class LobbyComponent implements OnInit {
@@ -161,7 +165,8 @@ export class LobbyComponent implements OnInit {
     public auth: AuthService,
     private hub: GameHubService,
     private campaignService: CampaignService,
-    private store: Store
+    private store: Store,
+    private dev: DevService
   ) {
     this.players$ = store.select(SessionState.connectedPlayers);
     this.characters$ = store.select(CharacterState.characters);
@@ -171,6 +176,16 @@ export class LobbyComponent implements OnInit {
   ngOnInit(): void {
     if (this.auth.isLoggedIn()) {
       this.store.dispatch(new LoadMyCharacters());
+    }
+  }
+
+  async quickRegister(): Promise<void> {
+    try {
+      this.authError = '';
+      const { username, displayName, password } = this.dev.randomUser();
+      await this.auth.register(username, displayName, password);
+    } catch {
+      this.authError = 'Quick register failed.';
     }
   }
 
