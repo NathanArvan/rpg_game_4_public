@@ -7,7 +7,7 @@ export class AuthService {
   private token: string | null = null;
 
   constructor(private http: HttpClient) {
-    this.token = localStorage.getItem('jwt');
+    this.token = sessionStorage.getItem('jwt');
   }
 
   async register(username: string, displayName: string, password: string): Promise<void> {
@@ -38,11 +38,11 @@ export class AuthService {
 
   logout(): void {
     this.token = null;
-    localStorage.removeItem('jwt');
+    sessionStorage.removeItem('jwt');
   }
 
   private setToken(token: string): void {
     this.token = token;
-    localStorage.setItem('jwt', token);
+    sessionStorage.setItem('jwt', token);
   }
 }
