@@ -7,12 +7,13 @@ import { withNgxsReduxDevtoolsPlugin } from '@ngxs/devtools-plugin';
 import { withNgxsLoggerPlugin } from '@ngxs/logger-plugin';
 import { routes } from './app.routes';
 import { SessionState } from './state/session/session.state';
+import { CharacterState } from './state/character/character.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideStore([SessionState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
+    provideStore([SessionState, CharacterState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
   ],
 };

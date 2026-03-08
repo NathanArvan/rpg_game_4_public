@@ -198,6 +198,44 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.ToTable("CampaignMembers");
                 });
 
+            modelBuilder.Entity("RpgGame.Domain.Entities.Character", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Class")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("CurrentHp")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxHp")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Race")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Characters");
+                });
+
             modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -358,6 +396,51 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Campaign");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.Character", b =>
+                {
+                    b.HasOne("RpgGame.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("RpgGame.Domain.Entities.BaseStats", "BaseStats", b1 =>
+                        {
+                            b1.Property<Guid>("CharacterId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<int>("Cha")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Con")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Dex")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Int")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Str")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Wis")
+                                .HasColumnType("integer");
+
+                            b1.HasKey("CharacterId");
+
+                            b1.ToTable("Characters");
+
+                            b1.ToJson("BaseStats");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CharacterId");
+                        });
+
+                    b.Navigation("BaseStats")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>

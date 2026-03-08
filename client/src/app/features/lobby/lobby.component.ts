@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
 import { GameHubService } from '../../core/services/game-hub.service';
@@ -13,7 +14,7 @@ import { SessionState } from '../../state/session/session.state';
 @Component({
   selector: 'app-lobby',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="lobby">
       <h1>RPG Game Lobby</h1>
@@ -32,6 +33,7 @@ import { SessionState } from '../../state/session/session.state';
         <div class="flow-tabs">
           <button [class.active]="activeFlow === 'player'" (click)="activeFlow = 'player'">Player</button>
           <button [class.active]="activeFlow === 'gm'" (click)="activeFlow = 'gm'">GM</button>
+          <a routerLink="/character">My Characters</a>
           <button class="logout-btn" (click)="auth.logout()">Logout</button>
         </div>
 

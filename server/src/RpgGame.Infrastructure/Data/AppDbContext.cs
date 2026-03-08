@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Campaign> Campaigns => Set<Campaign>();
     public DbSet<CampaignMember> CampaignMembers => Set<CampaignMember>();
     public DbSet<GameSession> GameSessions => Set<GameSession>();
+    public DbSet<Character> Characters => Set<Character>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -35,6 +36,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(s => s.Campaign)
              .WithMany(c => c.Sessions)
              .HasForeignKey(s => s.CampaignId);
+        });
+
+        builder.Entity<Character>(e =>
+        {
+            e.HasKey(c => c.Id);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.OwnsOne(c => c.BaseStats, b => b.ToJson());
         });
     }
 }
