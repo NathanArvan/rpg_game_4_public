@@ -154,7 +154,7 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
+            modelBuilder.Entity("RpgGame.Domain.Entities.Campaign", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -169,7 +169,59 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Sessions");
+                    b.ToTable("Campaigns");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.CampaignMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("CampaignId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("CampaignMembers");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("JoinCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignId");
+
+                    b.HasIndex("JoinCode")
+                        .IsUnique();
+
+                    b.ToTable("GameSessions");
                 });
 
             modelBuilder.Entity("RpgGame.Infrastructure.Identity.AppUser", b =>
@@ -289,6 +341,41 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.CampaignMember", b =>
+                {
+                    b.HasOne("RpgGame.Domain.Entities.Campaign", "Campaign")
+                        .WithMany("Members")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RpgGame.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campaign");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
+                {
+                    b.HasOne("RpgGame.Domain.Entities.Campaign", "Campaign")
+                        .WithMany("Sessions")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Campaign");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.Campaign", b =>
+                {
+                    b.Navigation("Members");
+
+                    b.Navigation("Sessions");
                 });
 #pragma warning restore 612, 618
         }

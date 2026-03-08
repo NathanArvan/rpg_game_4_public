@@ -1,12 +1,15 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { JoinSession, PlayerPresenceChanged } from './session.actions';
+import { JoinSession, PlayerPresenceChanged, SetGmSession } from './session.actions';
 import { ConnectedPlayer, SessionStateModel } from './session.model';
 
 @State<SessionStateModel>({
   name: 'session',
   defaults: {
-    sessionId: null,
+    campaignId: null,
+    gameSessionId: null,
+    joinCode: null,
+    isGm: false,
     status: 'disconnected',
     connectedPlayers: [],
   },
@@ -23,9 +26,24 @@ export class SessionState {
     return state.status;
   }
 
+  @Selector()
+  static joinCode(state: SessionStateModel): string | null {
+    return state.joinCode;
+  }
+
+  @Selector()
+  static isGm(state: SessionStateModel): boolean {
+    return state.isGm;
+  }
+
   @Action(JoinSession)
-  join(ctx: StateContext<SessionStateModel>, { sessionId }: JoinSession) {
-    ctx.patchState({ sessionId, status: 'connecting' });
+  join(ctx: StateContext<SessionStateModel>, { joinCode }: JoinSession) {
+    ctx.patchState({ joinCode, status: 'connecting' });
+  }
+
+  @Action(SetGmSession)
+  setGmSession(ctx: StateContext<SessionStateModel>, { campaignId, gameSessionId, joinCode }: SetGmSession) {
+    ctx.patchState({ campaignId, gameSessionId, joinCode, isGm: true });
   }
 
   @Action(PlayerPresenceChanged)

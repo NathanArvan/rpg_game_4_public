@@ -127,3 +127,4 @@ C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Api\obj\Debug\net8.0\refin
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Api\obj\Debug\net8.0\RpgGame.Api.pdb
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Api\obj\Debug\net8.0\RpgGame.Api.genruntimeconfig.cache
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Api\obj\Debug\net8.0\ref\RpgGame.Api.dll
+C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Api\obj\Debug\net8.0\RpgGame.Api.sourcelink.json

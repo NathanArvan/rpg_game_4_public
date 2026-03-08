@@ -2,7 +2,16 @@ import { ConnectedPlayer } from './session.model';
 
 export class JoinSession {
   static readonly type = '[Session] Join';
-  constructor(public sessionId: string, public displayName: string) {}
+  constructor(public joinCode: string, public displayName: string) {}
+}
+
+export class SetGmSession {
+  static readonly type = '[Session] Set GM Session';
+  constructor(
+    public campaignId: string,
+    public gameSessionId: string,
+    public joinCode: string
+  ) {}
 }
 
 export class PlayerPresenceChanged {

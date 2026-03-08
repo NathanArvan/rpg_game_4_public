@@ -36,7 +36,7 @@ export class GameHubService {
     }
   }
 
-  async joinSession(sessionId: string, displayName: string): Promise<void> {
-    await this.connection.invoke('JoinSession', sessionId, displayName);
+  async joinSession(joinCode: string, displayName: string): Promise<void> {
+    await this.connection.invoke('JoinSession', joinCode, displayName);
   }
 }

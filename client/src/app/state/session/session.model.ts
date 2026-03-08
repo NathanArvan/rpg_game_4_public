@@ -5,7 +5,10 @@ export interface ConnectedPlayer {
 }
 
 export interface SessionStateModel {
-  sessionId: string | null;
+  campaignId: string | null;
+  gameSessionId: string | null;
+  joinCode: string | null;
+  isGm: boolean;
   status: 'disconnected' | 'connecting' | 'connected';
   connectedPlayers: ConnectedPlayer[];
 }

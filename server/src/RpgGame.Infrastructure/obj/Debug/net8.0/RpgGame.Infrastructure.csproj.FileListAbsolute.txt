@@ -15,3 +15,4 @@ C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Infrastructure\obj\Debug\n
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Infrastructure\obj\Debug\net8.0\RpgGame.Infrastructure.pdb
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Infrastructure\obj\Debug\net8.0\RpgGame.Infrastructure.genruntimeconfig.cache
 C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Infrastructure\obj\Debug\net8.0\ref\RpgGame.Infrastructure.dll
+C:\Users\natha\Projects\rpg_game_4\server\src\RpgGame.Infrastructure\obj\Debug\net8.0\RpgGame.Infrastructure.sourcelink.json
