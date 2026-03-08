@@ -1,6 +1,7 @@
 export interface ConnectedPlayer {
   userId: string;
   displayName: string;
+  characterId: string | null;
   isOnline: boolean;
 }
 

@@ -2,6 +2,7 @@ import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
+import { EncounterStarted } from '../../state/encounter/encounter.actions';
 import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
@@ -23,6 +24,11 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new PlayerPresenceChanged(payload)));
     });
 
+    this.connection.on('EncounterStarted', (payload) => {
+      console.log('[hub] EncounterStarted received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new EncounterStarted(payload.encounterId, payload.combatants)));
+    });
+
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
     this.connection.onreconnected((id) => console.log('[hub] reconnected, connectionId:', id));
@@ -36,7 +42,11 @@ export class GameHubService {
     }
   }
 
-  async joinSession(joinCode: string, displayName: string): Promise<void> {
-    await this.connection.invoke('JoinSession', joinCode, displayName);
+  async joinSession(joinCode: string, displayName: string, characterId: string | null): Promise<void> {
+    await this.connection.invoke('JoinSession', joinCode, displayName, characterId);
+  }
+
+  async startEncounter(joinCode: string): Promise<void> {
+    await this.connection.invoke('StartEncounter', joinCode);
   }
 }

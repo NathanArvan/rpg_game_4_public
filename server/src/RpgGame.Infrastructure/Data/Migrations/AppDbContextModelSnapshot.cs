@@ -236,6 +236,71 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.ToTable("Characters");
                 });
 
+            modelBuilder.Entity("RpgGame.Domain.Entities.Encounter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("GameSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameSessionId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Active'");
+
+                    b.ToTable("Encounters");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.EncounterCombatant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CharacterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CharacterName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("DexModifier")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EncounterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Initiative")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("InitiativeRoll")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CharacterId");
+
+                    b.HasIndex("EncounterId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("EncounterCombatants");
+                });
+
             modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -443,6 +508,40 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("RpgGame.Domain.Entities.Encounter", b =>
+                {
+                    b.HasOne("RpgGame.Domain.Entities.GameSession", "GameSession")
+                        .WithMany()
+                        .HasForeignKey("GameSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("GameSession");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.EncounterCombatant", b =>
+                {
+                    b.HasOne("RpgGame.Domain.Entities.Character", null)
+                        .WithMany()
+                        .HasForeignKey("CharacterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RpgGame.Domain.Entities.Encounter", "Encounter")
+                        .WithMany("Combatants")
+                        .HasForeignKey("EncounterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RpgGame.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Encounter");
+                });
+
             modelBuilder.Entity("RpgGame.Domain.Entities.GameSession", b =>
                 {
                     b.HasOne("RpgGame.Domain.Entities.Campaign", "Campaign")
@@ -459,6 +558,11 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Navigation("Members");
 
                     b.Navigation("Sessions");
+                });
+
+            modelBuilder.Entity("RpgGame.Domain.Entities.Encounter", b =>
+                {
+                    b.Navigation("Combatants");
                 });
 #pragma warning restore 612, 618
         }

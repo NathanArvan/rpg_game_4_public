@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Store } from '@ngxs/store';
@@ -10,11 +10,16 @@ import { CampaignService } from '../../core/services/campaign.service';
 import { JoinSession, SetGmSession } from '../../state/session/session.actions';
 import { ConnectedPlayer } from '../../state/session/session.model';
 import { SessionState } from '../../state/session/session.state';
+import { CharacterState } from '../../state/character/character.state';
+import { CharacterSummary } from '../../state/character/character.model';
+import { LoadMyCharacters } from '../../state/character/character.actions';
+import { EncounterState } from '../../state/encounter/encounter.state';
+import { EncounterTrackerComponent } from '../encounter/encounter-tracker.component';
 
 @Component({
   selector: 'app-lobby',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, EncounterTrackerComponent],
   template: `
     <div class="lobby">
       <h1>RPG Game Lobby</h1>
@@ -42,6 +47,12 @@ import { SessionState } from '../../state/session/session.state';
           <h2>Join a Session</h2>
           <input [(ngModel)]="joinCode" placeholder="Join code (e.g. ABC123)" />
           <input [(ngModel)]="joinDisplayName" placeholder="Display name in session" />
+          <select [(ngModel)]="selectedCharacterId">
+            <option value="">-- Select a character --</option>
+            <option *ngFor="let c of characters$ | async" [value]="c.id">
+              {{ c.name }} ({{ c.race }} {{ c.class }}, Lv{{ c.level }})
+            </option>
+          </select>
           <button (click)="join()">Join Session</button>
           <p *ngIf="joinError" class="error">{{ joinError }}</p>
         </div>
@@ -68,6 +79,16 @@ import { SessionState } from '../../state/session/session.state';
             <button (click)="connectAsGm()">Connect to Session</button>
             <p *ngIf="gmError" class="error">{{ gmError }}</p>
           </div>
+
+          <div *ngIf="gmConnected">
+            <button
+              (click)="startEncounter()"
+              [disabled]="!(players$ | async)?.length"
+              class="encounter-btn">
+              Start Encounter
+            </button>
+            <p *ngIf="encounterError" class="error">{{ encounterError }}</p>
+          </div>
         </div>
       </div>
 
@@ -79,11 +100,13 @@ import { SessionState } from '../../state/session/session.state';
           </li>
         </ul>
       </div>
+
+      <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
     </div>
   `,
   styles: [`
     .lobby { max-width: 500px; margin: 40px auto; font-family: sans-serif; }
-    input { display: block; margin: 8px 0; padding: 8px; width: 100%; box-sizing: border-box; }
+    input, select { display: block; margin: 8px 0; padding: 8px; width: 100%; box-sizing: border-box; }
     button { margin: 4px 4px 4px 0; padding: 8px 16px; cursor: pointer; }
     .error { color: red; }
     .online-dot { color: green; }
@@ -93,10 +116,14 @@ import { SessionState } from '../../state/session/session.state';
     .flow-tabs button.active { background: #333; color: white; }
     .logout-btn { float: right; }
     .join-code { font-size: 2em; font-weight: bold; letter-spacing: 0.2em; padding: 12px; background: #f0f0f0; border-radius: 4px; text-align: center; margin: 12px 0; }
+    .encounter-btn { background: #8b0000; color: white; border: none; }
+    .encounter-btn:disabled { background: #ccc; cursor: not-allowed; }
   `],
 })
-export class LobbyComponent {
+export class LobbyComponent implements OnInit {
   players$: Observable<ConnectedPlayer[]>;
+  characters$: Observable<CharacterSummary[]>;
+  encounterActive$: Observable<boolean>;
 
   username = '';
   displayName = '';
@@ -108,6 +135,7 @@ export class LobbyComponent {
   // Player flow
   joinCode = '';
   joinDisplayName = '';
+  selectedCharacterId = '';
   joinError = '';
 
   // GM flow
@@ -115,7 +143,9 @@ export class LobbyComponent {
   gmCampaignId: string | null = null;
   gmJoinCode: string | null = null;
   gmGameSessionId: string | null = null;
+  gmConnected = false;
   gmError = '';
+  encounterError = '';
 
   constructor(
     public auth: AuthService,
@@ -124,6 +154,14 @@ export class LobbyComponent {
     private store: Store
   ) {
     this.players$ = store.select(SessionState.connectedPlayers);
+    this.characters$ = store.select(CharacterState.characters);
+    this.encounterActive$ = store.select(EncounterState.active);
+  }
+
+  ngOnInit(): void {
+    if (this.auth.isLoggedIn()) {
+      this.store.dispatch(new LoadMyCharacters());
+    }
   }
 
   async register(): Promise<void> {
@@ -149,11 +187,16 @@ export class LobbyComponent {
       this.joinError = 'Join code and display name are required.';
       return;
     }
+    if (!this.selectedCharacterId) {
+      this.joinError = 'Please select a character before joining.';
+      return;
+    }
     try {
       this.joinError = '';
-      this.store.dispatch(new JoinSession(this.joinCode, this.joinDisplayName));
+      const charId = this.selectedCharacterId || null;
+      this.store.dispatch(new JoinSession(this.joinCode, this.joinDisplayName, charId));
       await this.hub.connect();
-      await this.hub.joinSession(this.joinCode, this.joinDisplayName);
+      await this.hub.joinSession(this.joinCode, this.joinDisplayName, charId);
     } catch (e: any) {
       console.error('[join] error:', e);
       this.joinError = 'Failed to join session: ' + (e?.message ?? 'Unknown error');
@@ -190,10 +233,22 @@ export class LobbyComponent {
     try {
       this.gmError = '';
       await this.hub.connect();
-      await this.hub.joinSession(this.gmJoinCode, this.displayName || 'GM');
+      await this.hub.joinSession(this.gmJoinCode, this.displayName || 'GM', null);
+      this.gmConnected = true;
     } catch (e: any) {
       console.error('[gm connect] error:', e);
       this.gmError = 'Failed to connect: ' + (e?.message ?? 'Unknown error');
+    }
+  }
+
+  async startEncounter(): Promise<void> {
+    if (!this.gmJoinCode) return;
+    try {
+      this.encounterError = '';
+      await this.hub.startEncounter(this.gmJoinCode);
+    } catch (e: any) {
+      console.error('[startEncounter] error:', e);
+      this.encounterError = 'Failed to start encounter: ' + (e?.message ?? 'Unknown error');
     }
   }
 }

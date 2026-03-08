@@ -38,14 +38,14 @@ Schema separation: `campaigns` is the long-lived container (ruleset, members); `
 - [ ] NGXS: add `isGm`, `campaignId`, `gameSessionId` to `SessionState`; `SessionStarted` action
 - [ ] Angular: split LobbyComponent — GM flow (create campaign → start session → share code) vs. player flow (enter code → join)
 
-### ⬜ Slice 2: Character Sheet
+### ✅ Slice 2: Character Sheet
 Delivers: Players can create a character and view their own character sheet.
 
-- [ ] Postgres: `characters` table (name, race, class, level, base_stats JSONB, max_hp)
-- [ ] Redis: no new keys yet
-- [ ] SignalR: not needed — pure HTTP REST for character CRUD
-- [ ] NGXS: new `MyCharacterState` slice (characterId, name, currentHp, maxHp, base stats)
-- [ ] Angular: `/character` route + character sheet component
+- [x] Postgres: `characters` table (name, race, class, level, base_stats JSONB, max_hp)
+- [x] Redis: no new keys yet
+- [x] SignalR: not needed — pure HTTP REST for character CRUD
+- [x] NGXS: new `MyCharacterState` slice (characterId, name, currentHp, maxHp, base stats)
+- [x] Angular: `/character` route + character sheet component
 
 ### ⬜ Slice 3: Encounter Setup
 Delivers: GM starts an encounter; all players roll initiative; initiative tracker renders and updates live.

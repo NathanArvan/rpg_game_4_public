@@ -8,12 +8,13 @@ import { withNgxsLoggerPlugin } from '@ngxs/logger-plugin';
 import { routes } from './app.routes';
 import { SessionState } from './state/session/session.state';
 import { CharacterState } from './state/character/character.state';
+import { EncounterState } from './state/encounter/encounter.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideStore([SessionState, CharacterState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
+    provideStore([SessionState, CharacterState, EncounterState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
   ],
 };

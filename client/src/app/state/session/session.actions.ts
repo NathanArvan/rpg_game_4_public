@@ -2,7 +2,7 @@ import { ConnectedPlayer } from './session.model';
 
 export class JoinSession {
   static readonly type = '[Session] Join';
-  constructor(public joinCode: string, public displayName: string) {}
+  constructor(public joinCode: string, public displayName: string, public characterId: string | null) {}
 }
 
 export class SetGmSession {

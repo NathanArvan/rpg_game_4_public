@@ -13,6 +13,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CampaignMember> CampaignMembers => Set<CampaignMember>();
     public DbSet<GameSession> GameSessions => Set<GameSession>();
     public DbSet<Character> Characters => Set<Character>();
+    public DbSet<Encounter> Encounters => Set<Encounter>();
+    public DbSet<EncounterCombatant> EncounterCombatants => Set<EncounterCombatant>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -43,6 +45,23 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasKey(c => c.Id);
             e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
             e.OwnsOne(c => c.BaseStats, b => b.ToJson());
+        });
+
+        builder.Entity<Encounter>(e =>
+        {
+            e.Property(enc => enc.Status).HasConversion<string>();
+            e.HasOne(enc => enc.GameSession).WithMany()
+             .HasForeignKey(enc => enc.GameSessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(enc => enc.GameSessionId)
+             .HasFilter("\"Status\" = 'Active'").IsUnique();
+        });
+
+        builder.Entity<EncounterCombatant>(e =>
+        {
+            e.HasOne(c => c.Encounter).WithMany(enc => enc.Combatants)
+             .HasForeignKey(c => c.EncounterId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Character>().WithMany().HasForeignKey(c => c.CharacterId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
