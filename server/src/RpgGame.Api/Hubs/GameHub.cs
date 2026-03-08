@@ -15,7 +15,17 @@ public class GameHub : Hub
     private readonly AppDbContext _db;
     private readonly ILogger<GameHub> _logger;
 
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
     private record PlayerEntry(string DisplayName, string CharacterId);
+    private record CombatantRef(string Id, string UserId);
+    private record ActiveEncounterEntry(string EncounterId, string ActiveTurnCombatantId, List<CombatantRef> Combatants);
+    private record Position(int X, int Y);
+    private record MapEntry(int GridWidth, int GridHeight, Dictionary<string, Position> Positions, List<string> FogOfWar);
 
     public GameHub(IConnectionMultiplexer redis, AppDbContext db, ILogger<GameHub> logger)
     {
@@ -178,11 +188,38 @@ public class GameHub : Hub
         _db.Encounters.Add(encounter);
         await _db.SaveChangesAsync();
 
+        // Order by initiative descending
+        var ordered = combatants.OrderByDescending(c => c.Initiative).ToList();
+        var activeTurnCombatantId = ordered[0].Id.ToString();
+
+        // Auto-assign positions: combatant[i] → { x: i, y: 0 }
+        const int gridWidth = 20;
+        const int gridHeight = 20;
+        var positions = new Dictionary<string, Position>();
+        for (int i = 0; i < ordered.Count; i++)
+            positions[ordered[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), 0);
+
+        var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
+        var activeEncounterEntry = new ActiveEncounterEntry(
+            encounter.Id.ToString(),
+            activeTurnCombatantId,
+            ordered.Select(c => new CombatantRef(c.Id.ToString(), c.UserId)).ToList()
+        );
+
+        await redisDb.StringSetAsync(
+            $"session:{gameSession.Id}:active_encounter",
+            JsonSerializer.Serialize(activeEncounterEntry, _jsonOptions));
+        await redisDb.StringSetAsync(
+            $"encounter:map:{encounter.Id}",
+            JsonSerializer.Serialize(mapEntry, _jsonOptions));
+
         var payload = new
         {
             encounterId = encounter.Id,
-            combatants = combatants.OrderByDescending(c => c.Initiative).Select(c => new
+            activeTurnCombatantId,
+            combatants = ordered.Select(c => new
             {
+                id = c.Id,
                 userId = c.UserId,
                 characterId = c.CharacterId,
                 characterName = c.CharacterName,
@@ -190,11 +227,150 @@ public class GameHub : Hub
                 initiativeRoll = c.InitiativeRoll,
                 dexModifier = c.DexModifier,
             }),
+            map = new
+            {
+                gridWidth,
+                gridHeight,
+                positions = positions.ToDictionary(
+                    kv => kv.Key,
+                    kv => new { x = kv.Value.X, y = kv.Value.Y }),
+                fogOfWar = Array.Empty<object>(),
+            },
         };
 
         var groupName = $"session:{gameSession.Id}";
-        await redisDb.StringSetAsync($"session:{gameSession.Id}:active_encounter", JsonSerializer.Serialize(payload));
         await Clients.Group(groupName).SendAsync("EncounterStarted", payload);
+    }
+
+    public async Task MoveToken(string joinCode, string combatantId, int targetX, int targetY)
+    {
+        var userId = Context.UserIdentifier!;
+
+        var gameSession = await _db.GameSessions
+            .FirstOrDefaultAsync(s => s.JoinCode == joinCode);
+        if (gameSession is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Invalid join code." });
+            return;
+        }
+
+        var redisDb = _redis.GetDatabase();
+
+        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
+        if (!activeEncounterJson.HasValue)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "No active encounter." });
+            return;
+        }
+
+        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
+        if (activeEncounter is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Encounter data invalid." });
+            return;
+        }
+
+        var mapJson = await redisDb.StringGetAsync($"encounter:map:{activeEncounter.EncounterId}");
+        if (!mapJson.HasValue)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Map data not found." });
+            return;
+        }
+
+        var map = JsonSerializer.Deserialize<MapEntry>(mapJson!, _jsonOptions);
+        if (map is null)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Map data invalid." });
+            return;
+        }
+
+        // Verify caller owns this combatant
+        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId);
+        if (combatantRef is null || combatantRef.UserId != userId)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "You do not own this combatant." });
+            return;
+        }
+
+        // Verify it is their turn
+        if (combatantId != activeEncounter.ActiveTurnCombatantId)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "It is not your turn." });
+            return;
+        }
+
+        // Verify destination within grid bounds
+        if (targetX < 0 || targetX >= map.GridWidth || targetY < 0 || targetY >= map.GridHeight)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Target position is out of bounds." });
+            return;
+        }
+
+        // Verify Chebyshev distance ≤ 6
+        if (!map.Positions.TryGetValue(combatantId, out var current))
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Current position not found." });
+            return;
+        }
+
+        var chebyshev = Math.Max(Math.Abs(targetX - current.X), Math.Abs(targetY - current.Y));
+        if (chebyshev > 6)
+        {
+            await Clients.Caller.SendAsync("ActionRejected", new { reason = "Move exceeds maximum range (6 squares)." });
+            return;
+        }
+
+        // Update position
+        map.Positions[combatantId] = new Position(targetX, targetY);
+        await redisDb.StringSetAsync(
+            $"encounter:map:{activeEncounter.EncounterId}",
+            JsonSerializer.Serialize(map, _jsonOptions));
+
+        var groupName = $"session:{gameSession.Id}";
+        await Clients.Group(groupName).SendAsync("TokenMoved", new
+        {
+            combatantId,
+            x = targetX,
+            y = targetY,
+        });
+    }
+
+    public async Task EndTurn(string joinCode)
+    {
+        var userId = Context.UserIdentifier!;
+
+        var gameSession = await _db.GameSessions
+            .FirstOrDefaultAsync(s => s.JoinCode == joinCode);
+        if (gameSession is null)
+            throw new HubException("Invalid join code.");
+
+        var redisDb = _redis.GetDatabase();
+
+        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
+        if (!activeEncounterJson.HasValue)
+            throw new HubException("No active encounter.");
+
+        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
+        if (activeEncounter is null)
+            throw new HubException("Encounter data invalid.");
+
+        // Verify caller is the active combatant
+        var activeCombatant = activeEncounter.Combatants.FirstOrDefault(c => c.Id == activeEncounter.ActiveTurnCombatantId);
+        if (activeCombatant is null || activeCombatant.UserId != userId)
+            throw new HubException("It is not your turn.");
+
+        // Advance to next combatant (wrap around)
+        var currentIndex = activeEncounter.Combatants.FindIndex(c => c.Id == activeEncounter.ActiveTurnCombatantId);
+        var nextIndex = (currentIndex + 1) % activeEncounter.Combatants.Count;
+        var nextCombatantId = activeEncounter.Combatants[nextIndex].Id;
+
+        var updated = activeEncounter with { ActiveTurnCombatantId = nextCombatantId };
+        await redisDb.StringSetAsync(
+            $"session:{gameSession.Id}:active_encounter",
+            JsonSerializer.Serialize(updated, _jsonOptions));
+
+        var groupName = $"session:{gameSession.Id}";
+        await Clients.Group(groupName).SendAsync("TurnAdvanced", new { activeTurnCombatantId = nextCombatantId });
     }
 
     private static int DexModifier(int dex) => (int)Math.Floor((dex - 10) / 2.0);

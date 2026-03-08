@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { ClearEncounter, EncounterStarted } from './encounter.actions';
+import { ClearEncounter, EncounterStarted, TurnAdvanced } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
 
 @State<EncounterStateModel>({
@@ -9,6 +9,7 @@ import { Combatant, EncounterStateModel } from './encounter.model';
     encounterId: null,
     combatants: [],
     active: false,
+    activeTurnCombatantId: null,
   },
 })
 @Injectable()
@@ -23,13 +24,23 @@ export class EncounterState {
     return state.active;
   }
 
+  @Selector()
+  static activeTurnCombatantId(state: EncounterStateModel): string | null {
+    return state.activeTurnCombatantId;
+  }
+
   @Action(EncounterStarted)
-  encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
-    ctx.patchState({ encounterId, combatants, active: true });
+  encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants, activeTurnCombatantId }: EncounterStarted) {
+    ctx.patchState({ encounterId, combatants, active: true, activeTurnCombatantId });
+  }
+
+  @Action(TurnAdvanced)
+  turnAdvanced(ctx: StateContext<EncounterStateModel>, { activeTurnCombatantId }: TurnAdvanced) {
+    ctx.patchState({ activeTurnCombatantId });
   }
 
   @Action(ClearEncounter)
   clearEncounter(ctx: StateContext<EncounterStateModel>) {
-    ctx.patchState({ encounterId: null, combatants: [], active: false });
+    ctx.patchState({ encounterId: null, combatants: [], active: false, activeTurnCombatantId: null });
   }
 }

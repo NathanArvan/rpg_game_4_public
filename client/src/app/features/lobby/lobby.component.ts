@@ -15,11 +15,12 @@ import { CharacterSummary } from '../../state/character/character.model';
 import { LoadMyCharacters } from '../../state/character/character.actions';
 import { EncounterState } from '../../state/encounter/encounter.state';
 import { EncounterTrackerComponent } from '../encounter/encounter-tracker.component';
+import { GridComponent } from '../encounter/grid/grid.component';
 
 @Component({
   selector: 'app-lobby',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, EncounterTrackerComponent],
+  imports: [CommonModule, FormsModule, RouterLink, EncounterTrackerComponent, GridComponent],
   template: `
     <div class="lobby">
       <h1>RPG Game Lobby</h1>
@@ -102,10 +103,15 @@ import { EncounterTrackerComponent } from '../encounter/encounter-tracker.compon
       </div>
 
       <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
+      <app-grid
+        *ngIf="encounterActive$ | async"
+        [joinCode]="activeJoinCode"
+        [myUserId]="auth.getUserId()">
+      </app-grid>
     </div>
   `,
   styles: [`
-    .lobby { max-width: 500px; margin: 40px auto; font-family: sans-serif; }
+    .lobby { max-width: 900px; margin: 40px auto; font-family: sans-serif; }
     input, select { display: block; margin: 8px 0; padding: 8px; width: 100%; box-sizing: border-box; }
     button { margin: 4px 4px 4px 0; padding: 8px 16px; cursor: pointer; }
     .error { color: red; }
@@ -146,6 +152,10 @@ export class LobbyComponent implements OnInit {
   gmConnected = false;
   gmError = '';
   encounterError = '';
+
+  get activeJoinCode(): string {
+    return this.gmJoinCode ?? this.joinCode;
+  }
 
   constructor(
     public auth: AuthService,

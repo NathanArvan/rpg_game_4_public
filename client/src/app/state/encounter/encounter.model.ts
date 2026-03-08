@@ -1,4 +1,5 @@
 export interface Combatant {
+  id: string;
   userId: string;
   characterId: string;
   characterName: string;
@@ -11,4 +12,5 @@ export interface EncounterStateModel {
   encounterId: string | null;
   combatants: Combatant[];
   active: boolean;
+  activeTurnCombatantId: string | null;
 }

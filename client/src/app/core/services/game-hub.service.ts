@@ -2,7 +2,8 @@ import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
-import { EncounterStarted } from '../../state/encounter/encounter.actions';
+import { EncounterStarted, TurnAdvanced } from '../../state/encounter/encounter.actions';
+import { MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
 import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
@@ -26,7 +27,36 @@ export class GameHubService {
 
     this.connection.on('EncounterStarted', (payload) => {
       console.log('[hub] EncounterStarted received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new EncounterStarted(payload.encounterId, payload.combatants)));
+      this.ngZone.run(() => {
+        this.store.dispatch(new EncounterStarted(
+          payload.encounterId,
+          payload.combatants,
+          payload.activeTurnCombatantId
+        ));
+        if (payload.map) {
+          this.store.dispatch(new MapInitialized(
+            payload.encounterId,
+            payload.map.gridWidth,
+            payload.map.gridHeight,
+            payload.map.positions
+          ));
+        }
+      });
+    });
+
+    this.connection.on('TokenMoved', (payload) => {
+      console.log('[hub] TokenMoved received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new TokenMoved(payload.combatantId, payload.x, payload.y)));
+    });
+
+    this.connection.on('TurnAdvanced', (payload) => {
+      console.log('[hub] TurnAdvanced received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new TurnAdvanced(payload.activeTurnCombatantId)));
+    });
+
+    this.connection.on('ActionRejected', (payload) => {
+      console.warn('[hub] ActionRejected:', payload);
+      this.ngZone.run(() => this.store.dispatch(new ClearPendingMove()));
     });
 
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
@@ -48,5 +78,13 @@ export class GameHubService {
 
   async startEncounter(joinCode: string): Promise<void> {
     await this.connection.invoke('StartEncounter', joinCode);
+  }
+
+  async moveToken(joinCode: string, combatantId: string, x: number, y: number): Promise<void> {
+    await this.connection.invoke('MoveToken', joinCode, combatantId, x, y);
+  }
+
+  async endTurn(joinCode: string): Promise<void> {
+    await this.connection.invoke('EndTurn', joinCode);
   }
 }

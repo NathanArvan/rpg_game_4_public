@@ -36,6 +36,16 @@ export class AuthService {
     return !!this.token;
   }
 
+  getUserId(): string {
+    if (!this.token) return '';
+    try {
+      const payload = JSON.parse(atob(this.token.split('.')[1]));
+      return payload.sub ?? payload.nameid ?? '';
+    } catch {
+      return '';
+    }
+  }
+
   logout(): void {
     this.token = null;
     sessionStorage.removeItem('jwt');
