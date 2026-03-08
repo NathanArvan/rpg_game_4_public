@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Select, Store } from '@ngxs/store';
+import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
 import { GameHubService } from '../../core/services/game-hub.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -57,7 +57,7 @@ import { SessionState } from '../../state/session/session.state';
   `],
 })
 export class LobbyComponent {
-  @Select(SessionState.connectedPlayers) players$!: Observable<ConnectedPlayer[]>;
+  players$: Observable<ConnectedPlayer[]>;
 
   username = '';
   displayName = '';
@@ -71,7 +71,9 @@ export class LobbyComponent {
     public auth: AuthService,
     private hub: GameHubService,
     private store: Store
-  ) {}
+  ) {
+    this.players$ = store.select(SessionState.connectedPlayers);
+  }
 
   async register(): Promise<void> {
     try {
@@ -98,10 +100,15 @@ export class LobbyComponent {
     }
     try {
       this.joinError = '';
+      console.log('[join] dispatching JoinSession', this.sessionCode, this.joinDisplayName);
       this.store.dispatch(new JoinSession(this.sessionCode, this.joinDisplayName));
+      console.log('[join] calling hub.connect()');
       await this.hub.connect();
+      console.log('[join] hub connected, invoking JoinSession on server');
       await this.hub.joinSession(this.sessionCode, this.joinDisplayName);
+      console.log('[join] JoinSession invoked successfully');
     } catch (e: any) {
+      console.error('[join] error:', e);
       this.joinError = 'Failed to join session: ' + (e?.message ?? 'Unknown error');
     }
   }
