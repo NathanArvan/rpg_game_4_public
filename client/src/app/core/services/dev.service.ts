@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CharacterRequest } from './character.service';
+import { CreateCharacterRequest } from '../../contracts/api-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
 export class DevService {
@@ -26,7 +26,7 @@ export class DevService {
     };
   }
 
-  randomCharacter(): CharacterRequest {
+  randomCharacter(): CreateCharacterRequest {
     const con = this.roll(8, 18);
     const conMod = Math.floor((con - 10) / 2);
     const level = this.roll(1, 3);

@@ -1,32 +1,22 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { CharacterSummary } from '../../state/character/character.model';
-
-export interface CharacterRequest {
-  name: string;
-  race: string;
-  class: string;
-  level: number;
-  baseStats: { str: number; dex: number; con: number; int: number; wis: number; cha: number };
-  maxHp: number;
-  currentHp: number;
-}
+import { CharacterResponse, CreateCharacterRequest, UpdateCharacterRequest } from '../../contracts/api-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
 export class CharacterService {
   constructor(private http: HttpClient) {}
 
-  getMyCharacters(): Observable<CharacterSummary[]> {
-    return this.http.get<CharacterSummary[]>('/api/characters/mine');
+  getMyCharacters(): Observable<CharacterResponse[]> {
+    return this.http.get<CharacterResponse[]>('/api/characters/mine');
   }
 
-  createCharacter(req: CharacterRequest): Observable<CharacterSummary> {
-    return this.http.post<CharacterSummary>('/api/characters', req);
+  createCharacter(req: CreateCharacterRequest): Observable<CharacterResponse> {
+    return this.http.post<CharacterResponse>('/api/characters', req);
   }
 
-  updateCharacter(id: string, req: CharacterRequest): Observable<CharacterSummary> {
-    return this.http.put<CharacterSummary>(`/api/characters/${id}`, req);
+  updateCharacter(id: string, req: UpdateCharacterRequest): Observable<CharacterResponse> {
+    return this.http.put<CharacterResponse>(`/api/characters/${id}`, req);
   }
 
   deleteCharacter(id: string): Observable<void> {

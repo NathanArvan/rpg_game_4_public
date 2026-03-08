@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.Contracts.Campaigns;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
 
@@ -10,6 +11,7 @@ namespace RpgGame.Api.Controllers;
 [ApiController]
 [Route("campaigns")]
 [Authorize]
+[Produces("application/json")]
 public class CampaignsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -20,7 +22,8 @@ public class CampaignsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateCampaign([FromBody] CreateCampaignRequest request)
+    [ProducesResponseType(typeof(CreateCampaignResponse), 200, "application/json")]
+    public async Task<ActionResult<CreateCampaignResponse>> CreateCampaign([FromBody] CreateCampaignRequest request)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -45,11 +48,12 @@ public class CampaignsController : ControllerBase
         _db.CampaignMembers.Add(membership);
         await _db.SaveChangesAsync();
 
-        return Ok(new { id = campaign.Id });
+        return Ok(new CreateCampaignResponse(campaign.Id));
     }
 
     [HttpPost("{campaignId:guid}/sessions")]
-    public async Task<IActionResult> StartSession(Guid campaignId)
+    [ProducesResponseType(typeof(StartSessionResponse), 200, "application/json")]
+    public async Task<ActionResult<StartSessionResponse>> StartSession(Guid campaignId)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -78,7 +82,7 @@ public class CampaignsController : ControllerBase
         _db.GameSessions.Add(session);
         await _db.SaveChangesAsync();
 
-        return Ok(new { joinCode = session.JoinCode, gameSessionId = session.Id });
+        return Ok(new StartSessionResponse(session.JoinCode, session.Id));
     }
 
     private static string GenerateJoinCode()
@@ -93,4 +97,3 @@ public class CampaignsController : ControllerBase
     }
 }
 
-public record CreateCampaignRequest(string Name);

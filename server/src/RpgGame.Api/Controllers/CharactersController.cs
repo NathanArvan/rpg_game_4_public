@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.Contracts.Characters;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
 
@@ -9,6 +10,7 @@ namespace RpgGame.Api.Controllers;
 [ApiController]
 [Route("characters")]
 [Authorize]
+[Produces("application/json")]
 public class CharactersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -19,7 +21,8 @@ public class CharactersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateCharacter([FromBody] CreateCharacterRequest request)
+    [ProducesResponseType(typeof(CharacterResponse), 201, "application/json")]
+    public async Task<ActionResult<CharacterResponse>> CreateCharacter([FromBody] CreateCharacterRequest request)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -53,7 +56,8 @@ public class CharactersController : ControllerBase
     }
 
     [HttpGet("mine")]
-    public async Task<IActionResult> GetMyCharacters()
+    [ProducesResponseType(typeof(IEnumerable<CharacterResponse>), 200, "application/json")]
+    public async Task<ActionResult<IEnumerable<CharacterResponse>>> GetMyCharacters()
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -67,7 +71,8 @@ public class CharactersController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetCharacter(Guid id)
+    [ProducesResponseType(typeof(CharacterResponse), 200, "application/json")]
+    public async Task<ActionResult<CharacterResponse>> GetCharacter(Guid id)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -80,7 +85,8 @@ public class CharactersController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> UpdateCharacter(Guid id, [FromBody] UpdateCharacterRequest request)
+    [ProducesResponseType(typeof(CharacterResponse), 200, "application/json")]
+    public async Task<ActionResult<CharacterResponse>> UpdateCharacter(Guid id, [FromBody] UpdateCharacterRequest request)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
@@ -135,7 +141,3 @@ public class CharactersController : ControllerBase
     );
 }
 
-public record BaseStatsDto(int Str, int Dex, int Con, int Int, int Wis, int Cha);
-public record CreateCharacterRequest(string Name, string Race, string Class, int Level, BaseStatsDto BaseStats, int MaxHp, int CurrentHp);
-public record UpdateCharacterRequest(string Name, string Race, string Class, int Level, BaseStatsDto BaseStats, int MaxHp, int CurrentHp);
-public record CharacterResponse(Guid Id, string Name, string Race, string Class, int Level, BaseStatsDto BaseStats, int MaxHp, int CurrentHp);

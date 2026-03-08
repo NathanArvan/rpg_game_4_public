@@ -1,22 +1,7 @@
-export interface BaseStats {
-  str: number;
-  dex: number;
-  con: number;
-  int: number;
-  wis: number;
-  cha: number;
-}
+import { CharacterResponse } from '../../contracts/api-contracts.generated';
 
-export interface CharacterSummary {
-  id: string;
-  name: string;
-  race: string;
-  class: string;
-  level: number;
-  maxHp: number;
-  currentHp: number;
-  baseStats: BaseStats;
-}
+// CharacterSummary is an alias for the generated wire type so existing state code keeps working
+export type CharacterSummary = CharacterResponse;
 
 export interface CharacterStateModel {
   characters: CharacterSummary[];

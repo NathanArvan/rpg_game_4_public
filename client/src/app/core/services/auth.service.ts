@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { AuthResponse } from '../../contracts/api-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -12,20 +13,16 @@ export class AuthService {
 
   async register(username: string, displayName: string, password: string): Promise<void> {
     const res = await firstValueFrom(
-      this.http.post<{ token: string }>('/api/auth/register', {
-        username,
-        displayName,
-        password,
-      })
+      this.http.post<AuthResponse>('/api/auth/register', { username, displayName, password })
     );
-    this.setToken(res.token);
+    this.setToken(res.token!);
   }
 
   async login(username: string, password: string): Promise<void> {
     const res = await firstValueFrom(
-      this.http.post<{ token: string }>('/api/auth/token', { username, password })
+      this.http.post<AuthResponse>('/api/auth/token', { username, password })
     );
-    this.setToken(res.token);
+    this.setToken(res.token!);
   }
 
   getToken(): string {

@@ -4,12 +4,14 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using RpgGame.Api.Contracts.Auth;
 using RpgGame.Infrastructure.Identity;
 
 namespace RpgGame.Api.Controllers;
 
 [ApiController]
 [Route("auth")]
+[Produces("application/json")]
 public class AuthController : ControllerBase
 {
     private readonly UserManager<AppUser> _users;
@@ -22,24 +24,26 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest req)
+    [ProducesResponseType(typeof(AuthResponse), 200, "application/json")]
+    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req)
     {
         var user = new AppUser { UserName = req.Username, DisplayName = req.DisplayName };
         var result = await _users.CreateAsync(user, req.Password);
         if (!result.Succeeded)
             return BadRequest(result.Errors);
 
-        return Ok(new { token = BuildToken(user) });
+        return Ok(new AuthResponse(BuildToken(user)));
     }
 
     [HttpPost("token")]
-    public async Task<IActionResult> Token([FromBody] TokenRequest req)
+    [ProducesResponseType(typeof(AuthResponse), 200, "application/json")]
+    public async Task<ActionResult<AuthResponse>> Token([FromBody] TokenRequest req)
     {
         var user = await _users.FindByNameAsync(req.Username);
         if (user is null || !await _users.CheckPasswordAsync(user, req.Password))
             return Unauthorized();
 
-        return Ok(new { token = BuildToken(user) });
+        return Ok(new AuthResponse(BuildToken(user)));
     }
 
     private string BuildToken(AppUser user)
@@ -65,5 +69,3 @@ public class AuthController : ControllerBase
     }
 }
 
-public record RegisterRequest(string Username, string DisplayName, string Password);
-public record TokenRequest(string Username, string Password);

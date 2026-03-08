@@ -4,7 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
-import { CharacterService, CharacterRequest } from '../../core/services/character.service';
+import { CharacterService } from '../../core/services/character.service';
+import { CreateCharacterRequest } from '../../contracts/api-contracts.generated';
+
+interface CharacterForm {
+  name: string; race: string; class: string; level: number;
+  maxHp: number; currentHp: number;
+  baseStats: { str: number; dex: number; con: number; int: number; wis: number; cha: number };
+}
 import { DevService } from '../../core/services/dev.service';
 import { LoadMyCharacters, SelectCharacter, SetMyCharacter } from '../../state/character/character.actions';
 import { CharacterSummary } from '../../state/character/character.model';
@@ -113,7 +120,7 @@ export class CharacterComponent implements OnInit {
   showCreate = false;
   formError = '';
 
-  form: CharacterRequest = this.emptyForm();
+  form: CharacterForm = this.emptyForm();
 
   constructor(private store: Store, private characterService: CharacterService, private dev: DevService) {
     this.characters$ = store.select(CharacterState.characters);
@@ -127,13 +134,16 @@ export class CharacterComponent implements OnInit {
 
   selectCharacter(c: CharacterSummary): void {
     this.form = {
-      name: c.name,
-      race: c.race,
-      class: c.class,
-      level: c.level,
-      maxHp: c.maxHp,
-      currentHp: c.currentHp,
-      baseStats: { ...c.baseStats },
+      name: c.name ?? '',
+      race: c.race ?? '',
+      class: c.class ?? '',
+      level: c.level ?? 1,
+      maxHp: c.maxHp ?? 10,
+      currentHp: c.currentHp ?? 10,
+      baseStats: {
+        str: c.baseStats?.str ?? 10, dex: c.baseStats?.dex ?? 10, con: c.baseStats?.con ?? 10,
+        int: c.baseStats?.int ?? 10, wis: c.baseStats?.wis ?? 10, cha: c.baseStats?.cha ?? 10,
+      },
     };
     this.formError = '';
     this.store.dispatch(new SelectCharacter(c));
@@ -172,7 +182,8 @@ export class CharacterComponent implements OnInit {
     });
   }
 
-  saveCharacter(id: string): void {
+  saveCharacter(id: string | undefined): void {
+    if (!id) return;
     this.formError = '';
     this.characterService.updateCharacter(id, this.form).subscribe({
       next: (c) => { this.store.dispatch(new SetMyCharacter(c)); },
@@ -180,7 +191,8 @@ export class CharacterComponent implements OnInit {
     });
   }
 
-  deleteCharacter(id: string): void {
+  deleteCharacter(id: string | undefined): void {
+    if (!id) return;
     this.characterService.deleteCharacter(id).subscribe({
       next: () => {
         this.store.dispatch(new SelectCharacter(null));
@@ -190,7 +202,7 @@ export class CharacterComponent implements OnInit {
     });
   }
 
-  private emptyForm(): CharacterRequest {
+  private emptyForm(): CharacterForm {
     return {
       name: '',
       race: '',

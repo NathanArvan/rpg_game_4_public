@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
 import { AttackResolved, ClearEncounter, CombatantDefeated, EncounterStarted, TurnAdvanced } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
+import { CombatantDto } from '../../contracts/hub-contracts';
 
 @State<EncounterStateModel>({
   name: 'encounter',
@@ -31,7 +32,7 @@ export class EncounterState {
 
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants, activeTurnCombatantId }: EncounterStarted) {
-    const mapped = combatants.map(c => ({ ...c, isDefeated: false }));
+    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false }));
     ctx.patchState({ encounterId, combatants: mapped, active: true, activeTurnCombatantId });
   }
 

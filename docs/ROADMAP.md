@@ -65,14 +65,14 @@ Delivers: Player moves token on grid; all clients see the move in real time. Fir
 - [ ] NGXS: new `MapState` slice (gridWidth/Height, positions, fogOfWar, pendingMovePath for local optimistic preview)
 - [ ] Angular: grid component (CSS Grid); token rendering; optimistic move + rollback on `ActionRejected`
 
-### ⬜ Slice 5: Basic Attack
+### ✅ Slice 5: Basic Attack
 Delivers: Player declares attack → dice roll → HP updates → feed entry appears for all clients. Full four-layer exercise under real game logic.
 
-- [ ] Postgres: `game_events` table (append-only log, written async after each resolved action)
-- [ ] Redis: `character:live:{character_id}` (currentHp, conditions); `monster:live:{encounter_id}:{combatant_id}` (currentHp, isDefeated)
-- [ ] SignalR: `DeclareAttack` → `AttackResolved`, `CombatantDefeated` broadcasts; `ActionRejected` for invalid attempts
-- [ ] NGXS: update `EncounterState` monster HP; new `FeedState` slice (entries[], unreadCount)
-- [ ] Angular: attack action buttons on active turn; feed/log panel showing roll results
+- [x] Postgres: `game_events` table (append-only log, written async after each resolved action)
+- [x] Redis: `character:live:{character_id}` (currentHp, conditions); `monster:live:{encounter_id}:{combatant_id}` (currentHp, isDefeated)
+- [x] SignalR: `DeclareAttack` → `AttackResolved`, `CombatantDefeated` broadcasts; `ActionRejected` for invalid attempts
+- [x] NGXS: update `EncounterState` monster HP; new `FeedState` slice (entries[], unreadCount)
+- [x] Angular: attack action buttons on active turn; feed/log panel showing roll results
 
 ---
 

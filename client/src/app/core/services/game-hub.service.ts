@@ -6,6 +6,15 @@ import { AttackResolved, CombatantDefeated, EncounterStarted, TurnAdvanced } fro
 import { MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
 import { AddFeedEntry } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
+import {
+  ActionRejectedPayload,
+  AttackResolvedPayload,
+  CombatantDefeatedPayload,
+  EncounterStartedPayload,
+  PlayerPresenceChangedPayload,
+  TokenMovedPayload,
+  TurnAdvancedPayload,
+} from '../../contracts/hub-contracts';
 
 @Injectable({ providedIn: 'root' })
 export class GameHubService {
@@ -21,12 +30,12 @@ export class GameHubService {
       .withAutomaticReconnect()
       .build();
 
-    this.connection.on('PlayerPresenceChanged', (payload) => {
+    this.connection.on('PlayerPresenceChanged', (payload: PlayerPresenceChangedPayload) => {
       console.log('[hub] PlayerPresenceChanged received:', payload);
       this.ngZone.run(() => this.store.dispatch(new PlayerPresenceChanged(payload)));
     });
 
-    this.connection.on('EncounterStarted', (payload) => {
+    this.connection.on('EncounterStarted', (payload: EncounterStartedPayload) => {
       console.log('[hub] EncounterStarted received:', payload);
       this.ngZone.run(() => {
         this.store.dispatch(new EncounterStarted(
@@ -45,22 +54,22 @@ export class GameHubService {
       });
     });
 
-    this.connection.on('TokenMoved', (payload) => {
+    this.connection.on('TokenMoved', (payload: TokenMovedPayload) => {
       console.log('[hub] TokenMoved received:', payload);
       this.ngZone.run(() => this.store.dispatch(new TokenMoved(payload.combatantId, payload.x, payload.y)));
     });
 
-    this.connection.on('TurnAdvanced', (payload) => {
+    this.connection.on('TurnAdvanced', (payload: TurnAdvancedPayload) => {
       console.log('[hub] TurnAdvanced received:', payload);
       this.ngZone.run(() => this.store.dispatch(new TurnAdvanced(payload.activeTurnCombatantId)));
     });
 
-    this.connection.on('ActionRejected', (payload) => {
+    this.connection.on('ActionRejected', (payload: ActionRejectedPayload) => {
       console.warn('[hub] ActionRejected:', payload);
       this.ngZone.run(() => this.store.dispatch(new ClearPendingMove()));
     });
 
-    this.connection.on('AttackResolved', (payload) => {
+    this.connection.on('AttackResolved', (payload: AttackResolvedPayload) => {
       console.log('[hub] AttackResolved received:', payload);
       this.ngZone.run(() => {
         this.store.dispatch(new AttackResolved(payload.targetId, payload.targetNewHp, payload.feedText));
@@ -68,7 +77,7 @@ export class GameHubService {
       });
     });
 
-    this.connection.on('CombatantDefeated', (payload) => {
+    this.connection.on('CombatantDefeated', (payload: CombatantDefeatedPayload) => {
       console.log('[hub] CombatantDefeated received:', payload);
       this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
     });

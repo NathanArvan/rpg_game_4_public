@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RpgGame.Api.Hubs;
+using RpgGame.Api.Swagger;
 using RpgGame.Infrastructure.Data;
 using RpgGame.Infrastructure.Identity;
 using StackExchange.Redis;
@@ -63,14 +64,22 @@ builder.Services.AddAuthentication(o =>
 builder.Services.AddAuthorization();
 
 // Redis connection multiplexer (for live state keys)
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    ConnectionMultiplexer.Connect(config["Redis:ConnectionString"]!));
+// abortConnect=false lets the swagger CLI start the app without a running Redis instance
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+{
+    var connStr = config["Redis:ConnectionString"]!;
+    var opts = ConfigurationOptions.Parse(connStr);
+    opts.AbortOnConnectFail = false;
+    return ConnectionMultiplexer.Connect(opts);
+});
 
 // SignalR with Redis backplane
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(config["Redis:ConnectionString"]!);
 
 builder.Services.AddControllers();
+
+builder.Services.AddSwaggerGen(c => c.OperationFilter<ResponseTypeOperationFilter>());
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:4200")
@@ -80,14 +89,29 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 
 var app = builder.Build();
 
-// Auto-migrate on startup
+// Auto-migrate on startup (skipped silently if DB is unreachable, e.g. during swagger spec generation)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    try
+    {
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex) when (!app.Environment.IsProduction())
+    {
+        var logger = scope.ServiceProvider.GetService<ILogger<Program>>();
+        logger?.LogWarning("DB migration skipped (DB unavailable): {Message}", ex.Message);
+    }
 }
 
 app.UseCors();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 

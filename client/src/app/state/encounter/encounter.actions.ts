@@ -1,10 +1,10 @@
-import { Combatant } from './encounter.model';
+import { CombatantDto } from '../../contracts/hub-contracts';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
   constructor(
     public encounterId: string,
-    public combatants: Combatant[],
+    public combatants: CombatantDto[],
     public activeTurnCombatantId: string
   ) {}
 }

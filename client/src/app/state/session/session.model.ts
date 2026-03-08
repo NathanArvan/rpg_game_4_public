@@ -1,9 +1,7 @@
-export interface ConnectedPlayer {
-  userId: string;
-  displayName: string;
-  characterId: string | null;
-  isOnline: boolean;
-}
+import { PlayerPresenceChangedPayload } from '../../contracts/hub-contracts';
+
+// ConnectedPlayer is an alias for the hub wire type so existing state code keeps working
+export type ConnectedPlayer = PlayerPresenceChangedPayload;
 
 export interface SessionStateModel {
   campaignId: string | null;

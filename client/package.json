@@ -6,7 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "codegen": "npx swagger-typescript-api generate -p ../contracts/openapi.json -o src/app/contracts --name api-contracts.generated.ts --no-client"
   },
   "private": true,
   "dependencies": {
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "^19.2.22",
+    "swagger-typescript-api": "^13.*",
     "@angular/cli": "^19.2.22",
     "@angular/compiler-cli": "^19.2.0",
     "@types/jasmine": "~5.1.0",
