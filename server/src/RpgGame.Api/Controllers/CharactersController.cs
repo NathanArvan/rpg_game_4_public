@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RpgGame.Api.Contracts.Characters;
+using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
 
@@ -14,18 +15,19 @@ namespace RpgGame.Api.Controllers;
 public class CharactersController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ICurrentUserAccessor _user;
 
-    public CharactersController(AppDbContext db)
+    public CharactersController(AppDbContext db, ICurrentUserAccessor user)
     {
         _db = db;
+        _user = user;
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(CharacterResponse), 201, "application/json")]
     public async Task<ActionResult<CharacterResponse>> CreateCharacter([FromBody] CreateCharacterRequest request)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var character = new Character
@@ -59,8 +61,7 @@ public class CharactersController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<CharacterResponse>), 200, "application/json")]
     public async Task<ActionResult<IEnumerable<CharacterResponse>>> GetMyCharacters()
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var characters = await _db.Characters
@@ -74,8 +75,7 @@ public class CharactersController : ControllerBase
     [ProducesResponseType(typeof(CharacterResponse), 200, "application/json")]
     public async Task<ActionResult<CharacterResponse>> GetCharacter(Guid id)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
@@ -88,8 +88,7 @@ public class CharactersController : ControllerBase
     [ProducesResponseType(typeof(CharacterResponse), 200, "application/json")]
     public async Task<ActionResult<CharacterResponse>> UpdateCharacter(Guid id, [FromBody] UpdateCharacterRequest request)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
@@ -116,8 +115,7 @@ public class CharactersController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCharacter(Guid id)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);

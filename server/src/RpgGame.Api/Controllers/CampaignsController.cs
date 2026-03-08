@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RpgGame.Api.Contracts.Campaigns;
+using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
 
@@ -15,18 +16,19 @@ namespace RpgGame.Api.Controllers;
 public class CampaignsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ICurrentUserAccessor _user;
 
-    public CampaignsController(AppDbContext db)
+    public CampaignsController(AppDbContext db, ICurrentUserAccessor user)
     {
         _db = db;
+        _user = user;
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(CreateCampaignResponse), 200, "application/json")]
     public async Task<ActionResult<CreateCampaignResponse>> CreateCampaign([FromBody] CreateCampaignRequest request)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var campaign = new Campaign
@@ -55,8 +57,7 @@ public class CampaignsController : ControllerBase
     [ProducesResponseType(typeof(StartSessionResponse), 200, "application/json")]
     public async Task<ActionResult<StartSessionResponse>> StartSession(Guid campaignId)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
+        var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
         var member = await _db.CampaignMembers

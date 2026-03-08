@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RpgGame.Api.Hubs;
+using RpgGame.Api.Services;
 using RpgGame.Api.Swagger;
 using RpgGame.Infrastructure.Data;
 using RpgGame.Infrastructure.Identity;
@@ -76,6 +77,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 // SignalR with Redis backplane
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(config["Redis:ConnectionString"]!);
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();
 
 builder.Services.AddControllers();
 
