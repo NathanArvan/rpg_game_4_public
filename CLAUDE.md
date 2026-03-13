@@ -4,12 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### Full Stack (Docker)
+### Full Stack (Docker — local dev)
 ```bash
 docker-compose up --build        # Start all services
 docker-compose up                # Start without rebuilding
 docker-compose down              # Stop all services
 ```
+
+### Production (Docker Compose)
+```bash
+# Runs on the DigitalOcean droplet at /opt/rpg/
+docker compose -f docker-compose.prod.yml up -d   # Start/update
+docker image prune -f                              # Clean old images
+```
+Images are pulled from GHCR (`ghcr.io/nathanarvan/rpg-api:latest`, `ghcr.io/nathanarvan/rpg-client:latest`).
+Copy `.env.example` → `.env` and fill in secrets before first run.
 
 ### Client (Angular 19)
 ```bash
@@ -25,11 +34,14 @@ npm test                         # Karma/Jasmine unit tests
 cd server
 dotnet build
 dotnet run --project src/RpgGame.Api
-dotnet test                      # Run tests (no test projects yet)
+# No .NET test projects — tests are on the Angular side
 
 # EF migrations (from server/src/RpgGame.Infrastructure/)
 dotnet ef migrations add <Name> --startup-project ../RpgGame.Api
 dotnet ef database update --startup-project ../RpgGame.Api
+
+# Regenerate OpenAPI spec (requires swashbuckle CLI, installed as dotnet tool)
+dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net8.0/RpgGame.Api.dll v1
 ```
 
 ## Architecture
@@ -119,6 +131,19 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 - **DevService** — randomUser(), randomCharacter() helpers for testing
 - **AuthInterceptor** — adds Bearer token to all HTTP requests
 
+### Shared Contracts
+- `contracts/openapi.json` — OpenAPI 3 spec generated from Swagger; source of truth for REST DTOs
+- `client/src/app/contracts/api-contracts.generated.ts` — TypeScript types generated from `openapi.json`
+- `client/src/app/contracts/hub-contracts.ts` — **Hand-maintained** SignalR payload interfaces mirroring `server/src/RpgGame.Api/Contracts/Hub/`. Update both sides when hub payloads change.
+
+### Server Services (`RpgGame.Api/Services/`)
+- **ICurrentUserAccessor / HttpCurrentUserAccessor** — abstracts `HttpContext.User` claims into `UserId`/`UserName`; injected into controllers instead of accessing `User` directly
+
+### Swagger / OpenAPI
+- `Swashbuckle.AspNetCore` generates docs at `/swagger` in Development
+- `ResponseTypeOperationFilter` reads `[ProducesResponseType]` attributes to populate response schemas
+- `swashbuckle.aspnetcore.cli` installed as a local dotnet tool (`server/.config/dotnet-tools.json`) for spec generation
+
 ### Components
 - **LobbyComponent** (`/`) — Auth (register/login/quick-register), GM flow (create campaign → start session → start encounter), Player flow (join by code + character select), player list, hosts EncounterTrackerComponent + GridComponent + FeedComponent
 - **CharacterComponent** (`/character`) — Character list + CRUD form; Quick Create Random button
@@ -133,11 +158,13 @@ The Angular container proxies:
 - All other routes → SPA fallback (`index.html`)
 
 ### Environment Variables
-Loaded from `.env` at project root:
+Loaded from `.env` at project root (see `.env.example`):
 - `DB_USER`, `DB_PASSWORD` — PostgreSQL credentials
 - `JWT_SECRET` — must be ≥32 chars for HMAC-SHA256
 
 ### Port Mapping
+
+**Local dev (`docker-compose.yml`):**
 | Service | External | Internal |
 |---------|----------|----------|
 | Client (Nginx) | 4200 | 80 |
@@ -145,5 +172,29 @@ Loaded from `.env` at project root:
 | PostgreSQL | 5432 | 5432 |
 | Redis | 6379 | 6379 |
 
+**Production (`docker-compose.prod.yml`) — bound to 127.0.0.1 (behind reverse proxy):**
+| Service | External | Internal |
+|---------|----------|----------|
+| Client (Nginx) | 4201 | 80 |
+| API (.NET) | 5001 | 8080 |
+| PostgreSQL | 5433 | 5432 |
+| Redis | 6379 | 6379 |
+
 ### EF Migrations
 Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 5 migrations through `AddGameEvents`.
+
+### CI/CD (GitHub Actions)
+`.github/workflows/deploy.yml` triggers on push to `master`:
+1. **build-and-push** — builds API and client Docker images, pushes to GHCR (`ghcr.io/nathanarvan/rpg-api:latest`, `ghcr.io/nathanarvan/rpg-client:latest`)
+2. **deploy** — SSHs into the DigitalOcean droplet (`/opt/rpg/`), writes `.env` from GitHub Secrets, pulls latest images, runs `docker compose -f docker-compose.prod.yml up -d`
+
+**Required GitHub Secrets:** `DROPLET_HOST`, `DROPLET_SSH_KEY`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `GHCR_PAT`
+
+### Unit Tests (Angular)
+Karma/Jasmine specs covering all four NGXS state slices:
+- `state/encounter/encounter.state.spec.ts`
+- `state/feed/feed.state.spec.ts`
+- `state/map/map.state.spec.ts`
+- `state/session/session.state.spec.ts`
+
+Run with `npm test` from the `client/` directory.
