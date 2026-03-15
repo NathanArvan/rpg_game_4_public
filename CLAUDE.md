@@ -183,6 +183,16 @@ Loaded from `.env` at project root (see `.env.example`):
 ### EF Migrations
 Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 5 migrations through `AddGameEvents`.
 
+### Branching Convention
+
+```
+feat/<short-description>     e.g. feat/death-saves
+refactor/<short-description> e.g. refactor/extract-redis-game-state
+fix/<short-description>      e.g. fix/initiative-roll-bug
+```
+
+All branches target `master`. Branch protection requires CI to pass and a PR before merging (no direct pushes).
+
 ### CI/CD (GitHub Actions)
 `.github/workflows/deploy.yml` triggers on push to `master`:
 1. **build-and-push** — builds API and client Docker images, pushes to GHCR (`ghcr.io/nathanarvan/rpg-api:latest`, `ghcr.io/nathanarvan/rpg-client:latest`)
