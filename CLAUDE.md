@@ -87,7 +87,7 @@ Clean Architecture with three projects:
 ### Real-Time (SignalR + Redis)
 - Hub at `/hubs/game`, requires `[Authorize]`
 - Redis serves dual purpose: SignalR backplane AND live state
-- Group naming: `session:{joinCode}`
+- Group naming: `session:{sessionId}` (UUID, not the join code)
 
 **Hub methods (client → server):**
 
@@ -138,6 +138,14 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 
 ### Server Services (`RpgGame.Api/Services/`)
 - **ICurrentUserAccessor / HttpCurrentUserAccessor** — abstracts `HttpContext.User` claims into `UserId`/`UserName`; injected into controllers instead of accessing `User` directly
+- **IRedisGameState / RedisGameState** — Singleton; encapsulates all Redis reads/writes (players hash, active encounter JSON, map JSON, character live HP hash, defeated set). All hub logic goes through this interface rather than touching `IConnectionMultiplexer` directly.
+- **ISessionService / SessionService** — Scoped; handles `JoinSession` logic (DB lookup, character validation, campaign member auto-join, Redis player upsert)
+- **IEncounterService / EncounterService** — Scoped; handles `StartEncounter` (initiative rolls via `CombatDice`, DB persist, Redis seed), `MoveToken` (bounds + Chebyshev validation), `EndTurn` (advance turn or end encounter). Returns sealed `EndTurnResult` union (`TurnAdvancedResult` | `EncounterEndedResult`).
+- **ICombatService / CombatService** — Scoped; handles `DeclareAttack` (turn validation, damage roll via `CombatDice`, Redis HP decrement, DB GameEvent log, defeated check)
+- **CombatDice** — `internal static` helper; `DexModifier`, `RollD20`, `RollDamage`, `DamageDiceString`
+- **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
+
+`GameHub` is a thin orchestrator (≤20 lines per method) — all business logic lives in the three scoped services above.
 
 ### Swagger / OpenAPI
 - `Swashbuckle.AspNetCore` generates docs at `/swagger` in Development
