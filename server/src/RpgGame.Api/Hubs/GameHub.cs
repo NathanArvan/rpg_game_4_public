@@ -2,9 +2,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using RpgGame.Api.Contracts.Hub;
+using RpgGame.Api.Models;
+using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
-using StackExchange.Redis;
 using System.Text.Json;
 
 namespace RpgGame.Api.Hubs;
@@ -12,25 +13,13 @@ namespace RpgGame.Api.Hubs;
 [Authorize]
 public class GameHub : Hub
 {
-    private readonly IConnectionMultiplexer _redis;
+    private readonly IRedisGameState _redisState;
     private readonly AppDbContext _db;
     private readonly ILogger<GameHub> _logger;
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
+    public GameHub(IRedisGameState redisState, AppDbContext db, ILogger<GameHub> logger)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
-    private record PlayerEntry(string DisplayName, string CharacterId);
-    private record CombatantRef(string Id, string UserId);
-    private record ActiveEncounterEntry(string EncounterId, string ActiveTurnCombatantId, List<CombatantRef> Combatants);
-    private record Position(int X, int Y);
-    private record MapEntry(int GridWidth, int GridHeight, Dictionary<string, Position> Positions, List<string> FogOfWar);
-
-    public GameHub(IConnectionMultiplexer redis, AppDbContext db, ILogger<GameHub> logger)
-    {
-        _redis = redis;
+        _redisState = redisState;
         _db = db;
         _logger = logger;
     }
@@ -87,24 +76,18 @@ public class GameHub : Hub
         var groupName = $"session:{gameSession.Id}";
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
 
-        var redisDb = _redis.GetDatabase();
-        var redisKey = $"session:{gameSession.Id}:players";
-
         // Send existing players to the joining client
-        var existingPlayers = await redisDb.HashGetAllAsync(redisKey);
-        foreach (var entry in existingPlayers)
+        var existingPlayers = await _redisState.GetPlayersAsync(gameSession.Id.ToString());
+        foreach (var (playerId, existing) in existingPlayers)
         {
-            var existing = JsonSerializer.Deserialize<PlayerEntry>(entry.Value.ToString()!);
-            if (existing is null) continue;
             await Clients.Caller.SendAsync("PlayerPresenceChanged", new PlayerPresenceChangedPayload(
-                entry.Name.ToString(),
+                playerId,
                 existing.DisplayName,
                 string.IsNullOrEmpty(existing.CharacterId) ? null : existing.CharacterId,
                 true));
         }
 
-        var playerEntry = new PlayerEntry(displayName, characterId ?? "");
-        await redisDb.HashSetAsync(redisKey, userId, JsonSerializer.Serialize(playerEntry));
+        await _redisState.SetPlayerAsync(gameSession.Id.ToString(), userId, new PlayerEntry(displayName, characterId ?? ""));
 
         _logger.LogInformation("Broadcasting PlayerPresenceChanged to group {GroupName}", groupName);
         await Clients.Group(groupName).SendAsync("PlayerPresenceChanged", new PlayerPresenceChangedPayload(
@@ -136,28 +119,26 @@ public class GameHub : Hub
         if (activeEncounter is not null)
             throw new HubException("An encounter is already active for this session.");
 
-        var redisDb = _redis.GetDatabase();
-        var redisKey = $"session:{gameSession.Id}:players";
-        var playerEntries = await redisDb.HashGetAllAsync(redisKey);
+        var sessionId = gameSession.Id.ToString();
+        var playerEntries = await _redisState.GetPlayersAsync(sessionId);
 
-        if (playerEntries.Length == 0)
+        if (playerEntries.Count == 0)
             throw new HubException("No players are connected.");
 
         var combatants = new List<EncounterCombatant>();
         var characterMap = new Dictionary<Guid, Character>();
 
-        foreach (var entry in playerEntries)
+        foreach (var (playerId, playerEntry) in playerEntries)
         {
-            var playerEntry = JsonSerializer.Deserialize<PlayerEntry>(entry.Value.ToString()!);
-            if (playerEntry is null || string.IsNullOrEmpty(playerEntry.CharacterId))
+            if (string.IsNullOrEmpty(playerEntry.CharacterId))
                 continue;
-            if (!Guid.TryParse(playerEntry.CharacterId, out var charGuid))
+            if (!Guid.TryParse(playerEntry.CharacterId, out var charId))
                 continue;
 
-            var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == charGuid);
+            var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == charId);
             if (character is null) continue;
 
-            characterMap[charGuid] = character;
+            characterMap[charId] = character;
 
             var dexMod = DexModifier(character.BaseStats.Dex);
             var roll = RollD20();
@@ -165,8 +146,8 @@ public class GameHub : Hub
             combatants.Add(new EncounterCombatant
             {
                 Id = Guid.NewGuid(),
-                UserId = entry.Name.ToString(),
-                CharacterId = charGuid,
+                UserId = playerId,
+                CharacterId = charId,
                 CharacterName = character.Name,
                 InitiativeRoll = roll,
                 DexModifier = dexMod,
@@ -207,25 +188,14 @@ public class GameHub : Hub
             ordered.Select(c => new CombatantRef(c.Id.ToString(), c.UserId)).ToList()
         );
 
-        await redisDb.StringSetAsync(
-            $"session:{gameSession.Id}:active_encounter",
-            JsonSerializer.Serialize(activeEncounterEntry, _jsonOptions));
-        await redisDb.StringSetAsync(
-            $"encounter:map:{encounter.Id}",
-            JsonSerializer.Serialize(mapEntry, _jsonOptions));
+        await _redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
+        await _redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
 
         // Seed character live state in Redis
         foreach (var c in ordered)
         {
             if (characterMap.TryGetValue(c.CharacterId, out var ch))
-            {
-                var liveKey = $"character:live:{c.CharacterId}";
-                await redisDb.HashSetAsync(liveKey, new HashEntry[]
-                {
-                    new("currentHp", ch.CurrentHp),
-                    new("class", ch.Class),
-                });
-            }
+                await _redisState.SeedCharacterLiveStateAsync(c.CharacterId.ToString(), ch.CurrentHp, ch.Class);
         }
 
         var combatantDtos = ordered.Select(c =>
@@ -270,19 +240,12 @@ public class GameHub : Hub
             return;
         }
 
-        var redisDb = _redis.GetDatabase();
+        var sessionId = gameSession.Id.ToString();
 
-        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
-        if (!activeEncounterJson.HasValue)
-        {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("No active encounter."));
-            return;
-        }
-
-        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
+        var activeEncounter = await _redisState.GetActiveEncounterAsync(sessionId);
         if (activeEncounter is null)
         {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Encounter data invalid."));
+            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("No active encounter."));
             return;
         }
 
@@ -310,13 +273,12 @@ public class GameHub : Hub
         }
 
         // Check defeated set
-        var defeatedKey = $"encounter:{activeEncounter.EncounterId}:defeated";
-        if (await redisDb.SetContainsAsync(defeatedKey, activeCombatantRef.Id))
+        if (await _redisState.IsDefeatedAsync(activeEncounter.EncounterId, activeCombatantRef.Id))
         {
             await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("You are defeated."));
             return;
         }
-        if (await redisDb.SetContainsAsync(defeatedKey, targetCombatantId))
+        if (await _redisState.IsDefeatedAsync(activeEncounter.EncounterId, targetCombatantId))
         {
             await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Target is already defeated."));
             return;
@@ -364,11 +326,10 @@ public class GameHub : Hub
         var diceString = DamageDiceString(attackerClass);
 
         // Decrement target HP in Redis
-        var targetLiveKey = $"character:live:{targetDbCombatant.CharacterId}";
-        var newHpRaw = await redisDb.HashDecrementAsync(targetLiveKey, "currentHp", damage);
+        var newHpRaw = await _redisState.DecrementHpAsync(targetDbCombatant.CharacterId.ToString(), damage);
         var newHp = (int)Math.Max(0, newHpRaw);
         if (newHpRaw < 0)
-            await redisDb.HashSetAsync(targetLiveKey, "currentHp", 0);
+            await _redisState.SetHpAsync(targetDbCombatant.CharacterId.ToString(), 0);
 
         var isDefeated = newHp <= 0;
 
@@ -381,7 +342,7 @@ public class GameHub : Hub
             targetName,
             damageDice = diceString,
             damage,
-        }, _jsonOptions);
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
         _db.GameEvents.Add(new GameEvent
         {
@@ -394,7 +355,7 @@ public class GameHub : Hub
         await _db.SaveChangesAsync();
 
         if (isDefeated)
-            await redisDb.SetAddAsync(defeatedKey, targetCombatantId);
+            await _redisState.MarkDefeatedAsync(activeEncounter.EncounterId, targetCombatantId);
 
         var feedText = isDefeated
             ? $"{attackerName} attacks {targetName} for {damage} damage! {targetName} is defeated!"
@@ -426,33 +387,19 @@ public class GameHub : Hub
             return;
         }
 
-        var redisDb = _redis.GetDatabase();
+        var sessionId = gameSession.Id.ToString();
 
-        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
-        if (!activeEncounterJson.HasValue)
+        var activeEncounter = await _redisState.GetActiveEncounterAsync(sessionId);
+        if (activeEncounter is null)
         {
             await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("No active encounter."));
             return;
         }
 
-        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
-        if (activeEncounter is null)
-        {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Encounter data invalid."));
-            return;
-        }
-
-        var mapJson = await redisDb.StringGetAsync($"encounter:map:{activeEncounter.EncounterId}");
-        if (!mapJson.HasValue)
-        {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Map data not found."));
-            return;
-        }
-
-        var map = JsonSerializer.Deserialize<MapEntry>(mapJson!, _jsonOptions);
+        var map = await _redisState.GetMapAsync(activeEncounter.EncounterId);
         if (map is null)
         {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Map data invalid."));
+            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload("Map data not found."));
             return;
         }
 
@@ -493,10 +440,9 @@ public class GameHub : Hub
         }
 
         // Update position
-        map.Positions[combatantId] = new Position(targetX, targetY);
-        await redisDb.StringSetAsync(
-            $"encounter:map:{activeEncounter.EncounterId}",
-            JsonSerializer.Serialize(map, _jsonOptions));
+        var updatedPositions = new Dictionary<string, Position>(map.Positions) { [combatantId] = new Position(targetX, targetY) };
+        var updatedMap = map with { Positions = updatedPositions };
+        await _redisState.SetMapAsync(activeEncounter.EncounterId, updatedMap);
 
         var groupName = $"session:{gameSession.Id}";
         await Clients.Group(groupName).SendAsync("TokenMoved", new TokenMovedPayload(combatantId, targetX, targetY));
@@ -511,15 +457,11 @@ public class GameHub : Hub
         if (gameSession is null)
             throw new HubException("Invalid join code.");
 
-        var redisDb = _redis.GetDatabase();
+        var sessionId = gameSession.Id.ToString();
 
-        var activeEncounterJson = await redisDb.StringGetAsync($"session:{gameSession.Id}:active_encounter");
-        if (!activeEncounterJson.HasValue)
-            throw new HubException("No active encounter.");
-
-        var activeEncounter = JsonSerializer.Deserialize<ActiveEncounterEntry>(activeEncounterJson!, _jsonOptions);
+        var activeEncounter = await _redisState.GetActiveEncounterAsync(sessionId);
         if (activeEncounter is null)
-            throw new HubException("Encounter data invalid.");
+            throw new HubException("No active encounter.");
 
         // Verify caller is the active combatant
         var activeCombatant = activeEncounter.Combatants.FirstOrDefault(c => c.Id == activeEncounter.ActiveTurnCombatantId);
@@ -527,7 +469,6 @@ public class GameHub : Hub
             throw new HubException("It is not your turn.");
 
         // Advance to next combatant (wrap around, skipping defeated)
-        var defeatedKey = $"encounter:{activeEncounter.EncounterId}:defeated";
         var currentIndex = activeEncounter.Combatants.FindIndex(c => c.Id == activeEncounter.ActiveTurnCombatantId);
         var nextIndex = currentIndex;
 
@@ -535,7 +476,7 @@ public class GameHub : Hub
         for (int attempt = 0; attempt < activeEncounter.Combatants.Count; attempt++)
         {
             nextIndex = (nextIndex + 1) % activeEncounter.Combatants.Count;
-            var isDefeated = await redisDb.SetContainsAsync(defeatedKey, activeEncounter.Combatants[nextIndex].Id);
+            var isDefeated = await _redisState.IsDefeatedAsync(activeEncounter.EncounterId, activeEncounter.Combatants[nextIndex].Id);
             if (!isDefeated)
             {
                 foundAlive = true;
@@ -555,7 +496,7 @@ public class GameHub : Hub
                 }
             }
 
-            await redisDb.KeyDeleteAsync($"session:{gameSession.Id}:active_encounter");
+            await _redisState.DeleteActiveEncounterAsync(sessionId);
 
             var groupName2 = $"session:{gameSession.Id}";
             await Clients.Group(groupName2).SendAsync("EncounterEnded", new EncounterEndedPayload(Guid.Parse(activeEncounter.EncounterId)));
@@ -563,11 +504,8 @@ public class GameHub : Hub
         }
 
         var nextCombatantId = activeEncounter.Combatants[nextIndex].Id;
-
         var updated = activeEncounter with { ActiveTurnCombatantId = nextCombatantId };
-        await redisDb.StringSetAsync(
-            $"session:{gameSession.Id}:active_encounter",
-            JsonSerializer.Serialize(updated, _jsonOptions));
+        await _redisState.SetActiveEncounterAsync(sessionId, updated);
 
         var groupName = $"session:{gameSession.Id}";
         await Clients.Group(groupName).SendAsync("TurnAdvanced", new TurnAdvancedPayload(nextCombatantId));
