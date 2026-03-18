@@ -27,6 +27,7 @@ npm ci --legacy-peer-deps        # Install deps (required flag for NGXS peer dep
 npm start                        # Dev server on http://localhost:4200
 npm run build                    # Production build → dist/client/browser/
 npm test                         # Karma/Jasmine unit tests
+npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C# records
 ```
 
 ### Server (.NET 8)
@@ -87,7 +88,7 @@ Clean Architecture with three projects:
 ### Real-Time (SignalR + Redis)
 - Hub at `/hubs/game`, requires `[Authorize]`
 - Redis serves dual purpose: SignalR backplane AND live state
-- Group naming: `session:{joinCode}`
+- Group naming: `session:{sessionId}` (UUID, not the join code)
 
 **Hub methods (client → server):**
 
@@ -133,11 +134,28 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 
 ### Shared Contracts
 - `contracts/openapi.json` — OpenAPI 3 spec generated from Swagger; source of truth for REST DTOs
-- `client/src/app/contracts/api-contracts.generated.ts` — TypeScript types generated from `openapi.json`
-- `client/src/app/contracts/hub-contracts.ts` — **Hand-maintained** SignalR payload interfaces mirroring `server/src/RpgGame.Api/Contracts/Hub/`. Update both sides when hub payloads change.
+- `client/src/app/contracts/api-contracts.generated.ts` — TypeScript types generated from `openapi.json` via `npm run codegen`
+- `client/src/app/contracts/hub-contracts.generated.ts` — TypeScript interfaces generated from C# records in `server/src/RpgGame.Api/Contracts/Hub/` via `npm run contracts:hub` (runs `client/scripts/generate-hub-contracts.js`). Committed to repo. Do not edit by hand.
+
+### Contract Generation
+```bash
+cd client
+npm run codegen        # Regenerate REST types from contracts/openapi.json
+npm run contracts:hub  # Regenerate SignalR hub types from C# Hub/ records
+```
+Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.Api/Contracts/Hub/` (excluding `EndTurnResult.cs` and `ServiceResults.cs`).
+
 
 ### Server Services (`RpgGame.Api/Services/`)
 - **ICurrentUserAccessor / HttpCurrentUserAccessor** — abstracts `HttpContext.User` claims into `UserId`/`UserName`; injected into controllers instead of accessing `User` directly
+- **IRedisGameState / RedisGameState** — Singleton; encapsulates all Redis reads/writes (players hash, active encounter JSON, map JSON, character live HP hash, defeated set). All hub logic goes through this interface rather than touching `IConnectionMultiplexer` directly.
+- **ISessionService / SessionService** — Scoped; handles `JoinSession` logic (DB lookup, character validation, campaign member auto-join, Redis player upsert)
+- **IEncounterService / EncounterService** — Scoped; handles `StartEncounter` (initiative rolls via `CombatDice`, DB persist, Redis seed), `MoveToken` (bounds + Chebyshev validation), `EndTurn` (advance turn or end encounter). Returns sealed `EndTurnResult` union (`TurnAdvancedResult` | `EncounterEndedResult`).
+- **ICombatService / CombatService** — Scoped; handles `DeclareAttack` (turn validation, damage roll via `CombatDice`, Redis HP decrement, DB GameEvent log, defeated check)
+- **CombatDice** — `internal static` helper; `DexModifier`, `RollD20`, `RollDamage`, `DamageDiceString`
+- **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
+
+`GameHub` is a thin orchestrator (≤20 lines per method) — all business logic lives in the three scoped services above.
 
 ### Swagger / OpenAPI
 - `Swashbuckle.AspNetCore` generates docs at `/swagger` in Development

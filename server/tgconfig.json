@@ -1,0 +1,11 @@
+{
+  "assemblies": [
+    { "name": "src/RpgGame.Api/bin/Debug/net8.0/RpgGame.Api.dll" }
+  ],
+  "propertyNameConverters": ["PascalCaseToCamelCaseConverter"],
+  "outputPath": "../client/src/app/contracts/hub",
+  "createIndexFile": true,
+  "customTypeMappings": {
+    "System.Guid": "string"
+  }
+}

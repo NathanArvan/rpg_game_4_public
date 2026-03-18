@@ -14,7 +14,7 @@ import {
   PlayerPresenceChangedPayload,
   TokenMovedPayload,
   TurnAdvancedPayload,
-} from '../../contracts/hub-contracts';
+} from '../../contracts/hub-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
 export class GameHubService {
