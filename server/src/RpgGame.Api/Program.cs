@@ -78,6 +78,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(config["Redis:ConnectionString"]!);
 
+builder.Services.AddSingleton<IRedisGameState, RedisGameState>();
+
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();
 
