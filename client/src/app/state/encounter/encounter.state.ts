@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
 import { AttackResolved, ClearEncounter, CombatantDefeated, EncounterStarted, TurnAdvanced } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
-import { CombatantDto } from '../../contracts/hub-contracts';
+import { CombatantDto } from '../../contracts/hub-contracts.generated';
 
 @State<EncounterStateModel>({
   name: 'encounter',

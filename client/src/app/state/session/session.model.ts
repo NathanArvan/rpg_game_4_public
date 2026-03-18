@@ -1,4 +1,4 @@
-import { PlayerPresenceChangedPayload } from '../../contracts/hub-contracts';
+import { PlayerPresenceChangedPayload } from '../../contracts/hub-contracts.generated';
 
 // ConnectedPlayer is an alias for the hub wire type so existing state code keeps working
 export type ConnectedPlayer = PlayerPresenceChangedPayload;

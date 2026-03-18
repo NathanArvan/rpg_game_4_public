@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideStore, Store } from '@ngxs/store';
 import { EncounterState } from './encounter.state';
 import { AttackResolved, ClearEncounter, CombatantDefeated, EncounterStarted, TurnAdvanced } from './encounter.actions';
-import { CombatantDto } from '../../contracts/hub-contracts';
+import { CombatantDto } from '../../contracts/hub-contracts.generated';
 
 const makeCombatant = (overrides: Partial<CombatantDto> = {}): CombatantDto => ({
   id: 'c1',

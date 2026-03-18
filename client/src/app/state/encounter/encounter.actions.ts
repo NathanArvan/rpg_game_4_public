@@ -1,4 +1,4 @@
-import { CombatantDto } from '../../contracts/hub-contracts';
+import { CombatantDto } from '../../contracts/hub-contracts.generated';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
