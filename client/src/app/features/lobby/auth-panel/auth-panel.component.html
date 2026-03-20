@@ -1,0 +1,10 @@
+<div class="auth-section">
+  <h2>Register / Login</h2>
+  <input [(ngModel)]="username" placeholder="Username" />
+  <input [(ngModel)]="displayName" placeholder="Display Name" />
+  <input [(ngModel)]="password" type="password" placeholder="Password" />
+  <button (click)="register()">Register</button>
+  <button (click)="login()">Login</button>
+  <button (click)="quickRegister()" class="dev-btn">⚡ Quick Register</button>
+  <p *ngIf="authError" class="error">{{ authError }}</p>
+</div>

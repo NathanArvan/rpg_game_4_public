@@ -1,0 +1,33 @@
+<div class="gm-section">
+  <h2>Game Master</h2>
+
+  <div *ngIf="!gmCampaignId">
+    <input [(ngModel)]="campaignName" placeholder="Campaign name" />
+    <button (click)="createCampaign()">Create Campaign</button>
+    <p *ngIf="gmError" class="error">{{ gmError }}</p>
+  </div>
+
+  <div *ngIf="gmCampaignId && !gmJoinCode">
+    <p>Campaign created! ID: <code>{{ gmCampaignId }}</code></p>
+    <button (click)="startSession()">Start Session</button>
+    <p *ngIf="gmError" class="error">{{ gmError }}</p>
+  </div>
+
+  <div *ngIf="gmJoinCode && !gmConnected">
+    <p>Session started! Share this join code with players:</p>
+    <div class="join-code">{{ gmJoinCode }}</div>
+    <button (click)="connectAsGm()">Connect to Session</button>
+    <p *ngIf="gmError" class="error">{{ gmError }}</p>
+  </div>
+
+  <div *ngIf="gmConnected">
+    <div class="join-code">{{ gmJoinCode }}</div>
+    <button
+      (click)="startEncounter()"
+      [disabled]="playerCount === 0"
+      class="encounter-btn">
+      Start Encounter
+    </button>
+    <p *ngIf="encounterError" class="error">{{ encounterError }}</p>
+  </div>
+</div>

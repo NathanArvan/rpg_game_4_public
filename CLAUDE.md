@@ -30,6 +30,8 @@ npm test                         # Karma/Jasmine unit tests
 npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C# records
 ```
 
+**Angular code generation:** Always use the Angular CLI (`ng generate`) to scaffold new Angular artifacts — components, services, interceptors, guards, pipes, directives, state classes, etc. Do not write these files by hand. Run `ng generate` from the `client/` directory (e.g., `npx ng generate component foo/bar`).
+
 ### Server (.NET 8)
 ```bash
 cd server

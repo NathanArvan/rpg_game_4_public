@@ -1,0 +1,27 @@
+input {
+  display: block;
+  margin: 8px 0;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+button {
+  margin: 4px 4px 4px 0;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.error {
+  color: red;
+}
+
+.dev-btn {
+  background: #d97706;
+  color: white;
+  border: none;
+}
+
+.dev-btn:hover {
+  background: #b45309;
+}

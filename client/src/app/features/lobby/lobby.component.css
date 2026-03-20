@@ -1,0 +1,32 @@
+.lobby {
+  max-width: 900px;
+  margin: 40px auto;
+  font-family: sans-serif;
+}
+
+.flow-tabs {
+  margin-bottom: 16px;
+}
+
+.flow-tabs button.active {
+  background: #333;
+  color: white;
+}
+
+.logout-btn {
+  float: right;
+}
+
+.online-dot {
+  color: green;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  padding: 4px 0;
+  font-size: 1.1em;
+}
