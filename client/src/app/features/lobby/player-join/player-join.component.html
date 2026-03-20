@@ -1,0 +1,13 @@
+<div class="join-section">
+  <h2>Join a Session</h2>
+  <input [(ngModel)]="joinCode" placeholder="Join code (e.g. ABC123)" />
+  <input [(ngModel)]="joinDisplayName" placeholder="Display name in session" />
+  <select [(ngModel)]="selectedCharacterId">
+    <option value="">-- Select a character --</option>
+    <option *ngFor="let c of characters$ | async" [value]="c.id">
+      {{ c.name }} ({{ c.race }} {{ c.class }}, Lv{{ c.level }})
+    </option>
+  </select>
+  <button (click)="join()">Join Session</button>
+  <p *ngIf="joinError" class="error">{{ joinError }}</p>
+</div>

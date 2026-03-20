@@ -1,0 +1,34 @@
+<div class="lobby">
+  <h1>RPG Game Lobby</h1>
+
+  <app-auth-panel *ngIf="!auth.isLoggedIn()" (authenticated)="onAuthenticated()"></app-auth-panel>
+
+  <div *ngIf="auth.isLoggedIn()">
+    <div class="flow-tabs">
+      <button [class.active]="activeFlow === 'player'" (click)="activeFlow = 'player'">Player</button>
+      <button [class.active]="activeFlow === 'gm'" (click)="activeFlow = 'gm'">GM</button>
+      <a routerLink="/character">My Characters</a>
+      <button class="logout-btn" (click)="auth.logout()">Logout</button>
+    </div>
+
+    <app-player-join *ngIf="activeFlow === 'player'"></app-player-join>
+    <app-gm-flow *ngIf="activeFlow === 'gm'" [playerCount]="(players$ | async)?.length ?? 0"></app-gm-flow>
+  </div>
+
+  <div class="players-section" *ngIf="(players$ | async)?.length">
+    <h2>Connected Players</h2>
+    <ul>
+      <li *ngFor="let p of players$ | async">
+        {{ p.displayName }} <span class="online-dot">●</span>
+      </li>
+    </ul>
+  </div>
+
+  <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
+  <app-feed *ngIf="encounterActive$ | async"></app-feed>
+  <app-grid
+    *ngIf="encounterActive$ | async"
+    [joinCode]="(joinCode$ | async) ?? ''"
+    [myUserId]="auth.getUserId()">
+  </app-grid>
+</div>
