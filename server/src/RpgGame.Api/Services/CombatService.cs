@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class CombatService(AppDbContext db, IRedisGameState redisState) : ICombatService
+public class CombatService(AppDbContext db, IRedisGameState redisState, ILogger<CombatService> logger) : ICombatService
 {
     public async Task<AttackResult> DeclareAttackAsync(string joinCode, string userId, string targetCombatantId)
     {
@@ -66,13 +66,6 @@ public class CombatService(AppDbContext db, IRedisGameState redisState) : IComba
         var damage = CombatDice.RollDamage(attackerClass);
         var diceString = CombatDice.DamageDiceString(attackerClass);
 
-        var newHpRaw = await redisState.DecrementHpAsync(targetDbCombatant.CharacterId.ToString(), damage);
-        var newHp = (int)Math.Max(0, newHpRaw);
-        if (newHpRaw < 0)
-            await redisState.SetHpAsync(targetDbCombatant.CharacterId.ToString(), 0);
-
-        var isDefeated = newHp <= 0;
-
         var eventPayload = JsonSerializer.Serialize(new
         {
             attackerId = activeCombatantRef.Id,
@@ -93,8 +86,24 @@ public class CombatService(AppDbContext db, IRedisGameState redisState) : IComba
         });
         await db.SaveChangesAsync();
 
-        if (isDefeated)
-            await redisState.MarkDefeatedAsync(activeEncounter.EncounterId, targetCombatantId);
+        int newHp;
+        bool isDefeated;
+        try
+        {
+            var newHpRaw = await redisState.DecrementHpAsync(targetDbCombatant.CharacterId.ToString(), damage);
+            newHp = (int)Math.Max(0, newHpRaw);
+            if (newHpRaw < 0)
+                await redisState.SetHpAsync(targetDbCombatant.CharacterId.ToString(), 0);
+            isDefeated = newHp <= 0;
+            if (isDefeated)
+                await redisState.MarkDefeatedAsync(activeEncounter.EncounterId, targetCombatantId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Redis mutation failed after DB write for attack on combatant {CombatantId}. DB event log is source of truth.", targetCombatantId);
+            isDefeated = false;
+            newHp = 0;
+        }
 
         var feedText = isDefeated
             ? $"{attackerName} attacks {targetName} for {damage} damage! {targetName} is defeated!"
