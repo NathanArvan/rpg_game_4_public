@@ -7,8 +7,11 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
 {
     public AppDbContext CreateDbContext(string[] args)
     {
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+            ?? "Host=localhost;Port=5432;Database=rpg_game;Username=rpguser;Password=changeme";
+
         var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Port=5432;Database=rpg_game;Username=rpguser;Password=changeme")
+            .UseNpgsql(connectionString)
             .Options;
         return new AppDbContext(opts);
     }
