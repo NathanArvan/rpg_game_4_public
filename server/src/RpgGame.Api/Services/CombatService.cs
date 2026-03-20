@@ -34,11 +34,8 @@ public class CombatService(AppDbContext db, IRedisGameState redisState) : IComba
         if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, targetCombatantId))
             throw new GameActionException("Target is already defeated.", isActionRejected: true);
 
-        if (!Guid.TryParse(activeEncounter.EncounterId, out var encounterGuid))
-            throw new GameActionException("Invalid encounter ID.", isActionRejected: true);
-
-        if (!Guid.TryParse(targetCombatantId, out var targetCombatantGuid))
-            throw new GameActionException("Invalid target ID.", isActionRejected: true);
+        var encounterGuid = GuidParser.ParseOrThrow(activeEncounter.EncounterId, "encounter ID");
+        var targetCombatantGuid = GuidParser.ParseOrThrow(targetCombatantId, "target ID");
 
         var attackerDbCombatant = await db.EncounterCombatants
             .FirstOrDefaultAsync(c => c.EncounterId == encounterGuid && c.UserId == userId);
