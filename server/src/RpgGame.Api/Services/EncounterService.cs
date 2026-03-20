@@ -32,7 +32,17 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             throw new GameActionException("No players are connected.");
 
         var combatants = new List<EncounterCombatant>();
-        var characterMap = new Dictionary<Guid, Character>();
+
+        var charIds = playerEntries.Values
+            .Where(p => !string.IsNullOrEmpty(p.CharacterId))
+            .Select(p => GuidParser.TryParse(p.CharacterId))
+            .Where(id => id is not null)
+            .Select(id => id!.Value)
+            .ToList();
+
+        var characterMap = await db.Characters
+            .Where(c => charIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
 
         foreach (var (playerId, playerEntry) in playerEntries)
         {
@@ -40,10 +50,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             var charId = GuidParser.TryParse(playerEntry.CharacterId);
             if (charId is null) continue;
 
-            var character = await db.Characters.FirstOrDefaultAsync(c => c.Id == charId.Value);
-            if (character is null) continue;
-
-            characterMap[charId.Value] = character;
+            if (!characterMap.TryGetValue(charId.Value, out var character)) continue;
 
             var dexMod = CombatDice.DexModifier(character.BaseStats.Dex);
             var roll = CombatDice.RollD20();
