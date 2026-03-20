@@ -70,3 +70,23 @@ export interface TokenMovedPayload {
 export interface TurnAdvancedPayload {
   activeTurnCombatantId: string;
 }
+
+export const HubEvents = {
+  Events: {
+    PlayerPresenceChanged: 'PlayerPresenceChanged',
+    EncounterStarted: 'EncounterStarted',
+    TokenMoved: 'TokenMoved',
+    TurnAdvanced: 'TurnAdvanced',
+    ActionRejected: 'ActionRejected',
+    AttackResolved: 'AttackResolved',
+    CombatantDefeated: 'CombatantDefeated',
+    EncounterEnded: 'EncounterEnded',
+  },
+  Methods: {
+    JoinSession: 'JoinSession',
+    StartEncounter: 'StartEncounter',
+    MoveToken: 'MoveToken',
+    DeclareAttack: 'DeclareAttack',
+    EndTurn: 'EndTurn',
+  },
+} as const;

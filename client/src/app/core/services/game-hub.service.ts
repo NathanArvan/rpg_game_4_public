@@ -11,6 +11,7 @@ import {
   AttackResolvedPayload,
   CombatantDefeatedPayload,
   EncounterStartedPayload,
+  HubEvents,
   PlayerPresenceChangedPayload,
   TokenMovedPayload,
   TurnAdvancedPayload,
@@ -30,12 +31,12 @@ export class GameHubService {
       .withAutomaticReconnect()
       .build();
 
-    this.connection.on('PlayerPresenceChanged', (payload: PlayerPresenceChangedPayload) => {
+    this.connection.on(HubEvents.Events.PlayerPresenceChanged, (payload: PlayerPresenceChangedPayload) => {
       console.log('[hub] PlayerPresenceChanged received:', payload);
       this.ngZone.run(() => this.store.dispatch(new PlayerPresenceChanged(payload)));
     });
 
-    this.connection.on('EncounterStarted', (payload: EncounterStartedPayload) => {
+    this.connection.on(HubEvents.Events.EncounterStarted, (payload: EncounterStartedPayload) => {
       console.log('[hub] EncounterStarted received:', payload);
       this.ngZone.run(() => {
         this.store.dispatch(new EncounterStarted(
@@ -54,22 +55,22 @@ export class GameHubService {
       });
     });
 
-    this.connection.on('TokenMoved', (payload: TokenMovedPayload) => {
+    this.connection.on(HubEvents.Events.TokenMoved, (payload: TokenMovedPayload) => {
       console.log('[hub] TokenMoved received:', payload);
       this.ngZone.run(() => this.store.dispatch(new TokenMoved(payload.combatantId, payload.x, payload.y)));
     });
 
-    this.connection.on('TurnAdvanced', (payload: TurnAdvancedPayload) => {
+    this.connection.on(HubEvents.Events.TurnAdvanced, (payload: TurnAdvancedPayload) => {
       console.log('[hub] TurnAdvanced received:', payload);
       this.ngZone.run(() => this.store.dispatch(new TurnAdvanced(payload.activeTurnCombatantId)));
     });
 
-    this.connection.on('ActionRejected', (payload: ActionRejectedPayload) => {
+    this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {
       console.warn('[hub] ActionRejected:', payload);
       this.ngZone.run(() => this.store.dispatch(new ClearPendingMove()));
     });
 
-    this.connection.on('AttackResolved', (payload: AttackResolvedPayload) => {
+    this.connection.on(HubEvents.Events.AttackResolved, (payload: AttackResolvedPayload) => {
       console.log('[hub] AttackResolved received:', payload);
       this.ngZone.run(() => {
         this.store.dispatch(new AttackResolved(payload.targetId, payload.targetNewHp, payload.feedText));
@@ -77,7 +78,7 @@ export class GameHubService {
       });
     });
 
-    this.connection.on('CombatantDefeated', (payload: CombatantDefeatedPayload) => {
+    this.connection.on(HubEvents.Events.CombatantDefeated, (payload: CombatantDefeatedPayload) => {
       console.log('[hub] CombatantDefeated received:', payload);
       this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
     });
@@ -96,22 +97,22 @@ export class GameHubService {
   }
 
   async joinSession(joinCode: string, displayName: string, characterId: string | null): Promise<void> {
-    await this.connection.invoke('JoinSession', joinCode, displayName, characterId);
+    await this.connection.invoke(HubEvents.Methods.JoinSession, joinCode, displayName, characterId);
   }
 
   async startEncounter(joinCode: string): Promise<void> {
-    await this.connection.invoke('StartEncounter', joinCode);
+    await this.connection.invoke(HubEvents.Methods.StartEncounter, joinCode);
   }
 
   async moveToken(joinCode: string, combatantId: string, x: number, y: number): Promise<void> {
-    await this.connection.invoke('MoveToken', joinCode, combatantId, x, y);
+    await this.connection.invoke(HubEvents.Methods.MoveToken, joinCode, combatantId, x, y);
   }
 
   async endTurn(joinCode: string): Promise<void> {
-    await this.connection.invoke('EndTurn', joinCode);
+    await this.connection.invoke(HubEvents.Methods.EndTurn, joinCode);
   }
 
   async declareAttack(joinCode: string, targetCombatantId: string): Promise<void> {
-    await this.connection.invoke('DeclareAttack', joinCode, targetCombatantId);
+    await this.connection.invoke(HubEvents.Methods.DeclareAttack, joinCode, targetCombatantId);
   }
 }

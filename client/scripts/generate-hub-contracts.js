@@ -113,6 +113,84 @@ function generateInterface(record) {
   return lines.join('\n');
 }
 
+// Extract nested `public static class` blocks containing `public const string` fields.
+// Uses a brace-counting scan to handle nested classes correctly.
+// Returns an array of { outerName, innerClasses: [{ innerName, constants: [{name, value}] }] }.
+function extractStaticConstClasses(source) {
+  const result = [];
+
+  const outerRe = /public\s+static\s+class\s+(\w+)\s*\{/g;
+  let outerMatch;
+
+  while ((outerMatch = outerRe.exec(source)) !== null) {
+    const outerName = outerMatch[1];
+    // Find the matching closing brace using depth counting
+    const outerBody = extractBracedBlock(source, outerMatch.index + outerMatch[0].length - 1);
+    if (outerBody === null) continue;
+
+    // Now find inner static classes inside outerBody
+    const innerRe = /public\s+static\s+class\s+(\w+)\s*\{/g;
+    const innerClasses = [];
+    let innerMatch;
+
+    while ((innerMatch = innerRe.exec(outerBody)) !== null) {
+      const innerName = innerMatch[1];
+      const innerBody = extractBracedBlock(outerBody, innerMatch.index + innerMatch[0].length - 1);
+      if (innerBody === null) continue;
+
+      // Match: public const string Name = "value";  OR  = nameof(Name);
+      const constRe = /public\s+const\s+string\s+(\w+)\s*=\s*(?:"([^"]+)"|nameof\((\w+)\))\s*;/g;
+      const constants = [];
+      let constMatch;
+      while ((constMatch = constRe.exec(innerBody)) !== null) {
+        const name = constMatch[1];
+        const value = constMatch[2] !== undefined ? constMatch[2] : constMatch[3];
+        constants.push({ name, value });
+      }
+
+      if (constants.length > 0) {
+        innerClasses.push({ innerName, constants });
+      }
+    }
+
+    if (innerClasses.length > 0) {
+      result.push({ outerName, innerClasses });
+      // Advance outerRe past the end of this outer block to avoid re-matching inner classes
+      outerRe.lastIndex = outerMatch.index + outerMatch[0].length + outerBody.length + 1;
+    }
+  }
+
+  return result;
+}
+
+// Given a source string and the index of the opening `{`, returns the content
+// between that `{` and its matching `}` (exclusive of the braces themselves).
+function extractBracedBlock(source, openBraceIndex) {
+  if (source[openBraceIndex] !== '{') return null;
+  let depth = 0;
+  for (let i = openBraceIndex; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return source.slice(openBraceIndex + 1, i);
+    }
+  }
+  return null; // unmatched
+}
+
+function generateConstObject(staticClass) {
+  const lines = [`export const ${staticClass.outerName} = {`];
+  for (const inner of staticClass.innerClasses) {
+    lines.push(`  ${inner.innerName}: {`);
+    for (const c of inner.constants) {
+      lines.push(`    ${c.name}: '${c.value}',`);
+    }
+    lines.push(`  },`);
+  }
+  lines.push(`} as const;`);
+  return lines.join('\n');
+}
+
 // --- main ---
 
 const csFiles = fs.readdirSync(HUB_DIR)
@@ -120,9 +198,11 @@ const csFiles = fs.readdirSync(HUB_DIR)
   .sort();
 
 const allRecords = [];
+const allStaticClasses = [];
 for (const file of csFiles) {
   const source = fs.readFileSync(path.join(HUB_DIR, file), 'utf8');
   allRecords.push(...extractRecords(source));
+  allStaticClasses.push(...extractStaticConstClasses(source));
 }
 
 if (allRecords.length === 0) {
@@ -137,9 +217,12 @@ const header = [
   '',
 ].join('\n');
 
-const body = allRecords.map(generateInterface).join('\n\n');
+const interfaces = allRecords.map(generateInterface).join('\n\n');
+const constObjects = allStaticClasses.map(generateConstObject).join('\n\n');
+const body = constObjects ? interfaces + '\n\n' + constObjects : interfaces;
 
 fs.writeFileSync(OUT_FILE, header + body + '\n');
 
-console.log(`Generated ${allRecords.length} interfaces → ${path.relative(process.cwd(), OUT_FILE)}`);
-allRecords.forEach(r => console.log(`  ${r.name}`));
+console.log(`Generated ${allRecords.length} interfaces, ${allStaticClasses.length} const objects → ${path.relative(process.cwd(), OUT_FILE)}`);
+allRecords.forEach(r => console.log(`  interface ${r.name}`));
+allStaticClasses.forEach(s => console.log(`  const ${s.outerName}`));
