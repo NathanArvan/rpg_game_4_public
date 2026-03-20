@@ -31,8 +31,9 @@ export class DevService {
     const conMod = Math.floor((con - 10) / 2);
     const level = this.roll(1, 3);
     const maxHp = level * 5 + conMod;
+    const surname = this.pick(this.nouns);
     return {
-      name: this.pick(this.fantasyNames) + ' ' + this.pick(this.nouns).charAt(0).toUpperCase() + this.pick(this.nouns).slice(1),
+      name: this.pick(this.fantasyNames) + ' ' + surname.charAt(0).toUpperCase() + surname.slice(1),
       race: this.pick(this.races),
       class: this.pick(this.classes),
       level,
