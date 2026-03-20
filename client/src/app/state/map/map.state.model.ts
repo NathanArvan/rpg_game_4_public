@@ -7,6 +7,5 @@ export interface MapStateModel {
   gridWidth: number;
   gridHeight: number;
   positions: Record<string, Position>; // keyed by combatantId
-  fogOfWar: never[];
-  pendingMove: Position | null;
+pendingMove: Position | null;
 }

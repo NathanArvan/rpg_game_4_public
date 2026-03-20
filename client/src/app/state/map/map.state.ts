@@ -9,8 +9,7 @@ import { MapStateModel, Position } from './map.state.model';
     gridWidth: 20,
     gridHeight: 20,
     positions: {},
-    fogOfWar: [],
-    pendingMove: null,
+pendingMove: null,
   },
 })
 @Injectable()
