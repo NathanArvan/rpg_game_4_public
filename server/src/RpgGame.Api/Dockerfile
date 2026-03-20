@@ -7,11 +7,13 @@ COPY RpgGame.sln ./
 COPY src/RpgGame.Api/RpgGame.Api.csproj             src/RpgGame.Api/
 COPY src/RpgGame.Domain/RpgGame.Domain.csproj        src/RpgGame.Domain/
 COPY src/RpgGame.Infrastructure/RpgGame.Infrastructure.csproj src/RpgGame.Infrastructure/
+COPY tests/RpgGame.Api.Tests/RpgGame.Api.Tests.csproj tests/RpgGame.Api.Tests/
 
 RUN dotnet restore
 
 # Copy source and publish
 COPY src/ src/
+COPY tests/ tests/
 RUN dotnet publish src/RpgGame.Api/RpgGame.Api.csproj \
     -c Release -o /app/publish
 
