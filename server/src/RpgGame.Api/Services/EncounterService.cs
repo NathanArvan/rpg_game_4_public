@@ -37,12 +37,13 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         foreach (var (playerId, playerEntry) in playerEntries)
         {
             if (string.IsNullOrEmpty(playerEntry.CharacterId)) continue;
-            if (!Guid.TryParse(playerEntry.CharacterId, out var charId)) continue;
+            var charId = GuidParser.TryParse(playerEntry.CharacterId);
+            if (charId is null) continue;
 
-            var character = await db.Characters.FirstOrDefaultAsync(c => c.Id == charId);
+            var character = await db.Characters.FirstOrDefaultAsync(c => c.Id == charId.Value);
             if (character is null) continue;
 
-            characterMap[charId] = character;
+            characterMap[charId.Value] = character;
 
             var dexMod = CombatDice.DexModifier(character.BaseStats.Dex);
             var roll = CombatDice.RollD20();
@@ -51,7 +52,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             {
                 Id = Guid.NewGuid(),
                 UserId = playerId,
-                CharacterId = charId,
+                CharacterId = charId.Value,
                 CharacterName = character.Name,
                 InitiativeRoll = roll,
                 DexModifier = dexMod,
@@ -195,9 +196,10 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
 
         if (!foundAlive)
         {
-            if (Guid.TryParse(activeEncounter.EncounterId, out var endedEncounterGuid))
+            var endedEncounterGuid = GuidParser.TryParse(activeEncounter.EncounterId);
+            if (endedEncounterGuid is not null)
             {
-                var encounter = await db.Encounters.FindAsync(endedEncounterGuid);
+                var encounter = await db.Encounters.FindAsync(endedEncounterGuid.Value);
                 if (encounter is not null)
                 {
                     encounter.Status = EncounterStatus.Ended;

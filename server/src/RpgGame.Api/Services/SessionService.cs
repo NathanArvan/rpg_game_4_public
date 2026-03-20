@@ -13,9 +13,10 @@ public class SessionService(AppDbContext db, IRedisGameState redisState) : ISess
         var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
             ?? throw new GameActionException("Invalid join code.");
 
-        if (!string.IsNullOrEmpty(characterId) && Guid.TryParse(characterId, out var charGuid))
+        var charGuid = GuidParser.TryParse(characterId);
+        if (charGuid is not null)
         {
-            var character = await db.Characters.FirstOrDefaultAsync(c => c.Id == charGuid && c.UserId == userId)
+            var character = await db.Characters.FirstOrDefaultAsync(c => c.Id == charGuid.Value && c.UserId == userId)
                 ?? throw new GameActionException("Character not found or does not belong to you.");
         }
         else
