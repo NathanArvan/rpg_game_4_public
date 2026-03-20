@@ -37,18 +37,30 @@ public class CombatService(AppDbContext db, IRedisGameState redisState) : IComba
         var encounterGuid = GuidParser.ParseOrThrow(activeEncounter.EncounterId, "encounter ID");
         var targetCombatantGuid = GuidParser.ParseOrThrow(targetCombatantId, "target ID");
 
-        var attackerDbCombatant = await db.EncounterCombatants
-            .FirstOrDefaultAsync(c => c.EncounterId == encounterGuid && c.UserId == userId);
+        var combatantRows = await db.EncounterCombatants
+            .Where(c => c.EncounterId == encounterGuid &&
+                        (c.UserId == userId || c.Id == targetCombatantGuid))
+            .ToListAsync();
+
+        var attackerDbCombatant = combatantRows.FirstOrDefault(c => c.UserId == userId);
+        var targetDbCombatant = combatantRows.FirstOrDefault(c => c.Id == targetCombatantGuid)
+            ?? throw new GameActionException("Target combatant not found in DB.", isActionRejected: true);
+
+        var charIdList = new List<Guid>();
+        if (attackerDbCombatant is not null) charIdList.Add(attackerDbCombatant.CharacterId);
+        charIdList.Add(targetDbCombatant.CharacterId);
+
+        var characters = await db.Characters
+            .Where(c => charIdList.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
+
         var attackerChar = attackerDbCombatant is not null
-            ? await db.Characters.FirstOrDefaultAsync(c => c.Id == attackerDbCombatant.CharacterId)
+            ? characters.GetValueOrDefault(attackerDbCombatant.CharacterId)
             : null;
         var attackerClass = attackerChar?.Class ?? "";
         var attackerName = attackerChar?.Name ?? "Unknown";
 
-        var targetDbCombatant = await db.EncounterCombatants.FirstOrDefaultAsync(c => c.Id == targetCombatantGuid)
-            ?? throw new GameActionException("Target combatant not found in DB.", isActionRejected: true);
-
-        var targetChar = await db.Characters.FirstOrDefaultAsync(c => c.Id == targetDbCombatant.CharacterId);
+        var targetChar = characters.GetValueOrDefault(targetDbCombatant.CharacterId);
         var targetName = targetChar?.Name ?? "Unknown";
 
         var damage = CombatDice.RollDamage(attackerClass);
