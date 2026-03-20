@@ -117,6 +117,7 @@ export class GridComponent implements OnInit {
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
   private pendingMove: Position | null = null;
+  private activeTurnId: string | null = null;
 
   constructor(private store: Store, private hub: GameHubService) {}
 
@@ -163,6 +164,7 @@ export class GridComponent implements OnInit {
     this.store.select(MapState.positions).subscribe(p => this.positions = p);
     this.store.select(MapState.pendingMove).subscribe(p => this.pendingMove = p);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
+    this.store.select(EncounterState.activeTurnCombatantId).subscribe(id => this.activeTurnId = id);
   }
 
   tokenAt(cell: Cell): Combatant | null {
@@ -182,9 +184,7 @@ export class GridComponent implements OnInit {
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant) return;
 
-    const state = this.store.snapshot();
-    const activeTurnId = state.encounter?.activeTurnCombatantId;
-    if (myCombatant.id !== activeTurnId) return; // not my turn
+    if (myCombatant.id !== this.activeTurnId) return; // not my turn
     if (myCombatant.isDefeated) return;
 
     const targetCombatant = this.tokenAt(cell);
