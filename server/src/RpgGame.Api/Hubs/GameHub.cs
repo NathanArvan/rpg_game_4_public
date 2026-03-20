@@ -24,16 +24,16 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
 
         foreach (var p in r.ExistingPlayerPayloads)
-            await Clients.Caller.SendAsync("PlayerPresenceChanged", p);
+            await Clients.Caller.SendAsync(HubEvents.Events.PlayerPresenceChanged, p);
 
         logger.LogInformation("Broadcasting PlayerPresenceChanged to group {GroupName}", groupName);
-        await Clients.Group(groupName).SendAsync("PlayerPresenceChanged", r.NewPlayerPayload);
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerPresenceChanged, r.NewPlayerPayload);
     }
 
     public async Task StartEncounter(string joinCode)
     {
         var r = await encounterSvc.StartEncounterAsync(joinCode, Context.UserIdentifier!);
-        await Clients.Group($"session:{r.SessionId}").SendAsync("EncounterStarted", r.Payload);
+        await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.EncounterStarted, r.Payload);
     }
 
     public async Task MoveToken(string joinCode, string combatantId, int targetX, int targetY)
@@ -41,11 +41,11 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         try
         {
             var r = await encounterSvc.MoveTokenAsync(joinCode, Context.UserIdentifier!, combatantId, targetX, targetY);
-            await Clients.Group($"session:{r.SessionId}").SendAsync("TokenMoved", r.Payload);
+            await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.TokenMoved, r.Payload);
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload(ex.Message));
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
     }
 
@@ -54,13 +54,13 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         try
         {
             var r = await combatSvc.DeclareAttackAsync(joinCode, Context.UserIdentifier!, targetCombatantId);
-            await Clients.Group($"session:{r.SessionId}").SendAsync("AttackResolved", r.AttackPayload);
+            await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.AttackResolved, r.AttackPayload);
             if (r.DefeatedPayload is not null)
-                await Clients.Group($"session:{r.SessionId}").SendAsync("CombatantDefeated", r.DefeatedPayload);
+                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.CombatantDefeated, r.DefeatedPayload);
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
-            await Clients.Caller.SendAsync("ActionRejected", new ActionRejectedPayload(ex.Message));
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
     }
 
@@ -70,10 +70,10 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         switch (result)
         {
             case TurnAdvancedResult r:
-                await Clients.Group($"session:{r.SessionId}").SendAsync("TurnAdvanced", r.Payload);
+                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.TurnAdvanced, r.Payload);
                 break;
             case EncounterEndedResult r:
-                await Clients.Group($"session:{r.SessionId}").SendAsync("EncounterEnded", r.Payload);
+                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.EncounterEnded, r.Payload);
                 break;
         }
     }
