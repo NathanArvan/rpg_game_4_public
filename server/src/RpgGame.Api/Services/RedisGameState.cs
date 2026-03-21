@@ -73,28 +73,38 @@ public class RedisGameState : IRedisGameState
         await db.StringSetAsync($"encounter:map:{encounterId}", JsonSerializer.Serialize(map, _jsonOptions));
     }
 
-    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string charClass)
+    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, int attackBonus, int damageBase, int dodgeChance, int maxAp, int movementRange)
     {
         var db = _redis.GetDatabase();
         await db.HashSetAsync($"character:live:{characterId}", new HashEntry[]
         {
-            new("currentHp", currentHp),
-            new("class", charClass),
+            new("currentHp",     currentHp),
+            new("attackBonus",   attackBonus),
+            new("damageBase",    damageBase),
+            new("dodgeChance",   dodgeChance),
+            new("maxAp",         maxAp),
+            new("movementRange", movementRange),
         });
     }
 
-    public async Task<(int currentHp, string charClass)> GetCharacterLiveStateAsync(string characterId)
+    public async Task<(int currentHp, int attackBonus, int damageBase, int dodgeChance, int maxAp, int movementRange)> GetCharacterLiveStateAsync(string characterId)
     {
         var db = _redis.GetDatabase();
         var entries = await db.HashGetAllAsync($"character:live:{characterId}");
-        int hp = 0;
-        string cls = "";
+        int currentHp = 0, attackBonus = 0, damageBase = 2, dodgeChance = 0, maxAp = 2, movementRange = 5;
         foreach (var entry in entries)
         {
-            if (entry.Name == "currentHp") hp = (int)entry.Value;
-            if (entry.Name == "class") cls = entry.Value.ToString();
+            switch (entry.Name.ToString())
+            {
+                case "currentHp":     currentHp     = (int)entry.Value; break;
+                case "attackBonus":   attackBonus   = (int)entry.Value; break;
+                case "damageBase":    damageBase    = (int)entry.Value; break;
+                case "dodgeChance":   dodgeChance   = (int)entry.Value; break;
+                case "maxAp":         maxAp         = (int)entry.Value; break;
+                case "movementRange": movementRange = (int)entry.Value; break;
+            }
         }
-        return (hp, cls);
+        return (currentHp, attackBonus, damageBase, dodgeChance, maxAp, movementRange);
     }
 
     public async Task<long> DecrementHpAsync(string characterId, long amount)

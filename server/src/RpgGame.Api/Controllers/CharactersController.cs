@@ -30,25 +30,29 @@ public class CharactersController : ControllerBase
         var userId = _user.UserId;
         if (userId is null) return Unauthorized();
 
+        var stats = request.BaseStats;
+        var maxHp = Services.CharacterStats.MaxHp(stats.Resilience);
         var character = new Character
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             Name = request.Name,
-            Race = request.Race,
-            Class = request.Class,
+            Race = request.Race ?? string.Empty,
+            Class = request.Class ?? string.Empty,
             Level = request.Level,
             BaseStats = new BaseStats
             {
-                Str = request.BaseStats.Str,
-                Dex = request.BaseStats.Dex,
-                Con = request.BaseStats.Con,
-                Int = request.BaseStats.Int,
-                Wis = request.BaseStats.Wis,
-                Cha = request.BaseStats.Cha,
+                Power     = stats.Power,
+                Speed     = stats.Speed,
+                Precision = stats.Precision,
+                Resilience = stats.Resilience,
+                Focus     = stats.Focus,
+                Influence = stats.Influence,
             },
-            MaxHp = request.MaxHp,
-            CurrentHp = request.CurrentHp,
+            MaxHp = maxHp,
+            CurrentHp = maxHp,
+            MovementRange = Services.CharacterStats.MovementRange(stats.Speed),
+            VisionRange   = Services.CharacterStats.VisionRange(stats.Focus),
         };
 
         _db.Characters.Add(character);
@@ -94,18 +98,22 @@ public class CharactersController : ControllerBase
         var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
         if (character is null) return NotFound();
 
-        character.Name = request.Name;
-        character.Race = request.Race;
-        character.Class = request.Class;
+        var stats = request.BaseStats;
+        var maxHp = Services.CharacterStats.MaxHp(stats.Resilience);
+        character.Name  = request.Name;
+        character.Race  = request.Race ?? string.Empty;
+        character.Class = request.Class ?? string.Empty;
         character.Level = request.Level;
-        character.BaseStats.Str = request.BaseStats.Str;
-        character.BaseStats.Dex = request.BaseStats.Dex;
-        character.BaseStats.Con = request.BaseStats.Con;
-        character.BaseStats.Int = request.BaseStats.Int;
-        character.BaseStats.Wis = request.BaseStats.Wis;
-        character.BaseStats.Cha = request.BaseStats.Cha;
-        character.MaxHp = request.MaxHp;
-        character.CurrentHp = request.CurrentHp;
+        character.BaseStats.Power     = stats.Power;
+        character.BaseStats.Speed     = stats.Speed;
+        character.BaseStats.Precision = stats.Precision;
+        character.BaseStats.Resilience = stats.Resilience;
+        character.BaseStats.Focus     = stats.Focus;
+        character.BaseStats.Influence = stats.Influence;
+        character.MaxHp        = maxHp;
+        character.CurrentHp    = maxHp;
+        character.MovementRange = Services.CharacterStats.MovementRange(stats.Speed);
+        character.VisionRange   = Services.CharacterStats.VisionRange(stats.Focus);
 
         await _db.SaveChangesAsync();
 
@@ -133,9 +141,11 @@ public class CharactersController : ControllerBase
         c.Race,
         c.Class,
         c.Level,
-        new BaseStatsDto(c.BaseStats.Str, c.BaseStats.Dex, c.BaseStats.Con, c.BaseStats.Int, c.BaseStats.Wis, c.BaseStats.Cha),
+        new BaseStatsDto(c.BaseStats.Power, c.BaseStats.Speed, c.BaseStats.Precision, c.BaseStats.Resilience, c.BaseStats.Focus, c.BaseStats.Influence),
         c.MaxHp,
-        c.CurrentHp
+        c.CurrentHp,
+        c.MovementRange,
+        c.VisionRange
     );
 }
 

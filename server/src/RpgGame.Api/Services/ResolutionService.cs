@@ -29,7 +29,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         var combatantLookup = activeEncounter.Combatants.ToDictionary(c => c.Id);
 
         // Load live state for each combatant
-        var liveState = new Dictionary<string, (int currentHp, string charClass)>();
+        var liveState = new Dictionary<string, (int currentHp, int attackBonus, int damageBase, int dodgeChance, int maxAp, int movementRange)>();
         foreach (var c in activeEncounter.Combatants)
         {
             liveState[c.Id] = await redisState.GetCharacterLiveStateAsync(c.CharacterId);
@@ -90,13 +90,13 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
                     .Where(c => charIds.Contains(c.Id))
                     .ToDictionaryAsync(c => c.Id);
 
-                // Sort by Dex descending, then random tiebreaker
+                // Sort by Speed descending (tiebreaker for movement), then random
                 var sorted = contenders
                     .OrderByDescending(c =>
                     {
                         var charId = GuidParser.TryParse(combatantLookup[c.Key].CharacterId);
                         if (charId is not null && characters.TryGetValue(charId.Value, out var ch))
-                            return ch.BaseStats.Dex;
+                            return ch.BaseStats.Speed;
                         return 0;
                     })
                     .ThenBy(_ => Random.Shared.Next())
@@ -141,9 +141,10 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
             if (!combatantLookup.TryGetValue(combatantId, out var attacker)) continue;
             if (!combatantLookup.TryGetValue(action.TargetCombatantId, out var target)) continue;
 
-            var (_, attackerClass) = liveState.GetValueOrDefault(combatantId);
-            var damage = CombatDice.RollDamage(attackerClass ?? "");
-            var damageDice = CombatDice.DamageDiceString(attackerClass ?? "");
+            var (_, _, attackerDamageBase, _, _, _) = liveState.GetValueOrDefault(combatantId);
+            var dmgBase = attackerDamageBase > 0 ? attackerDamageBase : 2;
+            var damage = CombatDice.RollDamage(dmgBase);
+            var damageDice = CombatDice.DamageDiceString(dmgBase);
 
             damageResults.Add((combatantId, action.TargetCombatantId, damage, damageDice, attacker.CharacterName, target.CharacterName));
         }
@@ -161,7 +162,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         foreach (var (targetId, totalDamage) in hpDeltas)
         {
             var combatant = combatantLookup[targetId];
-            var (currentHp, _) = liveState.GetValueOrDefault(targetId);
+            var (currentHp, _, _, _, _, _) = liveState.GetValueOrDefault(targetId);
             var newHp = Math.Max(0, currentHp - totalDamage);
             newHpValues[targetId] = newHp;
         }
