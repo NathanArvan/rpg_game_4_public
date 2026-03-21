@@ -103,7 +103,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
         if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, combatantRef.Id))
             throw new GameActionException("That combatant is defeated.", isActionRejected: true);
 
-        await ValidateActionAsync(action, combatantRef.Id, activeEncounter);
+        await ValidateActionAsync(action, combatantRef.Id, activeEncounter, isMonster: true);
 
         await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantRef.Id, action);
 
@@ -166,7 +166,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
         return gmLockedIn && lockedInPlayers >= livingPlayers;
     }
 
-    private async Task ValidateActionAsync(PlannedAction action, string combatantId, ActiveEncounterEntry activeEncounter)
+    private async Task ValidateActionAsync(PlannedAction action, string combatantId, ActiveEncounterEntry activeEncounter, bool isMonster = false)
     {
         switch (action.ActionType)
         {
@@ -183,7 +183,8 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
                 if (action.TargetX < 0 || action.TargetX >= map.GridWidth || action.TargetY < 0 || action.TargetY >= map.GridHeight)
                     throw new GameActionException("Target position is out of bounds.", isActionRejected: true);
 
-                if (map.Positions.TryGetValue(combatantId, out var current))
+                // Monsters have no movement range limit — the GM controls them freely
+                if (!isMonster && map.Positions.TryGetValue(combatantId, out var current))
                 {
                     var chebyshev = Math.Max(Math.Abs(action.TargetX.Value - current.X), Math.Abs(action.TargetY.Value - current.Y));
                     if (chebyshev > 6)

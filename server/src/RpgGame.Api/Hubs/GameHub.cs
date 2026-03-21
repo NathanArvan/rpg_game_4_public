@@ -123,6 +123,13 @@ public class GameHub(
 
             await Clients.Caller.SendAsync(HubEvents.Events.EnemyActionPlanned,
                 new EnemyActionPlannedPayload(r.CombatantId, r.ActionType));
+
+            // Ghost preview for move — GM sees the enemy slide to target position
+            if (actionType == "move" && targetX is not null && targetY is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Events.TokenMoved,
+                    new TokenMovedPayload(r.CombatantId, targetX.Value, targetY.Value));
+            }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
