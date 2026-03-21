@@ -1,0 +1,42 @@
+<div *ngIf="isGm && (isPlanning$ | async)" class="gm-enemy-panel">
+  <h3>Enemy Actions</h3>
+
+  <div *ngFor="let enemy of enemies$ | async" class="enemy-row">
+    <strong>{{ enemy.characterName }}</strong>
+    <span class="hp">(HP: {{ enemy.currentHp }}/{{ enemy.maxHp }})</span>
+
+    <select [(ngModel)]="getSelection(enemy.id).actionType">
+      <option value="defend">Defend</option>
+      <option value="move">Move</option>
+      <option value="attack">Attack</option>
+    </select>
+
+    <ng-container [ngSwitch]="getSelection(enemy.id).actionType">
+      <ng-container *ngSwitchCase="'attack'">
+        <select [(ngModel)]="getSelection(enemy.id).targetCombatantId">
+          <option [value]="undefined">-- pick target --</option>
+          <option *ngFor="let p of playerCombatants$ | async" [value]="p.id">
+            {{ p.characterName }}
+          </option>
+        </select>
+      </ng-container>
+
+      <ng-container *ngSwitchCase="'move'">
+        <label>X: <input type="number" min="0" max="19" [(ngModel)]="getSelection(enemy.id).targetX" style="width:50px" /></label>
+        <label>Y: <input type="number" min="0" max="19" [(ngModel)]="getSelection(enemy.id).targetY" style="width:50px" /></label>
+      </ng-container>
+    </ng-container>
+
+    <button (click)="planAction(enemy.id)">Plan</button>
+    <span *ngIf="(enemyPlannedActions$ | async)?.[enemy.id]" class="planned-indicator">
+      ✓ {{ (enemyPlannedActions$ | async)?.[enemy.id] }}
+    </span>
+  </div>
+
+  <button
+    class="lock-in-btn"
+    (click)="lockInEnemies()"
+    [disabled]="(gmEnemiesLockedIn$ | async)">
+    {{ (gmEnemiesLockedIn$ | async) ? 'Enemies Locked In ✓' : 'Lock In Enemies' }}
+  </button>
+</div>

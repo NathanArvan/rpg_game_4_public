@@ -10,6 +10,12 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
 {
     private const int PlanningDurationSeconds = 60;
 
+    private static readonly (string Name, int MaxHp, string Class)[] _monsterTemplates =
+    [
+        ("Goblin", 14, "fighter"),
+        ("Orc",    20, "barbarian"),
+    ];
+
     public async Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId)
     {
         var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
@@ -85,7 +91,21 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         for (int i = 0; i < combatants.Count; i++)
             positions[combatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), 0);
 
+        // Build Redis-only monster combatants (not persisted to DB)
+        var monsterRefs = _monsterTemplates.Select((m, i) =>
+        {
+            var monsterId = Guid.NewGuid().ToString();
+            var charId = Guid.NewGuid().ToString();
+            positions[monsterId] = new Position(Math.Min(i, gridWidth - 1), gridHeight - 1);
+            return (Ref: new CombatantRef(monsterId, "", charId, m.Name, "monster"), Template: m, CharId: charId);
+        }).ToList();
+
         var planningExpiresAt = DateTimeOffset.UtcNow.AddSeconds(PlanningDurationSeconds).ToUnixTimeMilliseconds();
+
+        var allCombatantRefs = combatants
+            .Select(c => new CombatantRef(c.Id.ToString(), c.UserId, c.CharacterId.ToString(), c.CharacterName, "player"))
+            .Concat(monsterRefs.Select(m => m.Ref))
+            .ToList();
 
         var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
         var activeEncounterEntry = new ActiveEncounterEntry(
@@ -93,7 +113,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             "planning",
             1,
             planningExpiresAt,
-            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, c.CharacterId.ToString(), c.CharacterName)).ToList());
+            allCombatantRefs);
 
         await redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
         await redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
@@ -104,6 +124,9 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
                 await redisState.SeedCharacterLiveStateAsync(c.CharacterId.ToString(), ch.CurrentHp, ch.Class);
         }
 
+        foreach (var (_, template, charId) in monsterRefs)
+            await redisState.SeedCharacterLiveStateAsync(charId, template.MaxHp, template.Class);
+
         var combatantDtos = combatants.Select(c =>
         {
             characterMap.TryGetValue(c.CharacterId, out var ch);
@@ -113,8 +136,18 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
                 c.CharacterId.ToString(),
                 c.CharacterName,
                 ch?.CurrentHp ?? 0,
-                ch?.MaxHp ?? 0);
-        }).ToList();
+                ch?.MaxHp ?? 0,
+                "player");
+        })
+        .Concat(monsterRefs.Select(m => new CombatantDto(
+            m.Ref.Id,
+            "",
+            m.Ref.CharacterId,
+            m.Ref.CharacterName,
+            m.Template.MaxHp,
+            m.Template.MaxHp,
+            "monster")))
+        .ToList();
 
         var mapDto = new MapDto(
             gridWidth,

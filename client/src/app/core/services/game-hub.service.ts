@@ -8,6 +8,7 @@ import {
   AttackResolved,
   ClearEncounter,
   CombatantDefeated,
+  EnemyActionPlanned,
   EncounterStarted,
   PlanningPhaseStarted,
   PlayerLockedIn,
@@ -22,6 +23,7 @@ import {
   AllLockedInPayload,
   AttackResolvedPayload,
   CombatantDefeatedPayload,
+  EnemyActionPlannedPayload,
   EncounterEndedPayload,
   EncounterStartedPayload,
   HubEvents,
@@ -80,6 +82,11 @@ export class GameHubService {
     this.connection.on(HubEvents.Events.ActionPlanned, (payload: ActionPlannedPayload) => {
       console.log('[hub] ActionPlanned received:', payload);
       // ActionPlanned is caller-only — we already have the planned action locally
+    });
+
+    this.connection.on(HubEvents.Events.EnemyActionPlanned, (payload: EnemyActionPlannedPayload) => {
+      console.log('[hub] EnemyActionPlanned received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new EnemyActionPlanned(payload.combatantId, payload.actionType)));
     });
 
     this.connection.on(HubEvents.Events.PlayerLockedIn, (payload: PlayerLockedInPayload) => {
@@ -169,5 +176,13 @@ export class GameHubService {
 
   async forceResolve(joinCode: string): Promise<void> {
     await this.connection.invoke(HubEvents.Methods.ForceResolve, joinCode);
+  }
+
+  async planEnemyAction(joinCode: string, combatantId: string, actionType: string, targetCombatantId?: string, targetX?: number, targetY?: number): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.PlanEnemyAction, joinCode, combatantId, actionType, targetCombatantId ?? null, targetX ?? null, targetY ?? null);
+  }
+
+  async lockInEnemies(joinCode: string): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.LockInEnemies, joinCode);
   }
 }

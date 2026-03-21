@@ -16,14 +16,17 @@ public static class HubEvents
         public const string PlayerLockedIn        = nameof(PlayerLockedIn);
         public const string AllLockedIn           = nameof(AllLockedIn);
         public const string ResolutionCompleted  = nameof(ResolutionCompleted);
+        public const string EnemyActionPlanned   = nameof(EnemyActionPlanned);
     }
 
     public static class Methods
     {
-        public const string JoinSession     = nameof(JoinSession);
-        public const string StartEncounter  = nameof(StartEncounter);
-        public const string PlanAction      = nameof(PlanAction);
-        public const string LockIn          = nameof(LockIn);
-        public const string ForceResolve    = nameof(ForceResolve);
+        public const string JoinSession       = nameof(JoinSession);
+        public const string StartEncounter    = nameof(StartEncounter);
+        public const string PlanAction        = nameof(PlanAction);
+        public const string LockIn            = nameof(LockIn);
+        public const string ForceResolve      = nameof(ForceResolve);
+        public const string PlanEnemyAction   = nameof(PlanEnemyAction);
+        public const string LockInEnemies     = nameof(LockInEnemies);
     }
 }
