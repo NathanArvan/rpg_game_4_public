@@ -114,6 +114,69 @@ public class GameHub(
         }
     }
 
+    public async Task PlanEnemyAction(string joinCode, string combatantId, string actionType, string? targetCombatantId, int? targetX, int? targetY)
+    {
+        try
+        {
+            var action = new PlannedAction(actionType, targetCombatantId, targetX, targetY);
+            var r = await planningSvc.PlanEnemyActionAsync(joinCode, Context.UserIdentifier!, combatantId, action);
+
+            await Clients.Caller.SendAsync(HubEvents.Events.EnemyActionPlanned,
+                new EnemyActionPlannedPayload(r.CombatantId, r.ActionType));
+
+            // Ghost preview for move — GM sees the enemy slide to target position
+            if (actionType == "move" && targetX is not null && targetY is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Events.TokenMoved,
+                    new TokenMovedPayload(r.CombatantId, targetX.Value, targetY.Value));
+            }
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+    }
+
+    public async Task LockInEnemies(string joinCode)
+    {
+        try
+        {
+            var r = await planningSvc.LockInEnemiesAsync(joinCode, Context.UserIdentifier!);
+            var groupName = $"session:{r.SessionId}";
+
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn,
+                new PlayerLockedInPayload("gm_enemies", "GM (Enemies)", IsGmEnemies: true));
+
+            if (r.AllLockedIn)
+            {
+                timerSvc.CancelTimer(r.EncounterId);
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn,
+                    new AllLockedInPayload(r.EncounterId));
+
+                var resolution = await resolutionSvc.ResolveRoundAsync(r.SessionId.ToString(), r.EncounterId);
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.ResolutionCompleted, resolution.Payload);
+
+                if (resolution.NextRoundPayload is not null)
+                {
+                    await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, resolution.NextRoundPayload);
+                    timerSvc.ScheduleTimer(
+                        r.EncounterId,
+                        r.SessionId.ToString(),
+                        TimeSpan.FromMilliseconds(resolution.NextRoundPayload.PlanningTimerExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                }
+                else
+                {
+                    await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterEnded,
+                        new EncounterEndedPayload(r.EncounterId));
+                }
+            }
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+    }
+
     public async Task ForceResolve(string joinCode)
     {
         try
