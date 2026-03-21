@@ -10,10 +10,11 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
 {
     private const int PlanningDurationSeconds = 60;
 
-    private static readonly (string Name, int MaxHp, string Class)[] _monsterTemplates =
+    // (Name, MaxHp, damageBase, attackBonus, dodgeChance, maxAp, movementRange)
+    private static readonly (string Name, int MaxHp, int DamageBase, int AttackBonus, int DodgeChance, int MaxAp, int MovementRange)[] _monsterTemplates =
     [
-        ("Goblin", 14, "fighter"),
-        ("Orc",    20, "barbarian"),
+        ("Goblin", 21, 2, 0, 0, 2, 4),
+        ("Orc",    33, 3, 1, 0, 2, 5),
     ];
 
     public async Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId)
@@ -121,11 +122,25 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         foreach (var c in combatants)
         {
             if (characterMap.TryGetValue(c.CharacterId, out var ch))
-                await redisState.SeedCharacterLiveStateAsync(c.CharacterId.ToString(), ch.CurrentHp, ch.Class);
+                await redisState.SeedCharacterLiveStateAsync(
+                    c.CharacterId.ToString(),
+                    ch.CurrentHp,
+                    CharacterStats.AttackBonus(ch.BaseStats.Precision),
+                    CharacterStats.DamageBase(ch.BaseStats.Power),
+                    CharacterStats.DodgeChance(ch.BaseStats.Speed),
+                    maxAp: 2,
+                    ch.MovementRange);
         }
 
         foreach (var (_, template, charId) in monsterRefs)
-            await redisState.SeedCharacterLiveStateAsync(charId, template.MaxHp, template.Class);
+            await redisState.SeedCharacterLiveStateAsync(
+                charId,
+                template.MaxHp,
+                template.AttackBonus,
+                template.DamageBase,
+                template.DodgeChance,
+                template.MaxAp,
+                template.MovementRange);
 
         var combatantDtos = combatants.Select(c =>
         {

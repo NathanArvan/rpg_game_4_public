@@ -187,8 +187,10 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
                 if (!isMonster && map.Positions.TryGetValue(combatantId, out var current))
                 {
                     var chebyshev = Math.Max(Math.Abs(action.TargetX.Value - current.X), Math.Abs(action.TargetY.Value - current.Y));
-                    if (chebyshev > 6)
-                        throw new GameActionException("Move exceeds maximum range (6 squares).", isActionRejected: true);
+                    var characterId = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId)?.CharacterId ?? combatantId;
+                    var (_, _, _, _, _, movementRange) = await redisState.GetCharacterLiveStateAsync(characterId);
+                    if (chebyshev > movementRange)
+                        throw new GameActionException($"Move exceeds maximum range ({movementRange} squares).", isActionRejected: true);
                 }
                 break;
 
