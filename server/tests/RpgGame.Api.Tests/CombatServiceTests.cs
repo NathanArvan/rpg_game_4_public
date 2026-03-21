@@ -16,7 +16,7 @@ public class CombatServiceTests
             .Options);
 
     [Fact]
-    public async Task DeclareAttack_RejectsWhenNotCallersTurn()
+    public async Task DeclareAttack_RejectsWhenCallerNotInEncounter()
     {
         await using var db = CreateDb();
         var sessionId = Guid.NewGuid();
@@ -37,11 +37,13 @@ public class CombatServiceTests
 
         var activeEncounterEntry = new ActiveEncounterEntry(
             encounterId.ToString(),
-            activeCombatantId,
+            "planning",
+            1,
+            DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds(),
             new List<CombatantRef>
             {
                 new(activeCombatantId, "other-user"),
-                new(targetCombatantId, userId),
+                new(targetCombatantId, "another-user"),
             });
 
         var mockRedis = new Mock<IRedisGameState>();
@@ -53,7 +55,7 @@ public class CombatServiceTests
         var ex = await Assert.ThrowsAsync<GameActionException>(
             () => service.DeclareAttackAsync(joinCode, userId, targetCombatantId));
 
-        Assert.Contains("It is not your turn", ex.Message);
+        Assert.Contains("not in this encounter", ex.Message);
         Assert.True(ex.IsActionRejected);
     }
 }

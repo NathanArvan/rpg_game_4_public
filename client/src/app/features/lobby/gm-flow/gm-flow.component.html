@@ -28,6 +28,12 @@
       class="encounter-btn">
       Start Encounter
     </button>
+    <button
+      *ngIf="isPlanning"
+      (click)="forceResolve()"
+      class="force-resolve-btn">
+      Force Resolve
+    </button>
     <p *ngIf="encounterError" class="error">{{ encounterError }}</p>
   </div>
 </div>

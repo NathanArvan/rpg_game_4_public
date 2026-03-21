@@ -1,17 +1,33 @@
 import { CombatantDto } from '../../contracts/hub-contracts.generated';
+import { PlannedAction } from './encounter.model';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
   constructor(
     public encounterId: string,
     public combatants: CombatantDto[],
-    public activeTurnCombatantId: string
+    public roundNumber: number,
+    public roundPhase: string,
+    public planningTimerExpiresAt: number
   ) {}
 }
 
-export class TurnAdvanced {
-  static readonly type = '[Encounter] Turn Advanced';
-  constructor(public activeTurnCombatantId: string) {}
+export class ActionPlanned {
+  static readonly type = '[Encounter] Action Planned';
+  constructor(public action: PlannedAction) {}
+}
+
+export class ClearPlannedAction {
+  static readonly type = '[Encounter] Clear Planned Action';
+}
+
+export class PlayerLockedIn {
+  static readonly type = '[Encounter] Player Locked In';
+  constructor(public combatantId: string) {}
+}
+
+export class AllLockedIn {
+  static readonly type = '[Encounter] All Locked In';
 }
 
 export class AttackResolved {
