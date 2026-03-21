@@ -17,3 +17,5 @@ public record PlanActionResult(Guid SessionId, string CombatantId, string Action
 public record LockInResult(Guid SessionId, string CombatantId, string CharacterName, bool AllLockedIn, string EncounterId);
 
 public record ForceResolveResult(Guid SessionId, string EncounterId);
+
+public record ResolutionResult(Guid SessionId, ResolutionCompletedPayload Payload, PlanningPhaseStartedPayload? NextRoundPayload);

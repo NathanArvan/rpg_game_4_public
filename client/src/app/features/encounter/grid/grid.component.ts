@@ -1,14 +1,15 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { SetPendingMove } from '../../../state/map/map.actions';
-import { ActionPlanned } from '../../../state/encounter/encounter.actions';
+import { ActionPlanned, PlaybackFinished } from '../../../state/encounter/encounter.actions';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant, PlannedAction } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
+import { ResolutionStepDto } from '../../../contracts/hub-contracts.generated';
 
 interface Cell {
   x: number;
@@ -31,8 +32,11 @@ interface Cell {
         <span class="timer" *ngIf="timerSeconds > 0">{{ timerSeconds }}s</span>
         <span class="phase-label">Planning Phase</span>
       </div>
-      <div class="active-turn" *ngIf="(isResolving$ | async)">
+      <div class="active-turn" *ngIf="(isResolving$ | async) && !(isPlayingBack$ | async)">
         <span class="waiting">Resolving actions...</span>
+      </div>
+      <div class="active-turn" *ngIf="isPlayingBack$ | async">
+        <span class="playback-label">Playing back resolution...</span>
       </div>
       <div
         class="grid"
@@ -48,8 +52,10 @@ interface Cell {
             class="token"
             [class.defeated-token]="combatant.isDefeated"
             [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
+            [class.token-animating]="isAnimatingToken(combatant.id)"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
+            <span class="damage-float" *ngIf="getDamageFloat(combatant.id) as dmg">-{{ dmg }}</span>
           </div>
         </div>
       </div>
@@ -108,6 +114,26 @@ interface Cell {
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .token.token-animating {
+      transition: all 0.4s ease;
+    }
+    .playback-label { color: #2e7d32; font-weight: bold; font-style: italic; }
+    .damage-float {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #c0392b;
+      font-size: 14px;
+      font-weight: bold;
+      animation: float-up 0.8s ease-out forwards;
+      pointer-events: none;
+      z-index: 10;
+    }
+    @keyframes float-up {
+      0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    }
   `],
 })
 export class GridComponent implements OnInit, OnDestroy {
@@ -118,6 +144,7 @@ export class GridComponent implements OnInit, OnDestroy {
   gridColumns$!: Observable<string>;
   isPlanning$!: Observable<boolean>;
   isResolving$!: Observable<boolean>;
+  isPlayingBack$!: Observable<boolean>;
   hasPlannedAction$!: Observable<boolean>;
 
   isLockedIn = false;
@@ -129,8 +156,11 @@ export class GridComponent implements OnInit, OnDestroy {
   private myPlannedAction: PlannedAction | null = null;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private planningExpiresAt: number | null = null;
+  private animatingTokens = new Set<string>();
+  private damageFloats = new Map<string, number>();
+  private playbackTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private store: Store, private hub: GameHubService) {}
+  constructor(private store: Store, private hub: GameHubService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
     const gridWidth$ = this.store.select(MapState.gridWidth);
@@ -150,6 +180,7 @@ export class GridComponent implements OnInit, OnDestroy {
 
     this.isPlanning$ = this.store.select(EncounterState.isPlanning);
     this.isResolving$ = this.store.select(EncounterState.isResolving);
+    this.isPlayingBack$ = this.store.select(EncounterState.isPlayingBack);
     this.hasPlannedAction$ = this.store.select(EncounterState.myPlannedAction).pipe(map(a => a !== null));
 
     // Keep local copies for synchronous access in template methods
@@ -169,11 +200,21 @@ export class GridComponent implements OnInit, OnDestroy {
     });
 
     this.timerInterval = setInterval(() => this.updateTimer(), 1000);
+
+    // Playback subscription
+    this.store.select(EncounterState.resolutionSteps).subscribe(steps => {
+      if (steps.length > 0) {
+        this.playbackSteps(steps);
+      }
+    });
   }
 
   ngOnDestroy(): void {
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
+    }
+    if (this.playbackTimeout) {
+      clearTimeout(this.playbackTimeout);
     }
   }
 
@@ -235,5 +276,48 @@ export class GridComponent implements OnInit, OnDestroy {
 
   onLockIn(): void {
     this.hub.lockIn(this.joinCode);
+  }
+
+  isAnimatingToken(combatantId: string): boolean {
+    return this.animatingTokens.has(combatantId);
+  }
+
+  getDamageFloat(combatantId: string): number | null {
+    return this.damageFloats.get(combatantId) ?? null;
+  }
+
+  private playbackSteps(steps: ResolutionStepDto[]): void {
+    this.animatingTokens.clear();
+    this.damageFloats.clear();
+    let delay = 0;
+    const stepDelay = 600;
+
+    for (const step of steps) {
+      this.playbackTimeout = setTimeout(() => {
+        if (step.phase === 'movement' && step.actionType === 'move' && step.newX !== null && step.newY !== null) {
+          this.animatingTokens.add(step.actorId);
+          this.cdr.detectChanges();
+        }
+        if (step.phase === 'attack' && step.damage !== null && step.targetId) {
+          this.damageFloats.set(step.targetId, step.damage);
+          this.cdr.detectChanges();
+          // Clear damage float after animation
+          setTimeout(() => {
+            this.damageFloats.delete(step.targetId!);
+            this.cdr.detectChanges();
+          }, 800);
+        }
+      }, delay);
+      delay += stepDelay;
+    }
+
+    // After all steps, finish playback
+    this.playbackTimeout = setTimeout(() => {
+      this.animatingTokens.clear();
+      this.damageFloats.clear();
+      this.isLockedIn = false;
+      this.store.dispatch(new PlaybackFinished());
+      this.cdr.detectChanges();
+    }, delay + 500);
   }
 }

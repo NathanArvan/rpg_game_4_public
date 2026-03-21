@@ -15,6 +15,7 @@ public static class HubEvents
         public const string ActionPlanned         = nameof(ActionPlanned);
         public const string PlayerLockedIn        = nameof(PlayerLockedIn);
         public const string AllLockedIn           = nameof(AllLockedIn);
+        public const string ResolutionCompleted  = nameof(ResolutionCompleted);
     }
 
     public static class Methods

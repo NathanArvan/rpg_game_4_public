@@ -1,7 +1,7 @@
 namespace RpgGame.Api.Models;
 
 public record PlayerEntry(string DisplayName, string CharacterId);
-public record CombatantRef(string Id, string UserId);
+public record CombatantRef(string Id, string UserId, string CharacterId, string CharacterName);
 public record ActiveEncounterEntry(
     string EncounterId,
     string RoundPhase,

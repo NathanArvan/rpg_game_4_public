@@ -11,6 +11,7 @@ public class GameHub(
     ISessionService sessionSvc,
     IEncounterService encounterSvc,
     IPlanningService planningSvc,
+    IResolutionService resolutionSvc,
     PlanningTimerService timerSvc,
     ILogger<GameHub> logger) : Hub
 {
@@ -88,6 +89,23 @@ public class GameHub(
                 timerSvc.CancelTimer(r.EncounterId);
                 await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn,
                     new AllLockedInPayload(r.EncounterId));
+
+                var resolution = await resolutionSvc.ResolveRoundAsync(r.SessionId.ToString(), r.EncounterId);
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.ResolutionCompleted, resolution.Payload);
+
+                if (resolution.NextRoundPayload is not null)
+                {
+                    await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, resolution.NextRoundPayload);
+                    timerSvc.ScheduleTimer(
+                        r.EncounterId,
+                        r.SessionId.ToString(),
+                        TimeSpan.FromMilliseconds(resolution.NextRoundPayload.PlanningTimerExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                }
+                else
+                {
+                    await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterEnded,
+                        new EncounterEndedPayload(r.EncounterId));
+                }
             }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
@@ -106,6 +124,23 @@ public class GameHub(
             timerSvc.CancelTimer(r.EncounterId);
             await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn,
                 new AllLockedInPayload(r.EncounterId));
+
+            var resolution = await resolutionSvc.ResolveRoundAsync(r.SessionId.ToString(), r.EncounterId);
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.ResolutionCompleted, resolution.Payload);
+
+            if (resolution.NextRoundPayload is not null)
+            {
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, resolution.NextRoundPayload);
+                timerSvc.ScheduleTimer(
+                    r.EncounterId,
+                    r.SessionId.ToString(),
+                    TimeSpan.FromMilliseconds(resolution.NextRoundPayload.PlanningTimerExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            }
+            else
+            {
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterEnded,
+                    new EncounterEndedPayload(r.EncounterId));
+            }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {

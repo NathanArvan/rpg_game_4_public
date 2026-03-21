@@ -9,7 +9,10 @@ import {
   ClearPlannedAction,
   CombatantDefeated,
   EncounterStarted,
+  PlanningPhaseStarted,
+  PlaybackFinished,
   PlayerLockedIn,
+  ResolutionCompleted,
 } from './encounter.actions';
 import { CombatantDto } from '../../contracts/hub-contracts.generated';
 
@@ -154,6 +157,90 @@ describe('EncounterState', () => {
     });
   });
 
+  describe('ResolutionCompleted', () => {
+    it('stores steps and sets isPlayingBack to true', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatant()], 1, 'planning', 0));
+
+      const steps = [{
+        phase: 'movement', actorId: 'c1', actorName: 'Frodo', actionType: 'move',
+        targetId: null, targetName: null, damage: null, damageDice: null,
+        newHp: null, newX: 3, newY: 4, defeated: false, feedText: 'Frodo moves to (3, 4).'
+      }];
+      store.dispatch(new ResolutionCompleted(steps, {}, false));
+
+      const state = store.snapshot().encounter;
+      expect(state.resolutionSteps.length).toBe(1);
+      expect(state.isPlayingBack).toBeTrue();
+    });
+
+    it('applies HP/defeated deltas from attack steps', () => {
+      store.dispatch(new EncounterStarted('enc-1', [
+        makeCombatant({ id: 'c1', currentHp: 20 }),
+        makeCombatant({ id: 'c2', userId: 'u2', characterName: 'Sam', currentHp: 15 }),
+      ], 1, 'planning', 0));
+
+      const steps = [{
+        phase: 'attack', actorId: 'c1', actorName: 'Frodo', actionType: 'attack',
+        targetId: 'c2', targetName: 'Sam', damage: 8, damageDice: '1d8',
+        newHp: 7, newX: null, newY: null, defeated: false, feedText: 'Frodo attacks Sam for 8 damage.'
+      }];
+      store.dispatch(new ResolutionCompleted(steps, {}, false));
+
+      const combatants = store.selectSnapshot(EncounterState.combatants);
+      expect(combatants.find(c => c.id === 'c2')!.currentHp).toBe(7);
+    });
+
+    it('marks combatant as defeated when step.defeated is true', () => {
+      store.dispatch(new EncounterStarted('enc-1', [
+        makeCombatant({ id: 'c1' }),
+        makeCombatant({ id: 'c2', userId: 'u2', characterName: 'Sam', currentHp: 5 }),
+      ], 1, 'planning', 0));
+
+      const steps = [{
+        phase: 'attack', actorId: 'c1', actorName: 'Frodo', actionType: 'attack',
+        targetId: 'c2', targetName: 'Sam', damage: 10, damageDice: '1d8',
+        newHp: 0, newX: null, newY: null, defeated: true, feedText: 'Sam is defeated!'
+      }];
+      store.dispatch(new ResolutionCompleted(steps, {}, false));
+
+      const combatants = store.selectSnapshot(EncounterState.combatants);
+      expect(combatants.find(c => c.id === 'c2')!.isDefeated).toBeTrue();
+    });
+  });
+
+  describe('PlanningPhaseStarted', () => {
+    it('resets to planning with new round number and timer', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatant()], 1, 'planning', 0));
+      store.dispatch(new AllLockedIn());
+      store.dispatch(new PlanningPhaseStarted('enc-1', 2, 1700000060000));
+
+      const state = store.snapshot().encounter;
+      expect(state.roundPhase).toBe('planning');
+      expect(state.roundNumber).toBe(2);
+      expect(state.planningTimerExpiresAt).toBe(1700000060000);
+      expect(state.myPlannedAction).toBeNull();
+      expect(state.lockedInCombatantIds).toEqual([]);
+      expect(state.resolutionSteps).toEqual([]);
+      expect(state.isPlayingBack).toBeFalse();
+    });
+  });
+
+  describe('PlaybackFinished', () => {
+    it('sets isPlayingBack to false', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatant()], 1, 'planning', 0));
+      const steps = [{
+        phase: 'movement', actorId: 'c1', actorName: 'Frodo', actionType: 'move',
+        targetId: null, targetName: null, damage: null, damageDice: null,
+        newHp: null, newX: 3, newY: 4, defeated: false, feedText: 'Frodo moves.'
+      }];
+      store.dispatch(new ResolutionCompleted(steps, {}, false));
+      expect(store.snapshot().encounter.isPlayingBack).toBeTrue();
+
+      store.dispatch(new PlaybackFinished());
+      expect(store.snapshot().encounter.isPlayingBack).toBeFalse();
+    });
+  });
+
   describe('ClearEncounter', () => {
     it('resets state to defaults', () => {
       store.dispatch(new EncounterStarted('enc-1', [makeCombatant()], 1, 'planning', 0));
@@ -168,6 +255,8 @@ describe('EncounterState', () => {
       expect(state.myPlannedAction).toBeNull();
       expect(state.lockedInCombatantIds).toEqual([]);
       expect(state.planningTimerExpiresAt).toBeNull();
+      expect(state.resolutionSteps).toEqual([]);
+      expect(state.isPlayingBack).toBeFalse();
     });
   });
 });

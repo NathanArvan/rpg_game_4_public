@@ -6,11 +6,14 @@ import {
   ActionPlanned,
   AllLockedIn,
   AttackResolved,
+  ClearEncounter,
   CombatantDefeated,
   EncounterStarted,
+  PlanningPhaseStarted,
   PlayerLockedIn,
+  ResolutionCompleted,
 } from '../../state/encounter/encounter.actions';
-import { MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
+import { BatchUpdatePositions, MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
 import { AddFeedEntry } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
 import {
@@ -19,10 +22,13 @@ import {
   AllLockedInPayload,
   AttackResolvedPayload,
   CombatantDefeatedPayload,
+  EncounterEndedPayload,
   EncounterStartedPayload,
   HubEvents,
+  PlanningPhaseStartedPayload,
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
+  ResolutionCompletedPayload,
   TokenMovedPayload,
 } from '../../contracts/hub-contracts.generated';
 
@@ -102,6 +108,34 @@ export class GameHubService {
     this.connection.on(HubEvents.Events.CombatantDefeated, (payload: CombatantDefeatedPayload) => {
       console.log('[hub] CombatantDefeated received:', payload);
       this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
+    });
+
+    this.connection.on(HubEvents.Events.ResolutionCompleted, (payload: ResolutionCompletedPayload) => {
+      console.log('[hub] ResolutionCompleted received:', payload);
+      this.ngZone.run(() => {
+        const positions: Record<string, { x: number; y: number }> = {};
+        for (const [id, pos] of Object.entries(payload.updatedPositions)) {
+          positions[id] = { x: pos.x, y: pos.y };
+        }
+        this.store.dispatch(new ResolutionCompleted(payload.steps, payload.updatedPositions, payload.encounterEnded));
+        this.store.dispatch(new BatchUpdatePositions(positions));
+        for (const step of payload.steps) {
+          this.store.dispatch(new AddFeedEntry(step.feedText));
+        }
+      });
+    });
+
+    this.connection.on(HubEvents.Events.PlanningPhaseStarted, (payload: PlanningPhaseStartedPayload) => {
+      console.log('[hub] PlanningPhaseStarted received:', payload);
+      this.ngZone.run(() => {
+        this.store.dispatch(new PlanningPhaseStarted(payload.encounterId, payload.roundNumber, payload.planningTimerExpiresAt));
+        this.store.dispatch(new ClearPendingMove());
+      });
+    });
+
+    this.connection.on(HubEvents.Events.EncounterEnded, (payload: EncounterEndedPayload) => {
+      console.log('[hub] EncounterEnded received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new ClearEncounter()));
     });
 
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));

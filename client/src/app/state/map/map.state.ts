@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { ClearPendingMove, MapInitialized, SetPendingMove, TokenMoved } from './map.actions';
+import { BatchUpdatePositions, ClearPendingMove, MapInitialized, SetPendingMove, TokenMoved } from './map.actions';
 import { MapStateModel, Position } from './map.state.model';
 
 @State<MapStateModel>({
@@ -53,5 +53,10 @@ export class MapState {
   @Action(ClearPendingMove)
   clearPendingMove(ctx: StateContext<MapStateModel>) {
     ctx.patchState({ pendingMove: null });
+  }
+
+  @Action(BatchUpdatePositions)
+  batchUpdatePositions(ctx: StateContext<MapStateModel>, { positions }: BatchUpdatePositions) {
+    ctx.patchState({ positions, pendingMove: null });
   }
 }

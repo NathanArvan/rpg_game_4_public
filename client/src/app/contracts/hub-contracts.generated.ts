@@ -80,6 +80,30 @@ export interface PlayerPresenceChangedPayload {
   isOnline: boolean;
 }
 
+export interface ResolutionStepDto {
+  phase: string;
+  actorId: string;
+  actorName: string;
+  actionType: string;
+  targetId: string | null;
+  targetName: string | null;
+  damage: number | null;
+  damageDice: string | null;
+  newHp: number | null;
+  newX: number | null;
+  newY: number | null;
+  defeated: boolean;
+  feedText: string;
+}
+
+export interface ResolutionCompletedPayload {
+  encounterId: string;
+  roundNumber: number;
+  steps: ResolutionStepDto[];
+  updatedPositions: { [key: string]: PositionDto };
+  encounterEnded: boolean;
+}
+
 export interface TokenMovedPayload {
   combatantId: string;
   x: number;
@@ -99,6 +123,7 @@ export const HubEvents = {
     ActionPlanned: 'ActionPlanned',
     PlayerLockedIn: 'PlayerLockedIn',
     AllLockedIn: 'AllLockedIn',
+    ResolutionCompleted: 'ResolutionCompleted',
   },
   Methods: {
     JoinSession: 'JoinSession',

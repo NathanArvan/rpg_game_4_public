@@ -93,7 +93,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             "planning",
             1,
             planningExpiresAt,
-            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId)).ToList());
+            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, c.CharacterId.ToString(), c.CharacterName)).ToList());
 
         await redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
         await redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
