@@ -24,4 +24,6 @@ export interface EncounterStateModel {
   myPlannedAction: PlannedAction | null;
   lockedInCombatantIds: string[];
   planningTimerExpiresAt: number | null;
+  resolutionSteps: import('../../contracts/hub-contracts.generated').ResolutionStepDto[];
+  isPlayingBack: boolean;
 }

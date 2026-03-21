@@ -13,8 +13,10 @@ import { Combatant } from '../../state/encounter/encounter.model';
     <div class="encounter-tracker">
       <h2>
         Round {{ roundNumber$ | async }}
-        <span class="phase-badge" [class.planning]="(isPlanning$ | async)" [class.resolving]="(isResolving$ | async)">
-          {{ (roundPhase$ | async) }}
+        <span class="phase-badge"
+          [class.planning]="(isPlanning$ | async)"
+          [class.resolving]="(isResolving$ | async) || (isPlayingBack$ | async)">
+          {{ (isPlayingBack$ | async) ? 'Resolving...' : (roundPhase$ | async) }}
         </span>
       </h2>
       <ul>
@@ -52,6 +54,7 @@ export class EncounterTrackerComponent {
   roundPhase$: Observable<string | null>;
   isPlanning$: Observable<boolean>;
   isResolving$: Observable<boolean>;
+  isPlayingBack$: Observable<boolean>;
 
   private lockedInIds: string[] = [];
 
@@ -61,6 +64,7 @@ export class EncounterTrackerComponent {
     this.roundPhase$ = store.select(EncounterState.roundPhase);
     this.isPlanning$ = store.select(EncounterState.isPlanning);
     this.isResolving$ = store.select(EncounterState.isResolving);
+    this.isPlayingBack$ = store.select(EncounterState.isPlayingBack);
     store.select(EncounterState.lockedInCombatantIds).subscribe(ids => this.lockedInIds = ids);
   }
 

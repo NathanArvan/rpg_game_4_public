@@ -9,16 +9,19 @@ public class PlanningTimerService : BackgroundService
 {
     private readonly IHubContext<GameHub> _hubContext;
     private readonly IRedisGameState _redisState;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PlanningTimerService> _logger;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _timers = new();
 
     public PlanningTimerService(
         IHubContext<GameHub> hubContext,
         IRedisGameState redisState,
+        IServiceScopeFactory scopeFactory,
         ILogger<PlanningTimerService> logger)
     {
         _hubContext = hubContext;
         _redisState = redisState;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -48,12 +51,41 @@ public class PlanningTimerService : BackgroundService
 
                 _logger.LogInformation("Planning timer expired for encounter {EncounterId}, transitioning to resolving", encounterId);
 
-                await _hubContext.Clients.Group($"session:{sessionId}")
+                var groupName = $"session:{sessionId}";
+                await _hubContext.Clients.Group(groupName)
                     .SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload(encounterId));
+
+                // Resolve the round
+                using var scope = _scopeFactory.CreateScope();
+                var resolutionSvc = scope.ServiceProvider.GetRequiredService<IResolutionService>();
+                var resolution = await resolutionSvc.ResolveRoundAsync(sessionId, encounterId);
+
+                await _hubContext.Clients.Group(groupName)
+                    .SendAsync(HubEvents.Events.ResolutionCompleted, resolution.Payload);
+
+                if (resolution.NextRoundPayload is not null)
+                {
+                    await _hubContext.Clients.Group(groupName)
+                        .SendAsync(HubEvents.Events.PlanningPhaseStarted, resolution.NextRoundPayload);
+
+                    ScheduleTimer(
+                        encounterId,
+                        sessionId,
+                        TimeSpan.FromMilliseconds(resolution.NextRoundPayload.PlanningTimerExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                }
+                else
+                {
+                    await _hubContext.Clients.Group(groupName)
+                        .SendAsync(HubEvents.Events.EncounterEnded, new EncounterEndedPayload(encounterId));
+                }
             }
             catch (TaskCanceledException)
             {
                 // Timer was cancelled (all locked in early)
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during timer-triggered resolution for encounter {EncounterId}", encounterId);
             }
             finally
             {
