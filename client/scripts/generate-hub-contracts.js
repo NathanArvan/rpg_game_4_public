@@ -38,6 +38,9 @@ function mapBaseType(t) {
   switch (t) {
     case 'string':  return 'string';
     case 'int':     return 'number';
+    case 'long':    return 'number';
+    case 'float':   return 'number';
+    case 'double':  return 'number';
     case 'bool':    return 'boolean';
     case 'Guid':    return 'string';
     default:        return t; // pass through — same name for cross-type references

@@ -18,9 +18,9 @@ public class CombatService(AppDbContext db, IRedisGameState redisState, ILogger<
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId)
             ?? throw new GameActionException("No active encounter.", isActionRejected: true);
 
-        var activeCombatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == activeEncounter.ActiveTurnCombatantId);
-        if (activeCombatantRef is null || activeCombatantRef.UserId != userId)
-            throw new GameActionException("It is not your turn.", isActionRejected: true);
+        var activeCombatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.UserId == userId);
+        if (activeCombatantRef is null)
+            throw new GameActionException("You are not in this encounter.", isActionRejected: true);
 
         if (activeCombatantRef.Id == targetCombatantId)
             throw new GameActionException("You cannot attack yourself.", isActionRejected: true);
