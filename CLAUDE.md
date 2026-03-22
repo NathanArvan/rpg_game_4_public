@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation
+
+### Design
+- `docs/design/GAME_DESIGN.md` — Core rules & design philosophy; tactics-first, setting-agnostic system. Start here for any design question.
+- `docs/design/DESIGN_SPIKE.md` — Locked decisions for Phase 3A: conflict resolution model, mutual kills, HP netting, damage pipeline, placeholder stats. Authoritative for 3A implementation.
+- `docs/design/TICK_RESOLUTION.md` — Tick-based resolution loop, path-based movement, action queue schema, opportunity attacks. Supersedes the single-pass phase model in DESIGN_SPIKE.
+- `docs/design/MAGIC_SYSTEM.md` — Environmental magic layer: ley points, resonance, magic pipeline. Defers internal character magic sources to post-playtesting.
+
+### Roadmap
+- `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan: what to build, in what order, 
+
 ## Commands
 
 ### Full Stack (Docker — local dev)
