@@ -1,6 +1,6 @@
 # RPG Game
 
-A multiplayer RPG combat app where all players act at the same time. Instead of waiting through a turn order, everyone plans their moves simultaneously, then the server resolves everything at once. A GM controls enemies and manages the session, while players each see the battle from their own character's perspective.
+A multiplayer RPG app where all players act at the same time. Instead of waiting through a turn order, everyone plans their moves simultaneously, then the server resolves everything at once. A GM controls enemies and manages the session, while players each see the battle from their own character's perspective.
 
 Built for the browser. Real-time sync across all connected players via WebSockets.
 
@@ -119,3 +119,21 @@ Design documents and roadmaps live in the repo if you want to dig deeper into wh
 - `docs/design/GAME_DESIGN.md` — Core rules and design philosophy
 - `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan and phase sequencing
 - `CLAUDE.md` — Developer reference (architecture, commands, conventions)
+
+
+## Roadmap
+
+The project is organized into three horizons, each representing a product-level milestone.
+
+### Horizon 1 — Single Encounter
+
+A GM and players can join a session, create characters, build an encounter, and play it to completion with the full simultaneous resolution system. This is the core tactical combat product. All major implementation work lives here:
+
+
+### Horizon 2 — Connected Sessions
+
+Multiple encounters with persistent characters. Experience, items, and progression carry between sessions. Social encounters and exploration systems are introduced, built on the same digital-first principles.
+
+### Horizon 3 — Campaign Play
+
+Long-running narrative arcs, world state persistence, crafting, downtime activities, faction reputation, and full campaign management tools.
