@@ -6,7 +6,6 @@ export interface Combatant {
   currentHp: number;
   maxHp: number;
   isDefeated: boolean;
-  combatantType: 'player' | 'monster';
 }
 
 export interface PlannedAction {
@@ -27,6 +26,4 @@ export interface EncounterStateModel {
   planningTimerExpiresAt: number | null;
   resolutionSteps: import('../../contracts/hub-contracts.generated').ResolutionStepDto[];
   isPlayingBack: boolean;
-  gmEnemiesLockedIn: boolean;
-  enemyPlannedActions: Record<string, string>;
 }

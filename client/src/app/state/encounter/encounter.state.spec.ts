@@ -23,7 +23,6 @@ const makeCombatant = (overrides: Partial<CombatantDto> = {}): CombatantDto => (
   characterName: 'Frodo',
   currentHp: 20,
   maxHp: 20,
-  combatantType: 'player',
   ...overrides,
 });
 

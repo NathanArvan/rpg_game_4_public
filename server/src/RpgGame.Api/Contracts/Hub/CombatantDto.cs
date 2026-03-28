@@ -6,5 +6,4 @@ public record CombatantDto(
     string CharacterId,
     string CharacterName,
     int CurrentHp,
-    int MaxHp,
-    string CombatantType = "player");
+    int MaxHp);

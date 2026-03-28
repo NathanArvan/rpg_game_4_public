@@ -20,14 +20,11 @@ import { Combatant } from '../../state/encounter/encounter.model';
         </span>
       </h2>
       <ul>
-        <li *ngFor="let c of combatants$ | async"
-            [class.defeated]="c.isDefeated"
-            [class.monster-row]="c.combatantType === 'monster'">
+        <li *ngFor="let c of combatants$ | async" [class.defeated]="c.isDefeated">
           <span class="lock-status">
-            <span *ngIf="isLockedIn(c)" class="locked-icon" title="Locked in">&#10003;</span>
-            <span *ngIf="!isLockedIn(c) && (isPlanning$ | async) && !c.isDefeated" class="planning-icon" title="Still planning">&#8987;</span>
+            <span *ngIf="isLockedIn(c.id)" class="locked-icon" title="Locked in">&#10003;</span>
+            <span *ngIf="!isLockedIn(c.id) && (isPlanning$ | async) && !c.isDefeated" class="planning-icon" title="Still planning">&#8987;</span>
           </span>
-          <span *ngIf="c.combatantType === 'monster'" class="monster-badge">👾</span>
           <strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong>
           <span class="hp" *ngIf="!c.isDefeated"> · HP: {{ c.currentHp }}/{{ c.maxHp }}</span>
           <span class="defeated-label" *ngIf="c.isDefeated"> · DEFEATED</span>
@@ -49,8 +46,6 @@ import { Combatant } from '../../state/encounter/encounter.model';
     .lock-status { width: 20px; text-align: center; }
     .locked-icon { color: #2e7d32; font-weight: bold; }
     .planning-icon { color: #856404; }
-    .monster-row { background: #fdf0f0; }
-    .monster-badge { font-size: 0.9em; }
   `],
 })
 export class EncounterTrackerComponent {
@@ -62,7 +57,6 @@ export class EncounterTrackerComponent {
   isPlayingBack$: Observable<boolean>;
 
   private lockedInIds: string[] = [];
-  private gmEnemiesLockedIn = false;
 
   constructor(private store: Store) {
     this.combatants$ = store.select(EncounterState.combatants);
@@ -72,11 +66,9 @@ export class EncounterTrackerComponent {
     this.isResolving$ = store.select(EncounterState.isResolving);
     this.isPlayingBack$ = store.select(EncounterState.isPlayingBack);
     store.select(EncounterState.lockedInCombatantIds).subscribe(ids => this.lockedInIds = ids);
-    store.select(EncounterState.gmEnemiesLockedIn).subscribe(v => this.gmEnemiesLockedIn = v);
   }
 
-  isLockedIn(combatant: Combatant): boolean {
-    if (combatant.combatantType === 'monster') return this.gmEnemiesLockedIn;
-    return this.lockedInIds.includes(combatant.id);
+  isLockedIn(combatantId: string): boolean {
+    return this.lockedInIds.includes(combatantId);
   }
 }

@@ -66,15 +66,6 @@ export class PlaybackFinished {
   static readonly type = '[Encounter] Playback Finished';
 }
 
-export class EnemyActionPlanned {
-  static readonly type = '[Encounter] Enemy Action Planned';
-  constructor(public combatantId: string, public actionType: string) {}
-}
-
-export class GmEnemiesLockedIn {
-  static readonly type = '[Encounter] GM Enemies Locked In';
-}
-
 export class ClearEncounter {
   static readonly type = '[Encounter] Clear';
 }

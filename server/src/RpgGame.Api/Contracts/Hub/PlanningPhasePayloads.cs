@@ -4,8 +4,6 @@ public record PlanningPhaseStartedPayload(string EncounterId, int RoundNumber, l
 
 public record ActionPlannedPayload(string CombatantId, string ActionType);
 
-public record PlayerLockedInPayload(string CombatantId, string CharacterName, bool IsGmEnemies = false);
+public record PlayerLockedInPayload(string CombatantId, string CharacterName);
 
 public record AllLockedInPayload(string EncounterId);
-
-public record EnemyActionPlannedPayload(string CombatantId, string ActionType);

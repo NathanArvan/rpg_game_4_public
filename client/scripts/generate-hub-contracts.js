@@ -68,13 +68,11 @@ function extractRecords(source) {
     const properties = [];
 
     if (rawParams) {
-      // Each param: "Type? Name" or "List<T> Name" or "Type Name = default" etc.
+      // Each param: "Type? Name" or "List<T> Name" etc.
       // Split on commas that are NOT inside angle brackets
       const params = splitParams(rawParams);
       for (const param of params) {
-        // Strip default values: "string Name = value" → "string Name"
-        const withoutDefault = param.trim().replace(/\s*=\s*\S+$/, '');
-        const parts = withoutDefault.trim().split(/\s+/);
+        const parts = param.trim().split(/\s+/);
         const propName = parts[parts.length - 1];
         const csType = parts.slice(0, -1).join(' ');
         properties.push({ name: propName, type: csType });

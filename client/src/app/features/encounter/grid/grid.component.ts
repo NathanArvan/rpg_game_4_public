@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef, OnChanges } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
@@ -24,7 +24,6 @@ interface Cell {
     <div class="grid-wrapper">
       <div class="grid-controls" *ngIf="isPlanning$ | async">
         <button
-          *ngIf="!isGm"
           class="lock-in-btn"
           (click)="onLockIn()"
           [disabled]="!(hasPlannedAction$ | async) || isLockedIn">
@@ -32,8 +31,6 @@ interface Cell {
         </button>
         <span class="timer" *ngIf="timerSeconds > 0">{{ timerSeconds }}s</span>
         <span class="phase-label">Planning Phase</span>
-        <span *ngIf="isGm && !selectedEnemyId" class="gm-hint">Click a 👾 enemy to select, then click a cell to plan its move</span>
-        <span *ngIf="isGm && selectedEnemyId" class="gm-selected">Selected: {{ getSelectedEnemyName() }} — click a cell to move or a player to attack</span>
       </div>
       <div class="active-turn" *ngIf="(isResolving$ | async) && !(isPlayingBack$ | async)">
         <span class="waiting">Resolving actions...</span>
@@ -54,10 +51,8 @@ interface Cell {
             *ngIf="tokenAt(cell) as combatant"
             class="token"
             [class.defeated-token]="combatant.isDefeated"
-            [class.enemy-token]="combatant.combatantType === 'monster' && !combatant.isDefeated"
-            [class.my-token]="combatant.userId === myUserId && !combatant.isDefeated"
+            [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
             [class.token-animating]="isAnimatingToken(combatant.id)"
-            [class.selected-enemy]="combatant.id === selectedEnemyId"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
             <span class="damage-float" *ngIf="getDamageFloat(combatant.id) as dmg">-{{ dmg }}</span>
@@ -114,13 +109,6 @@ interface Cell {
       background: #b71c1c;
       cursor: crosshair;
     }
-    .token.my-token {
-      background: #1565c0;
-    }
-    .token.selected-enemy {
-      outline: 3px solid #ffd600;
-      outline-offset: 1px;
-    }
     .token.defeated-token {
       background: #9e9e9e;
       opacity: 0.5;
@@ -130,8 +118,6 @@ interface Cell {
       transition: all 0.4s ease;
     }
     .playback-label { color: #2e7d32; font-weight: bold; font-style: italic; }
-    .gm-hint { color: #666; font-size: 0.85em; font-style: italic; }
-    .gm-selected { color: #b71c1c; font-weight: bold; font-size: 0.9em; }
     .damage-float {
       position: absolute;
       top: -18px;
@@ -153,9 +139,6 @@ interface Cell {
 export class GridComponent implements OnInit, OnDestroy {
   @Input() joinCode = '';
   @Input() myUserId = '';
-  @Input() isGm = false;
-
-  selectedEnemyId: string | null = null;
 
   cells$!: Observable<Cell[]>;
   gridColumns$!: Observable<string>;
@@ -218,11 +201,6 @@ export class GridComponent implements OnInit, OnDestroy {
 
     this.timerInterval = setInterval(() => this.updateTimer(), 1000);
 
-    // Clear enemy selection when planning phase resets
-    this.store.select(EncounterState.roundPhase).subscribe(phase => {
-      if (phase !== 'planning') this.selectedEnemyId = null;
-    });
-
     // Playback subscription
     this.store.select(EncounterState.resolutionSteps).subscribe(steps => {
       if (steps.length > 0) {
@@ -262,10 +240,6 @@ export class GridComponent implements OnInit, OnDestroy {
   }
 
   isInRange(cell: Cell): boolean {
-    // GM mode: highlight all empty cells when an enemy is selected (no range limit)
-    if (this.isGm && this.selectedEnemyId) {
-      return !this.tokenAt(cell);
-    }
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant || this.isLockedIn || this.myPlannedAction) return false;
 
@@ -277,45 +251,19 @@ export class GridComponent implements OnInit, OnDestroy {
   }
 
   onCellClick(cell: Cell): void {
+    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
+    if (!myCombatant) return;
+    if (myCombatant.isDefeated) return;
+    if (this.isLockedIn) return;
+
     // Only allow planning during planning phase
     const roundPhase = this.store.selectSnapshot(EncounterState.roundPhase);
     if (roundPhase !== 'planning') return;
 
     const targetCombatant = this.tokenAt(cell);
 
-    // GM mode: click monster to select it, then click a cell to plan its move/attack
-    if (this.isGm) {
-      if (targetCombatant && targetCombatant.combatantType === 'monster' && !targetCombatant.isDefeated) {
-        // Toggle enemy selection
-        this.selectedEnemyId = this.selectedEnemyId === targetCombatant.id ? null : targetCombatant.id;
-        this.cdr.detectChanges();
-        return;
-      }
-
-      if (this.selectedEnemyId) {
-        if (!targetCombatant) {
-          // Move selected enemy to empty cell
-          this.hub.planEnemyAction(this.joinCode, this.selectedEnemyId, 'move', undefined, cell.x, cell.y);
-          this.selectedEnemyId = null;
-          this.cdr.detectChanges();
-        } else if (targetCombatant.combatantType === 'player' && !targetCombatant.isDefeated) {
-          // Attack player with selected enemy
-          this.hub.planEnemyAction(this.joinCode, this.selectedEnemyId, 'attack', targetCombatant.id);
-          this.selectedEnemyId = null;
-          this.cdr.detectChanges();
-        }
-        return;
-      }
-      return; // GM has no player combatant — ignore other clicks
-    }
-
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant) return;
-    if (myCombatant.isDefeated) return;
-    if (this.isLockedIn) return;
-
-    if (targetCombatant && targetCombatant.combatantType === 'monster' && !targetCombatant.isDefeated) {
-      // Click on a monster — plan attack
+    if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
+      // Click on an enemy token — plan attack
       this.store.dispatch(new ActionPlanned({ actionType: 'attack', targetCombatantId: targetCombatant.id }));
       this.hub.planAction(this.joinCode, 'attack', targetCombatant.id);
     } else if (!targetCombatant) {
@@ -328,10 +276,6 @@ export class GridComponent implements OnInit, OnDestroy {
 
   onLockIn(): void {
     this.hub.lockIn(this.joinCode);
-  }
-
-  getSelectedEnemyName(): string {
-    return this.combatants.find(c => c.id === this.selectedEnemyId)?.characterName ?? '';
   }
 
   isAnimatingToken(combatantId: string): boolean {

@@ -26,7 +26,6 @@ export interface CombatantDto {
   characterName: string;
   currentHp: number;
   maxHp: number;
-  combatantType: string;
 }
 
 export interface EncounterEndedPayload {
@@ -68,16 +67,10 @@ export interface ActionPlannedPayload {
 export interface PlayerLockedInPayload {
   combatantId: string;
   characterName: string;
-  isGmEnemies: boolean;
 }
 
 export interface AllLockedInPayload {
   encounterId: string;
-}
-
-export interface EnemyActionPlannedPayload {
-  combatantId: string;
-  actionType: string;
 }
 
 export interface PlayerPresenceChangedPayload {
@@ -131,7 +124,6 @@ export const HubEvents = {
     PlayerLockedIn: 'PlayerLockedIn',
     AllLockedIn: 'AllLockedIn',
     ResolutionCompleted: 'ResolutionCompleted',
-    EnemyActionPlanned: 'EnemyActionPlanned',
   },
   Methods: {
     JoinSession: 'JoinSession',
@@ -139,7 +131,5 @@ export const HubEvents = {
     PlanAction: 'PlanAction',
     LockIn: 'LockIn',
     ForceResolve: 'ForceResolve',
-    PlanEnemyAction: 'PlanEnemyAction',
-    LockInEnemies: 'LockInEnemies',
   },
 } as const;

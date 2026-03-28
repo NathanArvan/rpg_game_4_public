@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Hubs;
-using RpgGame.Api.Models;
 using System.Collections.Concurrent;
 
 namespace RpgGame.Api.Services;
@@ -45,16 +44,6 @@ public class PlanningTimerService : BackgroundService
                 var activeEncounter = await _redisState.GetActiveEncounterAsync(sessionId);
                 if (activeEncounter is null || activeEncounter.RoundPhase != "planning")
                     return;
-
-                // Seed default defend for any living monster with no planned action
-                foreach (var c in activeEncounter.Combatants.Where(c => c.CombatantType == "monster"))
-                {
-                    if (await _redisState.IsDefeatedAsync(encounterId, c.Id)) continue;
-                    var existing = await _redisState.GetPlannedActionAsync(encounterId, c.Id);
-                    if (existing is null)
-                        await _redisState.SetPlannedActionAsync(encounterId, c.Id,
-                            new PlannedAction("defend", null, null, null));
-                }
 
                 // Transition to resolving
                 var updated = activeEncounter with { RoundPhase = "resolving" };

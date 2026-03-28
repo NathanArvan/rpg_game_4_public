@@ -7,9 +7,7 @@ import {
   ClearEncounter,
   ClearPlannedAction,
   CombatantDefeated,
-  EnemyActionPlanned,
   EncounterStarted,
-  GmEnemiesLockedIn,
   PlanningPhaseStarted,
   PlaybackFinished,
   PlayerLockedIn,
@@ -31,8 +29,6 @@ import { CombatantDto, ResolutionStepDto } from '../../contracts/hub-contracts.g
     planningTimerExpiresAt: null,
     resolutionSteps: [],
     isPlayingBack: false,
-    gmEnemiesLockedIn: false,
-    enemyPlannedActions: {},
   },
 })
 @Injectable()
@@ -92,28 +88,9 @@ export class EncounterState {
     return state.isPlayingBack;
   }
 
-  @Selector()
-  static enemyCombatants(state: EncounterStateModel): Combatant[] {
-    return state.combatants.filter(c => c.combatantType === 'monster' && !c.isDefeated);
-  }
-
-  @Selector()
-  static gmEnemiesLockedIn(state: EncounterStateModel): boolean {
-    return state.gmEnemiesLockedIn;
-  }
-
-  @Selector()
-  static enemyPlannedActions(state: EncounterStateModel): Record<string, string> {
-    return state.enemyPlannedActions;
-  }
-
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, action: EncounterStarted) {
-    const mapped: Combatant[] = action.combatants.map((c: CombatantDto) => ({
-      ...c,
-      isDefeated: false,
-      combatantType: (c.combatantType === 'monster' ? 'monster' : 'player') as 'player' | 'monster',
-    }));
+    const mapped: Combatant[] = action.combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false }));
     ctx.patchState({
       encounterId: action.encounterId,
       combatants: mapped,
@@ -123,8 +100,6 @@ export class EncounterState {
       planningTimerExpiresAt: action.planningTimerExpiresAt,
       myPlannedAction: null,
       lockedInCombatantIds: [],
-      gmEnemiesLockedIn: false,
-      enemyPlannedActions: {},
     });
   }
 
@@ -140,25 +115,10 @@ export class EncounterState {
 
   @Action(PlayerLockedIn)
   playerLockedIn(ctx: StateContext<EncounterStateModel>, { combatantId }: PlayerLockedIn) {
-    if (combatantId === 'gm_enemies') {
-      ctx.dispatch(new GmEnemiesLockedIn());
-      return;
-    }
     const state = ctx.getState();
     if (!state.lockedInCombatantIds.includes(combatantId)) {
       ctx.patchState({ lockedInCombatantIds: [...state.lockedInCombatantIds, combatantId] });
     }
-  }
-
-  @Action(EnemyActionPlanned)
-  enemyActionPlanned(ctx: StateContext<EncounterStateModel>, { combatantId, actionType }: EnemyActionPlanned) {
-    const state = ctx.getState();
-    ctx.patchState({ enemyPlannedActions: { ...state.enemyPlannedActions, [combatantId]: actionType } });
-  }
-
-  @Action(GmEnemiesLockedIn)
-  gmEnemiesLockedIn(ctx: StateContext<EncounterStateModel>) {
-    ctx.patchState({ gmEnemiesLockedIn: true });
   }
 
   @Action(AllLockedIn)
@@ -216,8 +176,6 @@ export class EncounterState {
       lockedInCombatantIds: [],
       resolutionSteps: [],
       isPlayingBack: false,
-      gmEnemiesLockedIn: false,
-      enemyPlannedActions: {},
     });
   }
 
@@ -239,8 +197,6 @@ export class EncounterState {
       planningTimerExpiresAt: null,
       resolutionSteps: [],
       isPlayingBack: false,
-      gmEnemiesLockedIn: false,
-      enemyPlannedActions: {},
     });
   }
 }
