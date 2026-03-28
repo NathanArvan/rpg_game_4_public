@@ -7,6 +7,8 @@ export class DevService {
   private nouns = ['oak', 'wolf', 'hawk', 'river', 'blade', 'forge', 'ash', 'thorn', 'crest', 'vale'];
   private fantasyNames = ['Theron', 'Lyria', 'Corvin', 'Seraphel', 'Daxon', 'Mira', 'Aldric', 'Zara', 'Fenwick', 'Isolde'];
   private races = ['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Gnome', 'Half-Orc', 'Tiefling'];
+  private classes = ['Fighter', 'Wizard', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Barbarian', 'Bard'];
+
   private pick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
   }
@@ -25,18 +27,25 @@ export class DevService {
   }
 
   randomCharacter(): CreateCharacterRequest {
+    const con = this.roll(8, 18);
+    const conMod = Math.floor((con - 10) / 2);
+    const level = this.roll(1, 3);
+    const maxHp = level * 5 + conMod;
     const surname = this.pick(this.nouns);
     return {
       name: this.pick(this.fantasyNames) + ' ' + surname.charAt(0).toUpperCase() + surname.slice(1),
       race: this.pick(this.races),
-      level: this.roll(1, 3),
+      class: this.pick(this.classes),
+      level,
+      maxHp,
+      currentHp: maxHp,
       baseStats: {
-        power:      this.roll(8, 18),
-        speed:      this.roll(8, 18),
-        precision:  this.roll(8, 18),
-        resilience: this.roll(8, 18),
-        focus:      this.roll(8, 18),
-        influence:  this.roll(8, 18),
+        str: this.roll(8, 18),
+        dex: this.roll(8, 18),
+        con,
+        int: this.roll(8, 18),
+        wis: this.roll(8, 18),
+        cha: this.roll(8, 18),
       },
     };
   }

@@ -24,18 +24,11 @@
     </ul>
   </div>
 
-  <app-gm-enemy-panel
-    *ngIf="(encounterActive$ | async) && (isGm$ | async)"
-    [joinCode]="(joinCode$ | async) ?? ''"
-    [isGm]="true">
-  </app-gm-enemy-panel>
-
   <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
   <app-feed *ngIf="encounterActive$ | async"></app-feed>
   <app-grid
     *ngIf="encounterActive$ | async"
     [joinCode]="(joinCode$ | async) ?? ''"
-    [myUserId]="auth.getUserId()"
-    [isGm]="(isGm$ | async) ?? false">
+    [myUserId]="auth.getUserId()">
   </app-grid>
 </div>

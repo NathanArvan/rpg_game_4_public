@@ -7,19 +7,9 @@ public record JoinSessionResult(
 
 public record EncounterStartedResult(Guid SessionId, EncounterStartedPayload Payload);
 
+public record TokenMovedResult(Guid SessionId, TokenMovedPayload Payload);
+
 public record AttackResult(
     Guid SessionId,
     AttackResolvedPayload AttackPayload,
     CombatantDefeatedPayload? DefeatedPayload);
-
-public record PlanActionResult(Guid SessionId, string CombatantId, string ActionType);
-
-public record LockInResult(Guid SessionId, string CombatantId, string CharacterName, bool AllLockedIn, string EncounterId);
-
-public record ForceResolveResult(Guid SessionId, string EncounterId);
-
-public record PlanEnemyActionResult(Guid SessionId, string CombatantId, string ActionType);
-
-public record LockInEnemiesResult(Guid SessionId, bool AllLockedIn, string EncounterId);
-
-public record ResolutionResult(Guid SessionId, ResolutionCompletedPayload Payload, PlanningPhaseStartedPayload? NextRoundPayload);

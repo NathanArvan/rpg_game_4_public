@@ -40,7 +40,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/auth/token": {
@@ -78,7 +79,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/campaigns": {
@@ -116,7 +118,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/campaigns/{campaignId}/sessions": {
@@ -146,7 +149,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/characters": {
@@ -184,7 +188,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/characters/mine": {
@@ -206,7 +211,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       }
     },
     "/characters/{id}": {
@@ -236,7 +242,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       },
       "put": {
         "tags": [
@@ -283,7 +290,8 @@
               }
             }
           }
-        }
+        },
+        "x-filter-applied": true
       },
       "delete": {
         "tags": [
@@ -304,7 +312,8 @@
           "200": {
             "description": "OK"
           }
-        }
+        },
+        "x-filter-applied": true
       }
     }
   },
@@ -323,27 +332,27 @@
       "BaseStatsDto": {
         "type": "object",
         "properties": {
-          "power": {
+          "str": {
             "type": "integer",
             "format": "int32"
           },
-          "speed": {
+          "dex": {
             "type": "integer",
             "format": "int32"
           },
-          "precision": {
+          "con": {
             "type": "integer",
             "format": "int32"
           },
-          "resilience": {
+          "int": {
             "type": "integer",
             "format": "int32"
           },
-          "focus": {
+          "wis": {
             "type": "integer",
             "format": "int32"
           },
-          "influence": {
+          "cha": {
             "type": "integer",
             "format": "int32"
           }
@@ -381,14 +390,6 @@
             "format": "int32"
           },
           "currentHp": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "movementRange": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "visionRange": {
             "type": "integer",
             "format": "int32"
           }
@@ -436,6 +437,14 @@
           },
           "baseStats": {
             "$ref": "#/components/schemas/BaseStatsDto"
+          },
+          "maxHp": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentHp": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -507,6 +516,14 @@
           },
           "baseStats": {
             "$ref": "#/components/schemas/BaseStatsDto"
+          },
+          "maxHp": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentHp": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

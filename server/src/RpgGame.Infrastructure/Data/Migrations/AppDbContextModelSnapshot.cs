@@ -17,7 +17,7 @@ namespace RpgGame.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.25")
+                .HasAnnotation("ProductVersion", "8.0.24")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -217,9 +217,6 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<int>("MaxHp")
                         .HasColumnType("integer");
 
-                    b.Property<int>("MovementRange")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -231,9 +228,6 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<int>("VisionRange")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -250,9 +244,6 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("GameSessionId")
                         .HasColumnType("uuid");
-
-                    b.Property<int>("RoundNumber")
-                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamp with time zone");
@@ -283,8 +274,17 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("DexModifier")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("EncounterId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Initiative")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("InitiativeRoll")
+                        .HasColumnType("integer");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -503,22 +503,22 @@ namespace RpgGame.Infrastructure.Data.Migrations
                             b1.Property<Guid>("CharacterId")
                                 .HasColumnType("uuid");
 
-                            b1.Property<int>("Focus")
+                            b1.Property<int>("Cha")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Influence")
+                            b1.Property<int>("Con")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Power")
+                            b1.Property<int>("Dex")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Precision")
+                            b1.Property<int>("Int")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Resilience")
+                            b1.Property<int>("Str")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Speed")
+                            b1.Property<int>("Wis")
                                 .HasColumnType("integer");
 
                             b1.HasKey("CharacterId");

@@ -73,38 +73,14 @@ public class RedisGameState : IRedisGameState
         await db.StringSetAsync($"encounter:map:{encounterId}", JsonSerializer.Serialize(map, _jsonOptions));
     }
 
-    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, int attackBonus, int damageBase, int dodgeChance, int maxAp, int movementRange)
+    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string charClass)
     {
         var db = _redis.GetDatabase();
         await db.HashSetAsync($"character:live:{characterId}", new HashEntry[]
         {
-            new("currentHp",     currentHp),
-            new("attackBonus",   attackBonus),
-            new("damageBase",    damageBase),
-            new("dodgeChance",   dodgeChance),
-            new("maxAp",         maxAp),
-            new("movementRange", movementRange),
+            new("currentHp", currentHp),
+            new("class", charClass),
         });
-    }
-
-    public async Task<(int currentHp, int attackBonus, int damageBase, int dodgeChance, int maxAp, int movementRange)> GetCharacterLiveStateAsync(string characterId)
-    {
-        var db = _redis.GetDatabase();
-        var entries = await db.HashGetAllAsync($"character:live:{characterId}");
-        int currentHp = 0, attackBonus = 0, damageBase = 2, dodgeChance = 0, maxAp = 2, movementRange = 5;
-        foreach (var entry in entries)
-        {
-            switch (entry.Name.ToString())
-            {
-                case "currentHp":     currentHp     = (int)entry.Value; break;
-                case "attackBonus":   attackBonus   = (int)entry.Value; break;
-                case "damageBase":    damageBase    = (int)entry.Value; break;
-                case "dodgeChance":   dodgeChance   = (int)entry.Value; break;
-                case "maxAp":         maxAp         = (int)entry.Value; break;
-                case "movementRange": movementRange = (int)entry.Value; break;
-            }
-        }
-        return (currentHp, attackBonus, damageBase, dodgeChance, maxAp, movementRange);
     }
 
     public async Task<long> DecrementHpAsync(string characterId, long amount)
@@ -129,73 +105,5 @@ public class RedisGameState : IRedisGameState
     {
         var db = _redis.GetDatabase();
         await db.SetAddAsync($"encounter:{encounterId}:defeated", combatantId);
-    }
-
-    // Planned actions
-    public async Task SetPlannedActionAsync(string encounterId, string combatantId, PlannedAction action)
-    {
-        var db = _redis.GetDatabase();
-        await db.HashSetAsync($"encounter:{encounterId}:planned_actions", combatantId,
-            JsonSerializer.Serialize(action, _jsonOptions));
-    }
-
-    public async Task<PlannedAction?> GetPlannedActionAsync(string encounterId, string combatantId)
-    {
-        var db = _redis.GetDatabase();
-        var json = await db.HashGetAsync($"encounter:{encounterId}:planned_actions", combatantId);
-        if (!json.HasValue) return null;
-        return JsonSerializer.Deserialize<PlannedAction>(json!, _jsonOptions);
-    }
-
-    public async Task<Dictionary<string, PlannedAction>> GetAllPlannedActionsAsync(string encounterId)
-    {
-        var db = _redis.GetDatabase();
-        var entries = await db.HashGetAllAsync($"encounter:{encounterId}:planned_actions");
-        var result = new Dictionary<string, PlannedAction>();
-        foreach (var entry in entries)
-        {
-            var action = JsonSerializer.Deserialize<PlannedAction>(entry.Value.ToString()!, _jsonOptions);
-            if (action is not null)
-                result[entry.Name.ToString()] = action;
-        }
-        return result;
-    }
-
-    public async Task ClearPlannedActionsAsync(string encounterId)
-    {
-        var db = _redis.GetDatabase();
-        await db.KeyDeleteAsync($"encounter:{encounterId}:planned_actions");
-    }
-
-    // Lock-in
-    public async Task AddLockedInAsync(string encounterId, string combatantId)
-    {
-        var db = _redis.GetDatabase();
-        await db.SetAddAsync($"encounter:{encounterId}:locked_in", combatantId);
-    }
-
-    public async Task<bool> IsLockedInAsync(string encounterId, string combatantId)
-    {
-        var db = _redis.GetDatabase();
-        return await db.SetContainsAsync($"encounter:{encounterId}:locked_in", combatantId);
-    }
-
-    public async Task<long> GetLockedInCountAsync(string encounterId)
-    {
-        var db = _redis.GetDatabase();
-        return await db.SetLengthAsync($"encounter:{encounterId}:locked_in");
-    }
-
-    public async Task<HashSet<string>> GetLockedInSetAsync(string encounterId)
-    {
-        var db = _redis.GetDatabase();
-        var members = await db.SetMembersAsync($"encounter:{encounterId}:locked_in");
-        return members.Select(m => m.ToString()).ToHashSet();
-    }
-
-    public async Task ClearLockedInAsync(string encounterId)
-    {
-        var db = _redis.GetDatabase();
-        await db.KeyDeleteAsync($"encounter:{encounterId}:locked_in");
     }
 }

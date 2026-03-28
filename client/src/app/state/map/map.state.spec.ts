@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideStore, Store } from '@ngxs/store';
 import { MapState } from './map.state';
-import { BatchUpdatePositions, ClearPendingMove, MapInitialized, SetPendingMove, TokenMoved } from './map.actions';
+import { ClearPendingMove, MapInitialized, SetPendingMove, TokenMoved } from './map.actions';
 
 describe('MapState', () => {
   let store: Store;
@@ -62,24 +62,6 @@ describe('MapState', () => {
     it('clears the pending position', () => {
       store.dispatch(new SetPendingMove({ x: 7, y: 2 }));
       store.dispatch(new ClearPendingMove());
-
-      expect(store.selectSnapshot(MapState.pendingMove)).toBeNull();
-    });
-  });
-
-  describe('BatchUpdatePositions', () => {
-    it('replaces all positions', () => {
-      store.dispatch(new MapInitialized('enc-1', 20, 20, { c1: { x: 0, y: 0 }, c2: { x: 5, y: 5 } }));
-      store.dispatch(new BatchUpdatePositions({ c1: { x: 3, y: 4 }, c2: { x: 10, y: 10 } }));
-
-      const positions = store.selectSnapshot(MapState.positions);
-      expect(positions['c1']).toEqual({ x: 3, y: 4 });
-      expect(positions['c2']).toEqual({ x: 10, y: 10 });
-    });
-
-    it('clears pendingMove', () => {
-      store.dispatch(new SetPendingMove({ x: 7, y: 2 }));
-      store.dispatch(new BatchUpdatePositions({ c1: { x: 1, y: 1 } }));
 
       expect(store.selectSnapshot(MapState.pendingMove)).toBeNull();
     });

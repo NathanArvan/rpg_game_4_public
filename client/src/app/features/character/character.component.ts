@@ -9,7 +9,8 @@ import { CreateCharacterRequest } from '../../contracts/api-contracts.generated'
 
 interface CharacterForm {
   name: string; race: string; class: string; level: number;
-  baseStats: { power: number; speed: number; precision: number; resilience: number; focus: number; influence: number };
+  maxHp: number; currentHp: number;
+  baseStats: { str: number; dex: number; con: number; int: number; wis: number; cha: number };
 }
 import { DevService } from '../../core/services/dev.service';
 import { LoadMyCharacters, SelectCharacter, SetMyCharacter } from '../../state/character/character.actions';
@@ -31,21 +32,18 @@ import { CharacterState } from '../../state/character/character.state';
       <div *ngIf="selected$ | async as selected">
         <h2>Edit Character</h2>
         <label>Name <input [(ngModel)]="form.name" /></label>
-        <label>Race <input [(ngModel)]="form.race" placeholder="flavor only" /></label>
-        <label>Class <input [(ngModel)]="form.class" placeholder="flavor only" /></label>
+        <label>Race <input [(ngModel)]="form.race" /></label>
+        <label>Class <input [(ngModel)]="form.class" /></label>
         <label>Level <input type="number" [(ngModel)]="form.level" /></label>
-        <h3>Stats</h3>
-        <label>Power (melee damage) <input type="number" [(ngModel)]="form.baseStats.power" /></label>
-        <label>Speed (move range, dodge) <input type="number" [(ngModel)]="form.baseStats.speed" /></label>
-        <label>Precision (attack bonus) <input type="number" [(ngModel)]="form.baseStats.precision" /></label>
-        <label>Resilience (max HP) <input type="number" [(ngModel)]="form.baseStats.resilience" /></label>
-        <label>Focus (vision, AP) <input type="number" [(ngModel)]="form.baseStats.focus" /></label>
-        <label>Influence (team range) <input type="number" [(ngModel)]="form.baseStats.influence" /></label>
-        <p class="derived">
-          Max HP: <strong>{{ derivedMaxHp }}</strong> &nbsp;
-          Move: <strong>{{ derivedMoveRange }}</strong> &nbsp;
-          Vision: <strong>{{ derivedVisionRange }}</strong>
-        </p>
+        <label>Max HP <input type="number" [(ngModel)]="form.maxHp" /></label>
+        <label>Current HP <input type="number" [(ngModel)]="form.currentHp" /></label>
+        <h3>Base Stats</h3>
+        <label>STR <input type="number" [(ngModel)]="form.baseStats.str" /></label>
+        <label>DEX <input type="number" [(ngModel)]="form.baseStats.dex" /></label>
+        <label>CON <input type="number" [(ngModel)]="form.baseStats.con" /></label>
+        <label>INT <input type="number" [(ngModel)]="form.baseStats.int" /></label>
+        <label>WIS <input type="number" [(ngModel)]="form.baseStats.wis" /></label>
+        <label>CHA <input type="number" [(ngModel)]="form.baseStats.cha" /></label>
         <div class="actions">
           <button (click)="saveCharacter(selected.id)">Save</button>
           <button (click)="deleteCharacter(selected.id)" class="danger">Delete</button>
@@ -59,8 +57,8 @@ import { CharacterState } from '../../state/character/character.state';
         <div *ngIf="!(loading$ | async)">
           <div *ngFor="let c of characters$ | async" class="character-card" (click)="selectCharacter(c)">
             <strong>{{ c.name }}</strong>
-            <span>{{ c.race }} {{ c.class }}</span>
-            <span>HP: {{ c.currentHp }}/{{ c.maxHp }} &nbsp; Move: {{ c.movementRange }}</span>
+            <span>{{ c.race }} {{ c.class }} — Level {{ c.level }}</span>
+            <span>HP: {{ c.currentHp }}/{{ c.maxHp }}</span>
           </div>
 
           <div *ngIf="!(characters$ | async)?.length" class="empty">No characters yet.</div>
@@ -72,21 +70,18 @@ import { CharacterState } from '../../state/character/character.state';
           <div *ngIf="showCreate" class="create-form">
             <h2>New Character</h2>
             <label>Name <input [(ngModel)]="form.name" /></label>
-            <label>Race <input [(ngModel)]="form.race" placeholder="flavor only" /></label>
-            <label>Class <input [(ngModel)]="form.class" placeholder="flavor only" /></label>
+            <label>Race <input [(ngModel)]="form.race" /></label>
+            <label>Class <input [(ngModel)]="form.class" /></label>
             <label>Level <input type="number" [(ngModel)]="form.level" /></label>
-            <h3>Stats</h3>
-            <label>Power (melee damage) <input type="number" [(ngModel)]="form.baseStats.power" /></label>
-            <label>Speed (move range, dodge) <input type="number" [(ngModel)]="form.baseStats.speed" /></label>
-            <label>Precision (attack bonus) <input type="number" [(ngModel)]="form.baseStats.precision" /></label>
-            <label>Resilience (max HP) <input type="number" [(ngModel)]="form.baseStats.resilience" /></label>
-            <label>Focus (vision, AP) <input type="number" [(ngModel)]="form.baseStats.focus" /></label>
-            <label>Influence (team range) <input type="number" [(ngModel)]="form.baseStats.influence" /></label>
-            <p class="derived">
-              Max HP: <strong>{{ derivedMaxHp }}</strong> &nbsp;
-              Move: <strong>{{ derivedMoveRange }}</strong> &nbsp;
-              Vision: <strong>{{ derivedVisionRange }}</strong>
-            </p>
+            <label>Max HP <input type="number" [(ngModel)]="form.maxHp" /></label>
+            <label>Current HP <input type="number" [(ngModel)]="form.currentHp" /></label>
+            <h3>Base Stats</h3>
+            <label>STR <input type="number" [(ngModel)]="form.baseStats.str" /></label>
+            <label>DEX <input type="number" [(ngModel)]="form.baseStats.dex" /></label>
+            <label>CON <input type="number" [(ngModel)]="form.baseStats.con" /></label>
+            <label>INT <input type="number" [(ngModel)]="form.baseStats.int" /></label>
+            <label>WIS <input type="number" [(ngModel)]="form.baseStats.wis" /></label>
+            <label>CHA <input type="number" [(ngModel)]="form.baseStats.cha" /></label>
             <div class="actions">
               <button (click)="createCharacter()">Create</button>
               <button (click)="cancelCreate()">Cancel</button>
@@ -115,7 +110,6 @@ import { CharacterState } from '../../state/character/character.state';
     a { display: inline-block; margin-bottom: 16px; }
     .dev-btn { background: #d97706; color: white; border: none; }
     .dev-btn:hover { background: #b45309; }
-    .derived { color: #555; font-size: 0.9em; margin: 8px 0; }
   `],
 })
 export class CharacterComponent implements OnInit {
@@ -127,10 +121,6 @@ export class CharacterComponent implements OnInit {
   formError = '';
 
   form: CharacterForm = this.emptyForm();
-
-  get derivedMaxHp()      { return 5 + this.form.baseStats.resilience * 2; }
-  get derivedMoveRange()  { return 2 + Math.floor(this.form.baseStats.speed / 4); }
-  get derivedVisionRange(){ return 2 + Math.floor(this.form.baseStats.focus / 4); }
 
   constructor(private store: Store, private characterService: CharacterService, private dev: DevService) {
     this.characters$ = store.select(CharacterState.characters);
@@ -148,13 +138,11 @@ export class CharacterComponent implements OnInit {
       race: c.race ?? '',
       class: c.class ?? '',
       level: c.level ?? 1,
+      maxHp: c.maxHp ?? 10,
+      currentHp: c.currentHp ?? 10,
       baseStats: {
-        power:     c.baseStats?.power     ?? 10,
-        speed:     c.baseStats?.speed     ?? 10,
-        precision: c.baseStats?.precision ?? 10,
-        resilience: c.baseStats?.resilience ?? 10,
-        focus:     c.baseStats?.focus     ?? 10,
-        influence: c.baseStats?.influence ?? 10,
+        str: c.baseStats?.str ?? 10, dex: c.baseStats?.dex ?? 10, con: c.baseStats?.con ?? 10,
+        int: c.baseStats?.int ?? 10, wis: c.baseStats?.wis ?? 10, cha: c.baseStats?.cha ?? 10,
       },
     };
     this.formError = '';
@@ -220,7 +208,9 @@ export class CharacterComponent implements OnInit {
       race: '',
       class: '',
       level: 1,
-      baseStats: { power: 10, speed: 10, precision: 10, resilience: 10, focus: 10, influence: 10 },
+      maxHp: 10,
+      currentHp: 10,
+      baseStats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
     };
   }
 }

@@ -24,9 +24,11 @@ export interface CombatantDto {
   userId: string;
   characterId: string;
   characterName: string;
+  initiative: number;
+  initiativeRoll: number;
+  dexModifier: number;
   currentHp: number;
   maxHp: number;
-  combatantType: string;
 }
 
 export interface EncounterEndedPayload {
@@ -35,9 +37,7 @@ export interface EncounterEndedPayload {
 
 export interface EncounterStartedPayload {
   encounterId: string;
-  roundNumber: number;
-  roundPhase: string;
-  planningTimerExpiresAt: number;
+  activeTurnCombatantId: string;
   combatants: CombatantDto[];
   map: MapDto;
 }
@@ -54,61 +54,11 @@ export interface MapDto {
   fogOfWar: string[];
 }
 
-export interface PlanningPhaseStartedPayload {
-  encounterId: string;
-  roundNumber: number;
-  planningTimerExpiresAt: number;
-}
-
-export interface ActionPlannedPayload {
-  combatantId: string;
-  actionType: string;
-}
-
-export interface PlayerLockedInPayload {
-  combatantId: string;
-  characterName: string;
-  isGmEnemies: boolean;
-}
-
-export interface AllLockedInPayload {
-  encounterId: string;
-}
-
-export interface EnemyActionPlannedPayload {
-  combatantId: string;
-  actionType: string;
-}
-
 export interface PlayerPresenceChangedPayload {
   userId: string;
   displayName: string;
   characterId: string | null;
   isOnline: boolean;
-}
-
-export interface ResolutionStepDto {
-  phase: string;
-  actorId: string;
-  actorName: string;
-  actionType: string;
-  targetId: string | null;
-  targetName: string | null;
-  damage: number | null;
-  damageDice: string | null;
-  newHp: number | null;
-  newX: number | null;
-  newY: number | null;
-  defeated: boolean;
-  feedText: string;
-}
-
-export interface ResolutionCompletedPayload {
-  encounterId: string;
-  roundNumber: number;
-  steps: ResolutionStepDto[];
-  updatedPositions: { [key: string]: PositionDto };
-  encounterEnded: boolean;
 }
 
 export interface TokenMovedPayload {
@@ -117,29 +67,26 @@ export interface TokenMovedPayload {
   y: number;
 }
 
+export interface TurnAdvancedPayload {
+  activeTurnCombatantId: string;
+}
+
 export const HubEvents = {
   Events: {
     PlayerPresenceChanged: 'PlayerPresenceChanged',
     EncounterStarted: 'EncounterStarted',
     TokenMoved: 'TokenMoved',
+    TurnAdvanced: 'TurnAdvanced',
     ActionRejected: 'ActionRejected',
     AttackResolved: 'AttackResolved',
     CombatantDefeated: 'CombatantDefeated',
     EncounterEnded: 'EncounterEnded',
-    PlanningPhaseStarted: 'PlanningPhaseStarted',
-    ActionPlanned: 'ActionPlanned',
-    PlayerLockedIn: 'PlayerLockedIn',
-    AllLockedIn: 'AllLockedIn',
-    ResolutionCompleted: 'ResolutionCompleted',
-    EnemyActionPlanned: 'EnemyActionPlanned',
   },
   Methods: {
     JoinSession: 'JoinSession',
     StartEncounter: 'StartEncounter',
-    PlanAction: 'PlanAction',
-    LockIn: 'LockIn',
-    ForceResolve: 'ForceResolve',
-    PlanEnemyAction: 'PlanEnemyAction',
-    LockInEnemies: 'LockInEnemies',
+    MoveToken: 'MoveToken',
+    DeclareAttack: 'DeclareAttack',
+    EndTurn: 'EndTurn',
   },
 } as const;

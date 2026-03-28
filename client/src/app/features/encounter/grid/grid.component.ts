@@ -1,15 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef, OnChanges } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { SetPendingMove } from '../../../state/map/map.actions';
-import { ActionPlanned, PlaybackFinished } from '../../../state/encounter/encounter.actions';
 import { GameHubService } from '../../../core/services/game-hub.service';
-import { Combatant, PlannedAction } from '../../../state/encounter/encounter.model';
+import { Combatant } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
-import { ResolutionStepDto } from '../../../contracts/hub-contracts.generated';
 
 interface Cell {
   x: number;
@@ -22,24 +20,12 @@ interface Cell {
   imports: [CommonModule],
   template: `
     <div class="grid-wrapper">
-      <div class="grid-controls" *ngIf="isPlanning$ | async">
-        <button
-          *ngIf="!isGm"
-          class="lock-in-btn"
-          (click)="onLockIn()"
-          [disabled]="!(hasPlannedAction$ | async) || isLockedIn">
-          {{ isLockedIn ? 'Locked In' : 'Lock In' }}
-        </button>
-        <span class="timer" *ngIf="timerSeconds > 0">{{ timerSeconds }}s</span>
-        <span class="phase-label">Planning Phase</span>
-        <span *ngIf="isGm && !selectedEnemyId" class="gm-hint">Click a 👾 enemy to select, then click a cell to plan its move</span>
-        <span *ngIf="isGm && selectedEnemyId" class="gm-selected">Selected: {{ getSelectedEnemyName() }} — click a cell to move or a player to attack</span>
+      <div class="grid-controls" *ngIf="isMyTurn$ | async">
+        <button class="end-turn-btn" (click)="onEndTurn()">End Turn</button>
+        <span class="turn-indicator">Your turn!</span>
       </div>
-      <div class="active-turn" *ngIf="(isResolving$ | async) && !(isPlayingBack$ | async)">
-        <span class="waiting">Resolving actions...</span>
-      </div>
-      <div class="active-turn" *ngIf="isPlayingBack$ | async">
-        <span class="playback-label">Playing back resolution...</span>
+      <div class="active-turn" *ngIf="!(isMyTurn$ | async)">
+        <span class="waiting">Waiting for {{ activeTurnName$ | async }}...</span>
       </div>
       <div
         class="grid"
@@ -48,19 +34,15 @@ interface Cell {
           *ngFor="let cell of cells$ | async"
           class="cell"
           [class.pending]="isPendingMove(cell)"
-          [class.in-range]="isInRange(cell)"
           (click)="onCellClick(cell)">
           <div
             *ngIf="tokenAt(cell) as combatant"
             class="token"
+            [class.active-token]="combatant.id === (activeTurnCombatantId$ | async)"
             [class.defeated-token]="combatant.isDefeated"
-            [class.enemy-token]="combatant.combatantType === 'monster' && !combatant.isDefeated"
-            [class.my-token]="combatant.userId === myUserId && !combatant.isDefeated"
-            [class.token-animating]="isAnimatingToken(combatant.id)"
-            [class.selected-enemy]="combatant.id === selectedEnemyId"
+            [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
-            <span class="damage-float" *ngIf="getDamageFloat(combatant.id) as dmg">-{{ dmg }}</span>
           </div>
         </div>
       </div>
@@ -69,11 +51,9 @@ interface Cell {
   styles: [`
     .grid-wrapper { margin-top: 16px; }
     .grid-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .lock-in-btn { background: #2e7d32; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
-    .lock-in-btn:hover:not(:disabled) { background: #1b5e20; }
-    .lock-in-btn:disabled { background: #999; cursor: not-allowed; }
-    .timer { color: #c0392b; font-weight: bold; font-size: 1.2em; }
-    .phase-label { color: #2e7d32; font-weight: bold; }
+    .end-turn-btn { background: #2e7d32; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
+    .end-turn-btn:hover { background: #1b5e20; }
+    .turn-indicator { color: #2e7d32; font-weight: bold; }
     .waiting { color: #666; font-style: italic; }
     .active-turn { margin-bottom: 8px; }
     .grid {
@@ -95,7 +75,6 @@ interface Cell {
     }
     .cell:hover { background: #d4c9a8; }
     .cell.pending { background: #b3d4f5; }
-    .cell.in-range { background: #e0e8d0; }
     .token {
       width: 24px;
       height: 24px;
@@ -110,74 +89,37 @@ interface Cell {
       cursor: pointer;
       z-index: 1;
     }
+    .token.active-token {
+      background: #e53935;
+      box-shadow: 0 0 0 2px #ffeb3b;
+    }
     .token.enemy-token {
       background: #b71c1c;
       cursor: crosshair;
-    }
-    .token.my-token {
-      background: #1565c0;
-    }
-    .token.selected-enemy {
-      outline: 3px solid #ffd600;
-      outline-offset: 1px;
     }
     .token.defeated-token {
       background: #9e9e9e;
       opacity: 0.5;
       cursor: not-allowed;
     }
-    .token.token-animating {
-      transition: all 0.4s ease;
-    }
-    .playback-label { color: #2e7d32; font-weight: bold; font-style: italic; }
-    .gm-hint { color: #666; font-size: 0.85em; font-style: italic; }
-    .gm-selected { color: #b71c1c; font-weight: bold; font-size: 0.9em; }
-    .damage-float {
-      position: absolute;
-      top: -18px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #c0392b;
-      font-size: 14px;
-      font-weight: bold;
-      animation: float-up 0.8s ease-out forwards;
-      pointer-events: none;
-      z-index: 10;
-    }
-    @keyframes float-up {
-      0% { opacity: 1; transform: translateX(-50%) translateY(0); }
-      100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-    }
   `],
 })
-export class GridComponent implements OnInit, OnDestroy {
+export class GridComponent implements OnInit {
   @Input() joinCode = '';
   @Input() myUserId = '';
-  @Input() isGm = false;
-
-  selectedEnemyId: string | null = null;
 
   cells$!: Observable<Cell[]>;
   gridColumns$!: Observable<string>;
-  isPlanning$!: Observable<boolean>;
-  isResolving$!: Observable<boolean>;
-  isPlayingBack$!: Observable<boolean>;
-  hasPlannedAction$!: Observable<boolean>;
-
-  isLockedIn = false;
-  timerSeconds = 0;
+  activeTurnCombatantId$!: Observable<string | null>;
+  isMyTurn$!: Observable<boolean>;
+  activeTurnName$!: Observable<string | null>;
 
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
   private pendingMove: Position | null = null;
-  private myPlannedAction: PlannedAction | null = null;
-  private timerInterval: ReturnType<typeof setInterval> | null = null;
-  private planningExpiresAt: number | null = null;
-  private animatingTokens = new Set<string>();
-  private damageFloats = new Map<string, number>();
-  private playbackTimeout: ReturnType<typeof setTimeout> | null = null;
+  private activeTurnId: string | null = null;
 
-  constructor(private store: Store, private hub: GameHubService, private cdr: ChangeDetectorRef) {}
+  constructor(private store: Store, private hub: GameHubService) {}
 
   ngOnInit(): void {
     const gridWidth$ = this.store.select(MapState.gridWidth);
@@ -195,57 +137,34 @@ export class GridComponent implements OnInit, OnDestroy {
       })
     );
 
-    this.isPlanning$ = this.store.select(EncounterState.isPlanning);
-    this.isResolving$ = this.store.select(EncounterState.isResolving);
-    this.isPlayingBack$ = this.store.select(EncounterState.isPlayingBack);
-    this.hasPlannedAction$ = this.store.select(EncounterState.myPlannedAction).pipe(map(a => a !== null));
+    this.activeTurnCombatantId$ = this.store.select(EncounterState.activeTurnCombatantId);
+
+    this.isMyTurn$ = combineLatest([
+      this.activeTurnCombatantId$,
+      this.store.select(EncounterState.combatants),
+    ]).pipe(
+      map(([activeId, combatants]) => {
+        this.combatants = combatants;
+        const myCombatant = combatants.find(c => c.userId === this.myUserId);
+        return !!myCombatant && myCombatant.id === activeId && !myCombatant.isDefeated;
+      })
+    );
+
+    this.activeTurnName$ = combineLatest([
+      this.activeTurnCombatantId$,
+      this.store.select(EncounterState.combatants),
+    ]).pipe(
+      map(([activeId, combatants]) => {
+        const active = combatants.find(c => c.id === activeId);
+        return active?.characterName ?? null;
+      })
+    );
 
     // Keep local copies for synchronous access in template methods
     this.store.select(MapState.positions).subscribe(p => this.positions = p);
     this.store.select(MapState.pendingMove).subscribe(p => this.pendingMove = p);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
-    this.store.select(EncounterState.myPlannedAction).subscribe(a => this.myPlannedAction = a);
-    this.store.select(EncounterState.lockedInCombatantIds).subscribe(ids => {
-      const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-      this.isLockedIn = !!myCombatant && ids.includes(myCombatant.id);
-    });
-
-    // Timer countdown
-    this.store.select(EncounterState.planningTimerExpiresAt).subscribe(expiresAt => {
-      this.planningExpiresAt = expiresAt;
-      this.updateTimer();
-    });
-
-    this.timerInterval = setInterval(() => this.updateTimer(), 1000);
-
-    // Clear enemy selection when planning phase resets
-    this.store.select(EncounterState.roundPhase).subscribe(phase => {
-      if (phase !== 'planning') this.selectedEnemyId = null;
-    });
-
-    // Playback subscription
-    this.store.select(EncounterState.resolutionSteps).subscribe(steps => {
-      if (steps.length > 0) {
-        this.playbackSteps(steps);
-      }
-    });
-  }
-
-  ngOnDestroy(): void {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-    }
-    if (this.playbackTimeout) {
-      clearTimeout(this.playbackTimeout);
-    }
-  }
-
-  private updateTimer(): void {
-    if (this.planningExpiresAt) {
-      this.timerSeconds = Math.max(0, Math.ceil((this.planningExpiresAt - Date.now()) / 1000));
-    } else {
-      this.timerSeconds = 0;
-    }
+    this.store.select(EncounterState.activeTurnCombatantId).subscribe(id => this.activeTurnId = id);
   }
 
   tokenAt(cell: Cell): Combatant | null {
@@ -261,119 +180,26 @@ export class GridComponent implements OnInit, OnDestroy {
     return !!this.pendingMove && this.pendingMove.x === cell.x && this.pendingMove.y === cell.y;
   }
 
-  isInRange(cell: Cell): boolean {
-    // GM mode: highlight all empty cells when an enemy is selected (no range limit)
-    if (this.isGm && this.selectedEnemyId) {
-      return !this.tokenAt(cell);
-    }
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant || this.isLockedIn || this.myPlannedAction) return false;
-
-    const myPos = this.positions[myCombatant.id];
-    if (!myPos) return false;
-
-    const dist = Math.max(Math.abs(cell.x - myPos.x), Math.abs(cell.y - myPos.y));
-    return dist > 0 && dist <= 6;
-  }
-
   onCellClick(cell: Cell): void {
-    // Only allow planning during planning phase
-    const roundPhase = this.store.selectSnapshot(EncounterState.roundPhase);
-    if (roundPhase !== 'planning') return;
+    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
+    if (!myCombatant) return;
+
+    if (myCombatant.id !== this.activeTurnId) return; // not my turn
+    if (myCombatant.isDefeated) return;
 
     const targetCombatant = this.tokenAt(cell);
 
-    // GM mode: click monster to select it, then click a cell to plan its move/attack
-    if (this.isGm) {
-      if (targetCombatant && targetCombatant.combatantType === 'monster' && !targetCombatant.isDefeated) {
-        // Toggle enemy selection
-        this.selectedEnemyId = this.selectedEnemyId === targetCombatant.id ? null : targetCombatant.id;
-        this.cdr.detectChanges();
-        return;
-      }
-
-      if (this.selectedEnemyId) {
-        if (!targetCombatant) {
-          // Move selected enemy to empty cell
-          this.hub.planEnemyAction(this.joinCode, this.selectedEnemyId, 'move', undefined, cell.x, cell.y);
-          this.selectedEnemyId = null;
-          this.cdr.detectChanges();
-        } else if (targetCombatant.combatantType === 'player' && !targetCombatant.isDefeated) {
-          // Attack player with selected enemy
-          this.hub.planEnemyAction(this.joinCode, this.selectedEnemyId, 'attack', targetCombatant.id);
-          this.selectedEnemyId = null;
-          this.cdr.detectChanges();
-        }
-        return;
-      }
-      return; // GM has no player combatant — ignore other clicks
-    }
-
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant) return;
-    if (myCombatant.isDefeated) return;
-    if (this.isLockedIn) return;
-
-    if (targetCombatant && targetCombatant.combatantType === 'monster' && !targetCombatant.isDefeated) {
-      // Click on a monster — plan attack
-      this.store.dispatch(new ActionPlanned({ actionType: 'attack', targetCombatantId: targetCombatant.id }));
-      this.hub.planAction(this.joinCode, 'attack', targetCombatant.id);
+    if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
+      // Click on an enemy token — declare attack
+      this.hub.declareAttack(this.joinCode, targetCombatant.id);
     } else if (!targetCombatant) {
-      // Empty cell — plan move
+      // Empty cell — move
       this.store.dispatch(new SetPendingMove({ x: cell.x, y: cell.y }));
-      this.store.dispatch(new ActionPlanned({ actionType: 'move', targetX: cell.x, targetY: cell.y }));
-      this.hub.planAction(this.joinCode, 'move', undefined, cell.x, cell.y);
+      this.hub.moveToken(this.joinCode, myCombatant.id, cell.x, cell.y);
     }
   }
 
-  onLockIn(): void {
-    this.hub.lockIn(this.joinCode);
-  }
-
-  getSelectedEnemyName(): string {
-    return this.combatants.find(c => c.id === this.selectedEnemyId)?.characterName ?? '';
-  }
-
-  isAnimatingToken(combatantId: string): boolean {
-    return this.animatingTokens.has(combatantId);
-  }
-
-  getDamageFloat(combatantId: string): number | null {
-    return this.damageFloats.get(combatantId) ?? null;
-  }
-
-  private playbackSteps(steps: ResolutionStepDto[]): void {
-    this.animatingTokens.clear();
-    this.damageFloats.clear();
-    let delay = 0;
-    const stepDelay = 600;
-
-    for (const step of steps) {
-      this.playbackTimeout = setTimeout(() => {
-        if (step.phase === 'movement' && step.actionType === 'move' && step.newX !== null && step.newY !== null) {
-          this.animatingTokens.add(step.actorId);
-          this.cdr.detectChanges();
-        }
-        if (step.phase === 'attack' && step.damage !== null && step.targetId) {
-          this.damageFloats.set(step.targetId, step.damage);
-          this.cdr.detectChanges();
-          // Clear damage float after animation
-          setTimeout(() => {
-            this.damageFloats.delete(step.targetId!);
-            this.cdr.detectChanges();
-          }, 800);
-        }
-      }, delay);
-      delay += stepDelay;
-    }
-
-    // After all steps, finish playback
-    this.playbackTimeout = setTimeout(() => {
-      this.animatingTokens.clear();
-      this.damageFloats.clear();
-      this.isLockedIn = false;
-      this.store.dispatch(new PlaybackFinished());
-      this.cdr.detectChanges();
-    }, delay + 500);
+  onEndTurn(): void {
+    this.hub.endTurn(this.joinCode);
   }
 }

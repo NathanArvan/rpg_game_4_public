@@ -18,9 +18,9 @@ public class CombatService(AppDbContext db, IRedisGameState redisState, ILogger<
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId)
             ?? throw new GameActionException("No active encounter.", isActionRejected: true);
 
-        var activeCombatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.UserId == userId);
-        if (activeCombatantRef is null)
-            throw new GameActionException("You are not in this encounter.", isActionRejected: true);
+        var activeCombatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == activeEncounter.ActiveTurnCombatantId);
+        if (activeCombatantRef is null || activeCombatantRef.UserId != userId)
+            throw new GameActionException("It is not your turn.", isActionRejected: true);
 
         if (activeCombatantRef.Id == targetCombatantId)
             throw new GameActionException("You cannot attack yourself.", isActionRejected: true);
@@ -57,15 +57,14 @@ public class CombatService(AppDbContext db, IRedisGameState redisState, ILogger<
         var attackerChar = attackerDbCombatant is not null
             ? characters.GetValueOrDefault(attackerDbCombatant.CharacterId)
             : null;
-        var attackerName = attackerChar?.Name ?? activeCombatantRef.CharacterName;
+        var attackerClass = attackerChar?.Class ?? "";
+        var attackerName = attackerChar?.Name ?? "Unknown";
 
         var targetChar = characters.GetValueOrDefault(targetDbCombatant.CharacterId);
-        var targetName = targetChar?.Name ?? targetRef.CharacterName;
+        var targetName = targetChar?.Name ?? "Unknown";
 
-        var attackerCharId = attackerDbCombatant?.CharacterId.ToString() ?? activeCombatantRef.CharacterId;
-        var (_, _, damageBase, _, _, _) = await redisState.GetCharacterLiveStateAsync(attackerCharId);
-        var damage = CombatDice.RollDamage(damageBase > 0 ? damageBase : 2);
-        var diceString = CombatDice.DamageDiceString(damageBase > 0 ? damageBase : 2);
+        var damage = CombatDice.RollDamage(attackerClass);
+        var diceString = CombatDice.DamageDiceString(attackerClass);
 
         var eventPayload = JsonSerializer.Serialize(new
         {

@@ -13,7 +13,6 @@ import { FeedComponent } from '../encounter/feed/feed.component';
 import { AuthPanelComponent } from './auth-panel/auth-panel.component';
 import { PlayerJoinComponent } from './player-join/player-join.component';
 import { GmFlowComponent } from './gm-flow/gm-flow.component';
-import { GmEnemyPanelComponent } from '../encounter/gm-enemy-panel/gm-enemy-panel.component';
 
 @Component({
   selector: 'app-lobby',
@@ -27,7 +26,6 @@ import { GmEnemyPanelComponent } from '../encounter/gm-enemy-panel/gm-enemy-pane
     AuthPanelComponent,
     PlayerJoinComponent,
     GmFlowComponent,
-    GmEnemyPanelComponent,
   ],
   templateUrl: './lobby.component.html',
   styleUrl: './lobby.component.css',
@@ -36,7 +34,6 @@ export class LobbyComponent {
   players$: Observable<ConnectedPlayer[]>;
   encounterActive$: Observable<boolean>;
   joinCode$: Observable<string | null>;
-  isGm$: Observable<boolean>;
 
   activeFlow: 'player' | 'gm' = 'player';
 
@@ -47,7 +44,6 @@ export class LobbyComponent {
     this.players$ = store.select(SessionState.connectedPlayers);
     this.encounterActive$ = store.select(EncounterState.active);
     this.joinCode$ = store.select(SessionState.joinCode);
-    this.isGm$ = store.select(SessionState.isGm);
   }
 
   onAuthenticated(): void {}

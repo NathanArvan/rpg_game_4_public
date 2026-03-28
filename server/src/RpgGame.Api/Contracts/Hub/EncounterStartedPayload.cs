@@ -2,8 +2,6 @@ namespace RpgGame.Api.Contracts.Hub;
 
 public record EncounterStartedPayload(
     string EncounterId,
-    int RoundNumber,
-    string RoundPhase,
-    long PlanningTimerExpiresAt,
+    string ActiveTurnCombatantId,
     List<CombatantDto> Combatants,
     MapDto Map);
