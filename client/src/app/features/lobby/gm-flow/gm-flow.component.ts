@@ -5,7 +5,6 @@ import { Store } from '@ngxs/store';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { CampaignService } from '../../../core/services/campaign.service';
 import { SetGmSession } from '../../../state/session/session.actions';
-import { EncounterState } from '../../../state/encounter/encounter.state';
 
 @Component({
   selector: 'app-gm-flow',
@@ -24,15 +23,12 @@ export class GmFlowComponent {
   gmConnected = false;
   gmError = '';
   encounterError = '';
-  isPlanning = false;
 
   constructor(
     private campaignService: CampaignService,
     private hub: GameHubService,
     private store: Store
-  ) {
-    this.store.select(EncounterState.isPlanning).subscribe(v => this.isPlanning = v);
-  }
+  ) {}
 
   createCampaign(): void {
     if (!this.campaignName) {
@@ -80,15 +76,6 @@ export class GmFlowComponent {
     } catch (e: any) {
       console.error('[startEncounter] error:', e);
       this.encounterError = 'Failed to start encounter: ' + (e?.message ?? 'Unknown error');
-    }
-  }
-
-  async forceResolve(): Promise<void> {
-    if (!this.gmJoinCode) return;
-    try {
-      await this.hub.forceResolve(this.gmJoinCode);
-    } catch (e: any) {
-      console.error('[forceResolve] error:', e);
     }
   }
 }

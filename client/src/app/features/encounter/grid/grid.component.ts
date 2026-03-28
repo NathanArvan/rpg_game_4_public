@@ -1,13 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { SetPendingMove } from '../../../state/map/map.actions';
-import { ActionPlanned } from '../../../state/encounter/encounter.actions';
 import { GameHubService } from '../../../core/services/game-hub.service';
-import { Combatant, PlannedAction } from '../../../state/encounter/encounter.model';
+import { Combatant } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
 
 interface Cell {
@@ -21,18 +20,12 @@ interface Cell {
   imports: [CommonModule],
   template: `
     <div class="grid-wrapper">
-      <div class="grid-controls" *ngIf="isPlanning$ | async">
-        <button
-          class="lock-in-btn"
-          (click)="onLockIn()"
-          [disabled]="!(hasPlannedAction$ | async) || isLockedIn">
-          {{ isLockedIn ? 'Locked In' : 'Lock In' }}
-        </button>
-        <span class="timer" *ngIf="timerSeconds > 0">{{ timerSeconds }}s</span>
-        <span class="phase-label">Planning Phase</span>
+      <div class="grid-controls" *ngIf="isMyTurn$ | async">
+        <button class="end-turn-btn" (click)="onEndTurn()">End Turn</button>
+        <span class="turn-indicator">Your turn!</span>
       </div>
-      <div class="active-turn" *ngIf="(isResolving$ | async)">
-        <span class="waiting">Resolving actions...</span>
+      <div class="active-turn" *ngIf="!(isMyTurn$ | async)">
+        <span class="waiting">Waiting for {{ activeTurnName$ | async }}...</span>
       </div>
       <div
         class="grid"
@@ -41,11 +34,11 @@ interface Cell {
           *ngFor="let cell of cells$ | async"
           class="cell"
           [class.pending]="isPendingMove(cell)"
-          [class.in-range]="isInRange(cell)"
           (click)="onCellClick(cell)">
           <div
             *ngIf="tokenAt(cell) as combatant"
             class="token"
+            [class.active-token]="combatant.id === (activeTurnCombatantId$ | async)"
             [class.defeated-token]="combatant.isDefeated"
             [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
@@ -58,11 +51,9 @@ interface Cell {
   styles: [`
     .grid-wrapper { margin-top: 16px; }
     .grid-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .lock-in-btn { background: #2e7d32; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
-    .lock-in-btn:hover:not(:disabled) { background: #1b5e20; }
-    .lock-in-btn:disabled { background: #999; cursor: not-allowed; }
-    .timer { color: #c0392b; font-weight: bold; font-size: 1.2em; }
-    .phase-label { color: #2e7d32; font-weight: bold; }
+    .end-turn-btn { background: #2e7d32; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
+    .end-turn-btn:hover { background: #1b5e20; }
+    .turn-indicator { color: #2e7d32; font-weight: bold; }
     .waiting { color: #666; font-style: italic; }
     .active-turn { margin-bottom: 8px; }
     .grid {
@@ -84,7 +75,6 @@ interface Cell {
     }
     .cell:hover { background: #d4c9a8; }
     .cell.pending { background: #b3d4f5; }
-    .cell.in-range { background: #e0e8d0; }
     .token {
       width: 24px;
       height: 24px;
@@ -99,6 +89,10 @@ interface Cell {
       cursor: pointer;
       z-index: 1;
     }
+    .token.active-token {
+      background: #e53935;
+      box-shadow: 0 0 0 2px #ffeb3b;
+    }
     .token.enemy-token {
       background: #b71c1c;
       cursor: crosshair;
@@ -110,25 +104,20 @@ interface Cell {
     }
   `],
 })
-export class GridComponent implements OnInit, OnDestroy {
+export class GridComponent implements OnInit {
   @Input() joinCode = '';
   @Input() myUserId = '';
 
   cells$!: Observable<Cell[]>;
   gridColumns$!: Observable<string>;
-  isPlanning$!: Observable<boolean>;
-  isResolving$!: Observable<boolean>;
-  hasPlannedAction$!: Observable<boolean>;
-
-  isLockedIn = false;
-  timerSeconds = 0;
+  activeTurnCombatantId$!: Observable<string | null>;
+  isMyTurn$!: Observable<boolean>;
+  activeTurnName$!: Observable<string | null>;
 
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
   private pendingMove: Position | null = null;
-  private myPlannedAction: PlannedAction | null = null;
-  private timerInterval: ReturnType<typeof setInterval> | null = null;
-  private planningExpiresAt: number | null = null;
+  private activeTurnId: string | null = null;
 
   constructor(private store: Store, private hub: GameHubService) {}
 
@@ -148,41 +137,34 @@ export class GridComponent implements OnInit, OnDestroy {
       })
     );
 
-    this.isPlanning$ = this.store.select(EncounterState.isPlanning);
-    this.isResolving$ = this.store.select(EncounterState.isResolving);
-    this.hasPlannedAction$ = this.store.select(EncounterState.myPlannedAction).pipe(map(a => a !== null));
+    this.activeTurnCombatantId$ = this.store.select(EncounterState.activeTurnCombatantId);
+
+    this.isMyTurn$ = combineLatest([
+      this.activeTurnCombatantId$,
+      this.store.select(EncounterState.combatants),
+    ]).pipe(
+      map(([activeId, combatants]) => {
+        this.combatants = combatants;
+        const myCombatant = combatants.find(c => c.userId === this.myUserId);
+        return !!myCombatant && myCombatant.id === activeId && !myCombatant.isDefeated;
+      })
+    );
+
+    this.activeTurnName$ = combineLatest([
+      this.activeTurnCombatantId$,
+      this.store.select(EncounterState.combatants),
+    ]).pipe(
+      map(([activeId, combatants]) => {
+        const active = combatants.find(c => c.id === activeId);
+        return active?.characterName ?? null;
+      })
+    );
 
     // Keep local copies for synchronous access in template methods
     this.store.select(MapState.positions).subscribe(p => this.positions = p);
     this.store.select(MapState.pendingMove).subscribe(p => this.pendingMove = p);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
-    this.store.select(EncounterState.myPlannedAction).subscribe(a => this.myPlannedAction = a);
-    this.store.select(EncounterState.lockedInCombatantIds).subscribe(ids => {
-      const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-      this.isLockedIn = !!myCombatant && ids.includes(myCombatant.id);
-    });
-
-    // Timer countdown
-    this.store.select(EncounterState.planningTimerExpiresAt).subscribe(expiresAt => {
-      this.planningExpiresAt = expiresAt;
-      this.updateTimer();
-    });
-
-    this.timerInterval = setInterval(() => this.updateTimer(), 1000);
-  }
-
-  ngOnDestroy(): void {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-    }
-  }
-
-  private updateTimer(): void {
-    if (this.planningExpiresAt) {
-      this.timerSeconds = Math.max(0, Math.ceil((this.planningExpiresAt - Date.now()) / 1000));
-    } else {
-      this.timerSeconds = 0;
-    }
+    this.store.select(EncounterState.activeTurnCombatantId).subscribe(id => this.activeTurnId = id);
   }
 
   tokenAt(cell: Cell): Combatant | null {
@@ -198,42 +180,26 @@ export class GridComponent implements OnInit, OnDestroy {
     return !!this.pendingMove && this.pendingMove.x === cell.x && this.pendingMove.y === cell.y;
   }
 
-  isInRange(cell: Cell): boolean {
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant || this.isLockedIn || this.myPlannedAction) return false;
-
-    const myPos = this.positions[myCombatant.id];
-    if (!myPos) return false;
-
-    const dist = Math.max(Math.abs(cell.x - myPos.x), Math.abs(cell.y - myPos.y));
-    return dist > 0 && dist <= 6;
-  }
-
   onCellClick(cell: Cell): void {
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant) return;
-    if (myCombatant.isDefeated) return;
-    if (this.isLockedIn) return;
 
-    // Only allow planning during planning phase
-    const roundPhase = this.store.selectSnapshot(EncounterState.roundPhase);
-    if (roundPhase !== 'planning') return;
+    if (myCombatant.id !== this.activeTurnId) return; // not my turn
+    if (myCombatant.isDefeated) return;
 
     const targetCombatant = this.tokenAt(cell);
 
     if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
-      // Click on an enemy token — plan attack
-      this.store.dispatch(new ActionPlanned({ actionType: 'attack', targetCombatantId: targetCombatant.id }));
-      this.hub.planAction(this.joinCode, 'attack', targetCombatant.id);
+      // Click on an enemy token — declare attack
+      this.hub.declareAttack(this.joinCode, targetCombatant.id);
     } else if (!targetCombatant) {
-      // Empty cell — plan move
+      // Empty cell — move
       this.store.dispatch(new SetPendingMove({ x: cell.x, y: cell.y }));
-      this.store.dispatch(new ActionPlanned({ actionType: 'move', targetX: cell.x, targetY: cell.y }));
-      this.hub.planAction(this.joinCode, 'move', undefined, cell.x, cell.y);
+      this.hub.moveToken(this.joinCode, myCombatant.id, cell.x, cell.y);
     }
   }
 
-  onLockIn(): void {
-    this.hub.lockIn(this.joinCode);
+  onEndTurn(): void {
+    this.hub.endTurn(this.joinCode);
   }
 }

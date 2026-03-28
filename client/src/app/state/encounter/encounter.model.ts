@@ -3,25 +3,17 @@ export interface Combatant {
   userId: string;
   characterId: string;
   characterName: string;
+  initiative: number;
+  initiativeRoll: number;
+  dexModifier: number;
   currentHp: number;
   maxHp: number;
   isDefeated: boolean;
-}
-
-export interface PlannedAction {
-  actionType: string;
-  targetCombatantId?: string;
-  targetX?: number;
-  targetY?: number;
 }
 
 export interface EncounterStateModel {
   encounterId: string | null;
   combatants: Combatant[];
   active: boolean;
-  roundPhase: string | null;
-  roundNumber: number;
-  myPlannedAction: PlannedAction | null;
-  lockedInCombatantIds: string[];
-  planningTimerExpiresAt: number | null;
+  activeTurnCombatantId: string | null;
 }

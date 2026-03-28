@@ -2,28 +2,19 @@ import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
-import {
-  ActionPlanned,
-  AllLockedIn,
-  AttackResolved,
-  CombatantDefeated,
-  EncounterStarted,
-  PlayerLockedIn,
-} from '../../state/encounter/encounter.actions';
+import { AttackResolved, CombatantDefeated, EncounterStarted, TurnAdvanced } from '../../state/encounter/encounter.actions';
 import { MapInitialized, TokenMoved, ClearPendingMove } from '../../state/map/map.actions';
 import { AddFeedEntry } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
 import {
-  ActionPlannedPayload,
   ActionRejectedPayload,
-  AllLockedInPayload,
   AttackResolvedPayload,
   CombatantDefeatedPayload,
   EncounterStartedPayload,
   HubEvents,
-  PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
   TokenMovedPayload,
+  TurnAdvancedPayload,
 } from '../../contracts/hub-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
@@ -51,9 +42,7 @@ export class GameHubService {
         this.store.dispatch(new EncounterStarted(
           payload.encounterId,
           payload.combatants,
-          payload.roundNumber,
-          payload.roundPhase,
-          payload.planningTimerExpiresAt
+          payload.activeTurnCombatantId
         ));
         if (payload.map) {
           this.store.dispatch(new MapInitialized(
@@ -71,19 +60,9 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new TokenMoved(payload.combatantId, payload.x, payload.y)));
     });
 
-    this.connection.on(HubEvents.Events.ActionPlanned, (payload: ActionPlannedPayload) => {
-      console.log('[hub] ActionPlanned received:', payload);
-      // ActionPlanned is caller-only — we already have the planned action locally
-    });
-
-    this.connection.on(HubEvents.Events.PlayerLockedIn, (payload: PlayerLockedInPayload) => {
-      console.log('[hub] PlayerLockedIn received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new PlayerLockedIn(payload.combatantId)));
-    });
-
-    this.connection.on(HubEvents.Events.AllLockedIn, (payload: AllLockedInPayload) => {
-      console.log('[hub] AllLockedIn received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new AllLockedIn()));
+    this.connection.on(HubEvents.Events.TurnAdvanced, (payload: TurnAdvancedPayload) => {
+      console.log('[hub] TurnAdvanced received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new TurnAdvanced(payload.activeTurnCombatantId)));
     });
 
     this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {
@@ -125,15 +104,15 @@ export class GameHubService {
     await this.connection.invoke(HubEvents.Methods.StartEncounter, joinCode);
   }
 
-  async planAction(joinCode: string, actionType: string, targetCombatantId?: string, targetX?: number, targetY?: number): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.PlanAction, joinCode, actionType, targetCombatantId ?? null, targetX ?? null, targetY ?? null);
+  async moveToken(joinCode: string, combatantId: string, x: number, y: number): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.MoveToken, joinCode, combatantId, x, y);
   }
 
-  async lockIn(joinCode: string): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.LockIn, joinCode);
+  async endTurn(joinCode: string): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.EndTurn, joinCode);
   }
 
-  async forceResolve(joinCode: string): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.ForceResolve, joinCode);
+  async declareAttack(joinCode: string, targetCombatantId: string): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.DeclareAttack, joinCode, targetCombatantId);
   }
 }

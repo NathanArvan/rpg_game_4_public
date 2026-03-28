@@ -24,6 +24,9 @@ export interface CombatantDto {
   userId: string;
   characterId: string;
   characterName: string;
+  initiative: number;
+  initiativeRoll: number;
+  dexModifier: number;
   currentHp: number;
   maxHp: number;
 }
@@ -34,9 +37,7 @@ export interface EncounterEndedPayload {
 
 export interface EncounterStartedPayload {
   encounterId: string;
-  roundNumber: number;
-  roundPhase: string;
-  planningTimerExpiresAt: number;
+  activeTurnCombatantId: string;
   combatants: CombatantDto[];
   map: MapDto;
 }
@@ -53,26 +54,6 @@ export interface MapDto {
   fogOfWar: string[];
 }
 
-export interface PlanningPhaseStartedPayload {
-  encounterId: string;
-  roundNumber: number;
-  planningTimerExpiresAt: number;
-}
-
-export interface ActionPlannedPayload {
-  combatantId: string;
-  actionType: string;
-}
-
-export interface PlayerLockedInPayload {
-  combatantId: string;
-  characterName: string;
-}
-
-export interface AllLockedInPayload {
-  encounterId: string;
-}
-
 export interface PlayerPresenceChangedPayload {
   userId: string;
   displayName: string;
@@ -86,25 +67,26 @@ export interface TokenMovedPayload {
   y: number;
 }
 
+export interface TurnAdvancedPayload {
+  activeTurnCombatantId: string;
+}
+
 export const HubEvents = {
   Events: {
     PlayerPresenceChanged: 'PlayerPresenceChanged',
     EncounterStarted: 'EncounterStarted',
     TokenMoved: 'TokenMoved',
+    TurnAdvanced: 'TurnAdvanced',
     ActionRejected: 'ActionRejected',
     AttackResolved: 'AttackResolved',
     CombatantDefeated: 'CombatantDefeated',
     EncounterEnded: 'EncounterEnded',
-    PlanningPhaseStarted: 'PlanningPhaseStarted',
-    ActionPlanned: 'ActionPlanned',
-    PlayerLockedIn: 'PlayerLockedIn',
-    AllLockedIn: 'AllLockedIn',
   },
   Methods: {
     JoinSession: 'JoinSession',
     StartEncounter: 'StartEncounter',
-    PlanAction: 'PlanAction',
-    LockIn: 'LockIn',
-    ForceResolve: 'ForceResolve',
+    MoveToken: 'MoveToken',
+    DeclareAttack: 'DeclareAttack',
+    EndTurn: 'EndTurn',
   },
 } as const;
