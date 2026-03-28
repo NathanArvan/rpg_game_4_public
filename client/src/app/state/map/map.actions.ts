@@ -23,8 +23,3 @@ export class SetPendingMove {
 export class ClearPendingMove {
   static readonly type = '[Map] Clear Pending Move';
 }
-
-export class BatchUpdatePositions {
-  static readonly type = '[Map] Batch Update Positions';
-  constructor(public positions: Record<string, Position>) {}
-}

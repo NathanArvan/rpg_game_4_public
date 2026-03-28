@@ -1,4 +1,4 @@
-import { CombatantDto, ResolutionStepDto, PositionDto } from '../../contracts/hub-contracts.generated';
+import { CombatantDto } from '../../contracts/hub-contracts.generated';
 import { PlannedAction } from './encounter.model';
 
 export class EncounterStarted {
@@ -42,28 +42,6 @@ export class AttackResolved {
 export class CombatantDefeated {
   static readonly type = '[Encounter] Combatant Defeated';
   constructor(public combatantId: string) {}
-}
-
-export class ResolutionCompleted {
-  static readonly type = '[Encounter] Resolution Completed';
-  constructor(
-    public steps: ResolutionStepDto[],
-    public updatedPositions: { [key: string]: PositionDto },
-    public encounterEnded: boolean
-  ) {}
-}
-
-export class PlanningPhaseStarted {
-  static readonly type = '[Encounter] Planning Phase Started';
-  constructor(
-    public encounterId: string,
-    public roundNumber: number,
-    public planningTimerExpiresAt: number
-  ) {}
-}
-
-export class PlaybackFinished {
-  static readonly type = '[Encounter] Playback Finished';
 }
 
 export class ClearEncounter {

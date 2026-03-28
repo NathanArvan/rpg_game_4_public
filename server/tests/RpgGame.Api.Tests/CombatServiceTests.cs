@@ -42,8 +42,8 @@ public class CombatServiceTests
             DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds(),
             new List<CombatantRef>
             {
-                new(activeCombatantId, "other-user", "char-1", "Attacker"),
-                new(targetCombatantId, "another-user", "char-2", "Target"),
+                new(activeCombatantId, "other-user"),
+                new(targetCombatantId, "another-user"),
             });
 
         var mockRedis = new Mock<IRedisGameState>();

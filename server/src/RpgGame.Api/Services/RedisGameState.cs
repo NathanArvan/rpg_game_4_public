@@ -83,20 +83,6 @@ public class RedisGameState : IRedisGameState
         });
     }
 
-    public async Task<(int currentHp, string charClass)> GetCharacterLiveStateAsync(string characterId)
-    {
-        var db = _redis.GetDatabase();
-        var entries = await db.HashGetAllAsync($"character:live:{characterId}");
-        int hp = 0;
-        string cls = "";
-        foreach (var entry in entries)
-        {
-            if (entry.Name == "currentHp") hp = (int)entry.Value;
-            if (entry.Name == "class") cls = entry.Value.ToString();
-        }
-        return (hp, cls);
-    }
-
     public async Task<long> DecrementHpAsync(string characterId, long amount)
     {
         var db = _redis.GetDatabase();

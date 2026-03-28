@@ -8,13 +8,10 @@ import {
   ClearPlannedAction,
   CombatantDefeated,
   EncounterStarted,
-  PlanningPhaseStarted,
-  PlaybackFinished,
   PlayerLockedIn,
-  ResolutionCompleted,
 } from './encounter.actions';
 import { Combatant, EncounterStateModel, PlannedAction } from './encounter.model';
-import { CombatantDto, ResolutionStepDto } from '../../contracts/hub-contracts.generated';
+import { CombatantDto } from '../../contracts/hub-contracts.generated';
 
 @State<EncounterStateModel>({
   name: 'encounter',
@@ -27,8 +24,6 @@ import { CombatantDto, ResolutionStepDto } from '../../contracts/hub-contracts.g
     myPlannedAction: null,
     lockedInCombatantIds: [],
     planningTimerExpiresAt: null,
-    resolutionSteps: [],
-    isPlayingBack: false,
   },
 })
 @Injectable()
@@ -76,16 +71,6 @@ export class EncounterState {
   @Selector()
   static roundPhase(state: EncounterStateModel): string | null {
     return state.roundPhase;
-  }
-
-  @Selector()
-  static resolutionSteps(state: EncounterStateModel): ResolutionStepDto[] {
-    return state.resolutionSteps;
-  }
-
-  @Selector()
-  static isPlayingBack(state: EncounterStateModel): boolean {
-    return state.isPlayingBack;
   }
 
   @Action(EncounterStarted)
@@ -144,46 +129,6 @@ export class EncounterState {
     ctx.patchState({ combatants });
   }
 
-  @Action(ResolutionCompleted)
-  resolutionCompleted(ctx: StateContext<EncounterStateModel>, { steps, encounterEnded }: ResolutionCompleted) {
-    const state = ctx.getState();
-    // Apply HP/defeated deltas from steps
-    let combatants = [...state.combatants];
-    for (const step of steps) {
-      if (step.actionType === 'attack' && step.targetId && step.newHp !== null) {
-        combatants = combatants.map(c =>
-          c.id === step.targetId
-            ? { ...c, currentHp: step.newHp!, isDefeated: step.defeated ? true : c.isDefeated }
-            : c
-        );
-      }
-    }
-    ctx.patchState({
-      resolutionSteps: steps,
-      isPlayingBack: true,
-      combatants,
-      active: !encounterEnded,
-    });
-  }
-
-  @Action(PlanningPhaseStarted)
-  planningPhaseStarted(ctx: StateContext<EncounterStateModel>, action: PlanningPhaseStarted) {
-    ctx.patchState({
-      roundPhase: 'planning',
-      roundNumber: action.roundNumber,
-      planningTimerExpiresAt: action.planningTimerExpiresAt,
-      myPlannedAction: null,
-      lockedInCombatantIds: [],
-      resolutionSteps: [],
-      isPlayingBack: false,
-    });
-  }
-
-  @Action(PlaybackFinished)
-  playbackFinished(ctx: StateContext<EncounterStateModel>) {
-    ctx.patchState({ isPlayingBack: false });
-  }
-
   @Action(ClearEncounter)
   clearEncounter(ctx: StateContext<EncounterStateModel>) {
     ctx.patchState({
@@ -195,8 +140,6 @@ export class EncounterState {
       myPlannedAction: null,
       lockedInCombatantIds: [],
       planningTimerExpiresAt: null,
-      resolutionSteps: [],
-      isPlayingBack: false,
     });
   }
 }
