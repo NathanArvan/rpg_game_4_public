@@ -217,9 +217,6 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<int>("MaxHp")
                         .HasColumnType("integer");
 
-                    b.Property<int>("MovementRange")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -231,9 +228,6 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<int>("VisionRange")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -503,22 +497,22 @@ namespace RpgGame.Infrastructure.Data.Migrations
                             b1.Property<Guid>("CharacterId")
                                 .HasColumnType("uuid");
 
-                            b1.Property<int>("Focus")
+                            b1.Property<int>("Cha")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Influence")
+                            b1.Property<int>("Con")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Power")
+                            b1.Property<int>("Dex")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Precision")
+                            b1.Property<int>("Int")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Resilience")
+                            b1.Property<int>("Str")
                                 .HasColumnType("integer");
 
-                            b1.Property<int>("Speed")
+                            b1.Property<int>("Wis")
                                 .HasColumnType("integer");
 
                             b1.HasKey("CharacterId");

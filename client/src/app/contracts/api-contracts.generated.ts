@@ -16,17 +16,17 @@ export interface AuthResponse {
 
 export interface BaseStatsDto {
   /** @format int32 */
-  power?: number;
+  str?: number;
   /** @format int32 */
-  speed?: number;
+  dex?: number;
   /** @format int32 */
-  precision?: number;
+  con?: number;
   /** @format int32 */
-  resilience?: number;
+  int?: number;
   /** @format int32 */
-  focus?: number;
+  wis?: number;
   /** @format int32 */
-  influence?: number;
+  cha?: number;
 }
 
 export interface CharacterResponse {
@@ -42,10 +42,6 @@ export interface CharacterResponse {
   maxHp?: number;
   /** @format int32 */
   currentHp?: number;
-  /** @format int32 */
-  movementRange?: number;
-  /** @format int32 */
-  visionRange?: number;
 }
 
 export interface CreateCampaignRequest {
@@ -64,6 +60,10 @@ export interface CreateCharacterRequest {
   /** @format int32 */
   level?: number;
   baseStats?: BaseStatsDto;
+  /** @format int32 */
+  maxHp?: number;
+  /** @format int32 */
+  currentHp?: number;
 }
 
 export interface RegisterRequest {
@@ -90,4 +90,8 @@ export interface UpdateCharacterRequest {
   /** @format int32 */
   level?: number;
   baseStats?: BaseStatsDto;
+  /** @format int32 */
+  maxHp?: number;
+  /** @format int32 */
+  currentHp?: number;
 }
