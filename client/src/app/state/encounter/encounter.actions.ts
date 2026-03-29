@@ -1,26 +1,38 @@
-import { CombatantDto } from '../../contracts/hub-contracts.generated';
+import { CombatantDto, PlanningCombatantDto, PlannedActionEntry } from '../../contracts/hub-contracts.generated';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
   constructor(
     public encounterId: string,
-    public combatants: CombatantDto[],
-    public activeTurnCombatantId: string
+    public combatants: CombatantDto[]
   ) {}
 }
 
-export class TurnAdvanced {
-  static readonly type = '[Encounter] Turn Advanced';
-  constructor(public activeTurnCombatantId: string) {}
-}
-
-export class AttackResolved {
-  static readonly type = '[Encounter] Attack Resolved';
+export class PlanningPhaseStarted {
+  static readonly type = '[Encounter] Planning Phase Started';
   constructor(
-    public targetCombatantId: string,
-    public targetNewHp: number,
-    public feedText: string
+    public roundNumber: number,
+    public planningTimerDurationSeconds: number,
+    public combatants: PlanningCombatantDto[]
   ) {}
+}
+
+export class PlayerLockedIn {
+  static readonly type = '[Encounter] Player Locked In';
+  constructor(public characterName: string) {}
+}
+
+export class AllLockedIn {
+  static readonly type = '[Encounter] All Locked In';
+}
+
+export class SetMyPlannedAction {
+  static readonly type = '[Encounter] Set My Planned Action';
+  constructor(public actions: PlannedActionEntry[]) {}
+}
+
+export class ClearMyPlannedAction {
+  static readonly type = '[Encounter] Clear My Planned Action';
 }
 
 export class CombatantDefeated {

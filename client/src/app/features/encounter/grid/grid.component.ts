@@ -4,10 +4,11 @@ import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { SetPendingMove } from '../../../state/map/map.actions';
+import { ClearMyPlannedAction, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
+import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
 
 interface Cell {
   x: number;
@@ -20,27 +21,59 @@ interface Cell {
   imports: [CommonModule],
   template: `
     <div class="grid-wrapper">
-      <div class="grid-controls" *ngIf="isMyTurn$ | async">
-        <button class="end-turn-btn" (click)="onEndTurn()">End Turn</button>
-        <span class="turn-indicator">Your turn!</span>
+
+      <!-- Planning phase action bar -->
+      <div class="action-bar" *ngIf="isPlanning$ | async">
+        <div class="action-buttons">
+          <button
+            class="action-btn"
+            [class.active]="plannedActionType === 'defend'"
+            (click)="planDefend()">
+            🛡 Defend
+          </button>
+          <button
+            class="lock-in-btn"
+            [disabled]="!myPlannedActions.length || lockedIn"
+            (click)="onLockIn()">
+            {{ lockedIn ? 'Locked in ✓' : 'Lock In' }}
+          </button>
+          <button
+            class="force-btn"
+            *ngIf="isGm"
+            (click)="onForceResolve()">
+            ⚡ Force Resolve
+          </button>
+        </div>
+        <div class="planned-action-display" *ngIf="myPlannedActions.length">
+          Planned: <strong>{{ plannedActionSummary }}</strong>
+          <span *ngIf="!lockedIn" class="cancel-link" (click)="cancelPlan()">(cancel)</span>
+        </div>
+        <div class="timer" *ngIf="timerSeconds$ | async as secs" [class.urgent]="(secs ?? 0) < 10">
+          ⏱ {{ secs }}s
+        </div>
       </div>
-      <div class="active-turn" *ngIf="!(isMyTurn$ | async)">
-        <span class="waiting">Waiting for {{ activeTurnName$ | async }}...</span>
+
+      <!-- Resolving indicator -->
+      <div class="resolving-banner" *ngIf="isResolving$ | async">
+        Resolving...
       </div>
+
+      <!-- Grid -->
       <div
         class="grid"
         [style.grid-template-columns]="gridColumns$ | async">
         <div
           *ngFor="let cell of cells$ | async"
           class="cell"
-          [class.pending]="isPendingMove(cell)"
+          [class.in-range]="isInRange(cell)"
+          [class.ghost]="isGhostTarget(cell)"
           (click)="onCellClick(cell)">
           <div
             *ngIf="tokenAt(cell) as combatant"
             class="token"
-            [class.active-token]="combatant.id === (activeTurnCombatantId$ | async)"
+            [class.my-token]="combatant.userId === myUserId"
             [class.defeated-token]="combatant.isDefeated"
-            [class.enemy-token]="combatant.userId !== myUserId && !combatant.isDefeated"
+            [class.targeted-token]="isTargeted(combatant)"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
           </div>
@@ -50,12 +83,60 @@ interface Cell {
   `,
   styles: [`
     .grid-wrapper { margin-top: 16px; }
-    .grid-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .end-turn-btn { background: #2e7d32; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; }
-    .end-turn-btn:hover { background: #1b5e20; }
-    .turn-indicator { color: #2e7d32; font-weight: bold; }
-    .waiting { color: #666; font-style: italic; }
-    .active-turn { margin-bottom: 8px; }
+
+    .action-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+      padding: 8px;
+      background: #f0f4ff;
+      border-radius: 4px;
+      flex-wrap: wrap;
+    }
+    .action-buttons { display: flex; gap: 8px; align-items: center; }
+    .action-btn {
+      background: #5c6bc0;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .action-btn.active { background: #283593; box-shadow: 0 0 0 2px #ffeb3b; }
+    .action-btn:hover { background: #3949ab; }
+    .lock-in-btn {
+      background: #2e7d32;
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .lock-in-btn:disabled { background: #888; cursor: not-allowed; }
+    .force-btn {
+      background: #e65100;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .planned-action-display { color: #333; font-size: 0.9em; }
+    .cancel-link { color: #b71c1c; cursor: pointer; margin-left: 6px; text-decoration: underline; }
+    .timer { font-weight: bold; color: #555; }
+    .timer.urgent { color: #c62828; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .resolving-banner {
+      padding: 8px;
+      background: #fff9c4;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      font-style: italic;
+    }
+
     .grid {
       display: grid;
       gap: 1px;
@@ -74,7 +155,8 @@ interface Cell {
       position: relative;
     }
     .cell:hover { background: #d4c9a8; }
-    .cell.pending { background: #b3d4f5; }
+    .cell.in-range { background: #c8e6c9; }
+    .cell.ghost { background: #bbdefb; }
     .token {
       width: 24px;
       height: 24px;
@@ -89,35 +171,27 @@ interface Cell {
       cursor: pointer;
       z-index: 1;
     }
-    .token.active-token {
-      background: #e53935;
-      box-shadow: 0 0 0 2px #ffeb3b;
-    }
-    .token.enemy-token {
-      background: #b71c1c;
-      cursor: crosshair;
-    }
-    .token.defeated-token {
-      background: #9e9e9e;
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .token.my-token { background: #2e7d32; }
+    .token.defeated-token { background: #9e9e9e; opacity: 0.5; cursor: not-allowed; }
+    .token.targeted-token { box-shadow: 0 0 0 2px #f44336; }
   `],
 })
 export class GridComponent implements OnInit {
   @Input() joinCode = '';
   @Input() myUserId = '';
+  @Input() isGm = false;
 
   cells$!: Observable<Cell[]>;
   gridColumns$!: Observable<string>;
-  activeTurnCombatantId$!: Observable<string | null>;
-  isMyTurn$!: Observable<boolean>;
-  activeTurnName$!: Observable<string | null>;
+  isPlanning$!: Observable<boolean>;
+  isResolving$!: Observable<boolean>;
+  timerSeconds$!: Observable<number | null>;
 
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
-  private pendingMove: Position | null = null;
-  private activeTurnId: string | null = null;
+
+  myPlannedActions: PlannedActionEntry[] = [];
+  lockedIn = false;
 
   constructor(private store: Store, private hub: GameHubService) {}
 
@@ -137,34 +211,24 @@ export class GridComponent implements OnInit {
       })
     );
 
-    this.activeTurnCombatantId$ = this.store.select(EncounterState.activeTurnCombatantId);
+    this.isPlanning$ = this.store.select(EncounterState.isPlanning);
+    this.isResolving$ = this.store.select(EncounterState.isResolving);
 
-    this.isMyTurn$ = combineLatest([
-      this.activeTurnCombatantId$,
-      this.store.select(EncounterState.combatants),
-    ]).pipe(
-      map(([activeId, combatants]) => {
-        this.combatants = combatants;
-        const myCombatant = combatants.find(c => c.userId === this.myUserId);
-        return !!myCombatant && myCombatant.id === activeId && !myCombatant.isDefeated;
+    this.timerSeconds$ = this.store.select(EncounterState.planningTimerExpiresAt).pipe(
+      map(expiresAt => {
+        if (!expiresAt) return null;
+        const diff = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+        return diff;
       })
     );
 
-    this.activeTurnName$ = combineLatest([
-      this.activeTurnCombatantId$,
-      this.store.select(EncounterState.combatants),
-    ]).pipe(
-      map(([activeId, combatants]) => {
-        const active = combatants.find(c => c.id === activeId);
-        return active?.characterName ?? null;
-      })
-    );
-
-    // Keep local copies for synchronous access in template methods
     this.store.select(MapState.positions).subscribe(p => this.positions = p);
-    this.store.select(MapState.pendingMove).subscribe(p => this.pendingMove = p);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
-    this.store.select(EncounterState.activeTurnCombatantId).subscribe(id => this.activeTurnId = id);
+    this.store.select(EncounterState.myPlannedActions).subscribe(a => {
+      this.myPlannedActions = a;
+      // Reset lock-in state when a new planning phase clears plans
+      if (a.length === 0) this.lockedIn = false;
+    });
   }
 
   tokenAt(cell: Cell): Combatant | null {
@@ -176,30 +240,95 @@ export class GridComponent implements OnInit {
     return null;
   }
 
-  isPendingMove(cell: Cell): boolean {
-    return !!this.pendingMove && this.pendingMove.x === cell.x && this.pendingMove.y === cell.y;
+  isInRange(cell: Cell): boolean {
+    if (this.lockedIn) return false;
+    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
+    if (!myCombatant) return false;
+    const myPos = this.positions[myCombatant.id];
+    if (!myPos) return false;
+    const chebyshev = Math.max(Math.abs(cell.x - myPos.x), Math.abs(cell.y - myPos.y));
+    return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
+  }
+
+  isGhostTarget(cell: Cell): boolean {
+    const moveAction = this.myPlannedActions.find(a => a.type === 'move');
+    if (!moveAction?.targetCell) return false;
+    return moveAction.targetCell.x === cell.x && moveAction.targetCell.y === cell.y;
+  }
+
+  isTargeted(combatant: Combatant): boolean {
+    return this.myPlannedActions.some(a =>
+      (a.type === 'melee_attack' || a.type === 'ranged_attack') &&
+      a.targetCombatantId === combatant.id
+    );
+  }
+
+  get plannedActionType(): string | null {
+    return this.myPlannedActions[0]?.type ?? null;
+  }
+
+  get plannedActionSummary(): string {
+    const action = this.myPlannedActions[0];
+    if (!action) return '';
+    if (action.type === 'move' && action.targetCell)
+      return `Move to (${action.targetCell.x}, ${action.targetCell.y})`;
+    if (action.type === 'melee_attack') return 'Melee Attack';
+    if (action.type === 'ranged_attack') return 'Ranged Attack';
+    if (action.type === 'defend') return 'Defend';
+    return action.type;
   }
 
   onCellClick(cell: Cell): void {
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant) return;
+    if (this.lockedIn) return;
 
-    if (myCombatant.id !== this.activeTurnId) return; // not my turn
-    if (myCombatant.isDefeated) return;
+    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
+    if (!myCombatant || myCombatant.isDefeated) return;
 
     const targetCombatant = this.tokenAt(cell);
 
     if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
-      // Click on an enemy token — declare attack
-      this.hub.declareAttack(this.joinCode, targetCombatant.id);
-    } else if (!targetCombatant) {
-      // Empty cell — move
-      this.store.dispatch(new SetPendingMove({ x: cell.x, y: cell.y }));
-      this.hub.moveToken(this.joinCode, myCombatant.id, cell.x, cell.y);
+      // Click on an enemy/opponent — plan an attack
+      const myPos = this.positions[myCombatant.id];
+      const targetPos = this.positions[targetCombatant.id];
+      const chebyshev = myPos && targetPos
+        ? Math.max(Math.abs(targetPos.x - myPos.x), Math.abs(targetPos.y - myPos.y))
+        : 99;
+      const attackType = chebyshev <= 1 ? 'melee_attack' : 'ranged_attack';
+
+      const action: PlannedActionEntry = { type: attackType, targetCell: null, targetCombatantId: targetCombatant.id };
+      this.store.dispatch(new SetMyPlannedAction([action]));
+      this.hub.planAction(this.joinCode, { actions: [action] });
+    } else if (!targetCombatant && this.isInRange(cell)) {
+      // Empty cell within range — plan a move
+      // If clicking the ghost target again, cancel the plan
+      if (this.isGhostTarget(cell)) {
+        this.cancelPlan();
+        return;
+      }
+      const action: PlannedActionEntry = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
+      this.store.dispatch(new SetMyPlannedAction([action]));
+      this.hub.planAction(this.joinCode, { actions: [action] });
     }
   }
 
-  onEndTurn(): void {
-    this.hub.endTurn(this.joinCode);
+  planDefend(): void {
+    if (this.lockedIn) return;
+    const action: PlannedActionEntry = { type: 'defend', targetCell: null, targetCombatantId: null };
+    this.store.dispatch(new SetMyPlannedAction([action]));
+    this.hub.planAction(this.joinCode, { actions: [action] });
+  }
+
+  cancelPlan(): void {
+    this.store.dispatch(new ClearMyPlannedAction());
+  }
+
+  onLockIn(): void {
+    if (this.lockedIn || !this.myPlannedActions.length) return;
+    this.lockedIn = true;
+    this.hub.lockIn(this.joinCode);
+  }
+
+  onForceResolve(): void {
+    this.hub.forceResolve(this.joinCode);
   }
 }

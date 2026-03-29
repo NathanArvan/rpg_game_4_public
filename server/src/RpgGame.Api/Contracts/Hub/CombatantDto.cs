@@ -5,8 +5,5 @@ public record CombatantDto(
     string UserId,
     string CharacterId,
     string CharacterName,
-    int Initiative,
-    int InitiativeRoll,
-    int DexModifier,
     int CurrentHp,
     int MaxHp);

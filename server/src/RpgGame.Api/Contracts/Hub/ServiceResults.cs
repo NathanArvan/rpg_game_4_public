@@ -5,11 +5,10 @@ public record JoinSessionResult(
     IReadOnlyList<PlayerPresenceChangedPayload> ExistingPlayerPayloads,
     PlayerPresenceChangedPayload NewPlayerPayload);
 
-public record EncounterStartedResult(Guid SessionId, EncounterStartedPayload Payload);
+public record EncounterStartedResult(Guid SessionId, EncounterStartedPayload Payload, PlanningPhaseStartedPayload PlanningPayload);
 
-public record TokenMovedResult(Guid SessionId, TokenMovedPayload Payload);
+public record LockInResult(Guid SessionId, string CombatantId, string CharacterName, bool AllLockedIn, string EncounterId);
 
-public record AttackResult(
-    Guid SessionId,
-    AttackResolvedPayload AttackPayload,
-    CombatantDefeatedPayload? DefeatedPayload);
+public record PlanActionResult(bool Success);
+
+public record ForceResolveResult(Guid SessionId, bool AllLockedIn, string EncounterId);

@@ -5,16 +5,6 @@ export interface ActionRejectedPayload {
   reason: string;
 }
 
-export interface AttackResolvedPayload {
-  attackerId: string;
-  attackerName: string;
-  targetId: string;
-  targetName: string;
-  damage: number;
-  targetNewHp: number;
-  feedText: string;
-}
-
 export interface CombatantDefeatedPayload {
   combatantId: string;
 }
@@ -24,9 +14,6 @@ export interface CombatantDto {
   userId: string;
   characterId: string;
   characterName: string;
-  initiative: number;
-  initiativeRoll: number;
-  dexModifier: number;
   currentHp: number;
   maxHp: number;
 }
@@ -37,7 +24,6 @@ export interface EncounterEndedPayload {
 
 export interface EncounterStartedPayload {
   encounterId: string;
-  activeTurnCombatantId: string;
   combatants: CombatantDto[];
   map: MapDto;
 }
@@ -54,6 +40,37 @@ export interface MapDto {
   fogOfWar: string[];
 }
 
+export interface PlannedActionEntry {
+  type: string;
+  targetCell: PositionDto | null;
+  targetCombatantId: string | null;
+}
+
+export interface PlannedActionArray {
+  actions: PlannedActionEntry[];
+}
+
+export interface PlanningPhaseStartedPayload {
+  roundNumber: number;
+  planningTimerDurationSeconds: number;
+  combatants: PlanningCombatantDto[];
+}
+
+export interface PlanningCombatantDto {
+  id: string;
+  characterName: string;
+  currentHp: number;
+  maxHp: number;
+  isDefeated: boolean;
+}
+
+export interface PlayerLockedInPayload {
+  characterName: string;
+}
+
+export interface AllLockedInPayload {
+}
+
 export interface PlayerPresenceChangedPayload {
   userId: string;
   displayName: string;
@@ -61,32 +78,22 @@ export interface PlayerPresenceChangedPayload {
   isOnline: boolean;
 }
 
-export interface TokenMovedPayload {
-  combatantId: string;
-  x: number;
-  y: number;
-}
-
-export interface TurnAdvancedPayload {
-  activeTurnCombatantId: string;
-}
-
 export const HubEvents = {
   Events: {
     PlayerPresenceChanged: 'PlayerPresenceChanged',
     EncounterStarted: 'EncounterStarted',
-    TokenMoved: 'TokenMoved',
-    TurnAdvanced: 'TurnAdvanced',
+    PlanningPhaseStarted: 'PlanningPhaseStarted',
+    PlayerLockedIn: 'PlayerLockedIn',
+    AllLockedIn: 'AllLockedIn',
     ActionRejected: 'ActionRejected',
-    AttackResolved: 'AttackResolved',
     CombatantDefeated: 'CombatantDefeated',
     EncounterEnded: 'EncounterEnded',
   },
   Methods: {
     JoinSession: 'JoinSession',
     StartEncounter: 'StartEncounter',
-    MoveToken: 'MoveToken',
-    DeclareAttack: 'DeclareAttack',
-    EndTurn: 'EndTurn',
+    PlanAction: 'PlanAction',
+    LockIn: 'LockIn',
+    ForceResolve: 'ForceResolve',
   },
 } as const;

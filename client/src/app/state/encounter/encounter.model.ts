@@ -1,11 +1,10 @@
+import { PlannedActionEntry } from '../../contracts/hub-contracts.generated';
+
 export interface Combatant {
   id: string;
   userId: string;
   characterId: string;
   characterName: string;
-  initiative: number;
-  initiativeRoll: number;
-  dexModifier: number;
   currentHp: number;
   maxHp: number;
   isDefeated: boolean;
@@ -13,7 +12,11 @@ export interface Combatant {
 
 export interface EncounterStateModel {
   encounterId: string | null;
-  combatants: Combatant[];
   active: boolean;
-  activeTurnCombatantId: string | null;
+  roundPhase: 'planning' | 'resolving' | 'between_rounds' | null;
+  roundNumber: number;
+  combatants: Combatant[];
+  myPlannedActions: PlannedActionEntry[];
+  lockedInCombatantNames: string[];
+  planningTimerExpiresAt: string | null;
 }

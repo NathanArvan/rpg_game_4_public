@@ -29,6 +29,7 @@
   <app-grid
     *ngIf="encounterActive$ | async"
     [joinCode]="(joinCode$ | async) ?? ''"
-    [myUserId]="auth.getUserId()">
+    [myUserId]="auth.getUserId()"
+    [isGm]="(isGm$ | async) ?? false">
   </app-grid>
 </div>

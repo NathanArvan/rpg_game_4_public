@@ -7,8 +7,6 @@ public class EncounterCombatant
     public string UserId { get; set; } = "";
     public Guid CharacterId { get; set; }
     public string CharacterName { get; set; } = "";
-    public int Initiative { get; set; }
-    public int InitiativeRoll { get; set; }
-    public int DexModifier { get; set; }
+    public string CombatantType { get; set; } = "player"; // "player" | "monster"
     public Encounter Encounter { get; set; } = null!;
 }
