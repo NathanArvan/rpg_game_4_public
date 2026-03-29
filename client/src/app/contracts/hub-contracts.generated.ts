@@ -58,6 +58,7 @@ export interface PlanningPhaseStartedPayload {
 
 export interface PlanningCombatantDto {
   id: string;
+  userId: string;
   characterName: string;
   currentHp: number;
   maxHp: number;

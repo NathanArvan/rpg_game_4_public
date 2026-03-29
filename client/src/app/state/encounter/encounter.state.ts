@@ -84,7 +84,7 @@ export class EncounterState {
     const expiresAt = new Date(Date.now() + planningTimerDurationSeconds * 1000).toISOString();
     const mapped: Combatant[] = combatants.map((c: PlanningCombatantDto) => ({
       id: c.id,
-      userId: '',
+      userId: c.userId,
       characterId: '',
       characterName: c.characterName,
       currentHp: c.currentHp,
