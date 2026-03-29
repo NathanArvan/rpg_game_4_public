@@ -34,6 +34,7 @@ export class LobbyComponent {
   players$: Observable<ConnectedPlayer[]>;
   encounterActive$: Observable<boolean>;
   joinCode$: Observable<string | null>;
+  isGm$: Observable<boolean>;
 
   activeFlow: 'player' | 'gm' = 'player';
 
@@ -44,6 +45,7 @@ export class LobbyComponent {
     this.players$ = store.select(SessionState.connectedPlayers);
     this.encounterActive$ = store.select(EncounterState.active);
     this.joinCode$ = store.select(SessionState.joinCode);
+    this.isGm$ = store.select(SessionState.isGm);
   }
 
   onAuthenticated(): void {}

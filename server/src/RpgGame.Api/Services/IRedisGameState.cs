@@ -16,4 +16,17 @@ public interface IRedisGameState
     Task SetHpAsync(string characterId, long value);
     Task<bool> IsDefeatedAsync(string encounterId, string combatantId);
     Task MarkDefeatedAsync(string encounterId, string combatantId);
+
+    // Planning phase
+    Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson);
+    Task<Dictionary<string, string>> GetAllPlannedActionsAsync(string encounterId);
+    Task<bool> HasPlannedActionAsync(string encounterId, string combatantId);
+    Task ClearPlannedActionsAsync(string encounterId);
+
+    // Lock-in tracking
+    Task AddLockedInAsync(string encounterId, string combatantId);
+    Task<bool> IsLockedInAsync(string encounterId, string combatantId);
+    Task<long> GetLockedInCountAsync(string encounterId);
+    Task AddLockedInBatchAsync(string encounterId, IEnumerable<string> combatantIds);
+    Task ClearLockedInAsync(string encounterId);
 }

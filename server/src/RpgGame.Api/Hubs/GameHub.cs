@@ -6,7 +6,12 @@ using RpgGame.Api.Services;
 namespace RpgGame.Api.Hubs;
 
 [Authorize]
-public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc, ICombatService combatSvc, ILogger<GameHub> logger) : Hub
+public class GameHub(
+    ISessionService sessionSvc,
+    IEncounterService encounterSvc,
+    IPlanningService planningSvc,
+    PlanningTimerService timerSvc,
+    ILogger<GameHub> logger) : Hub
 {
     public override Task OnConnectedAsync()
     {
@@ -33,15 +38,21 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
     public async Task StartEncounter(string joinCode)
     {
         var r = await encounterSvc.StartEncounterAsync(joinCode, Context.UserIdentifier!);
-        await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.EncounterStarted, r.Payload);
+        var groupName = $"session:{r.SessionId}";
+
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterStarted, r.Payload);
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, r.PlanningPayload);
+
+        var encounterId = Guid.Parse(r.Payload.EncounterId);
+        timerSvc.Start(encounterId, r.SessionId, r.PlanningPayload.PlanningTimerDurationSeconds);
     }
 
-    public async Task MoveToken(string joinCode, string combatantId, int targetX, int targetY)
+    public async Task PlanAction(string joinCode, PlannedActionArray plannedAction)
     {
         try
         {
-            var r = await encounterSvc.MoveTokenAsync(joinCode, Context.UserIdentifier!, combatantId, targetX, targetY);
-            await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.TokenMoved, r.Payload);
+            await planningSvc.PlanActionAsync(joinCode, Context.UserIdentifier!, plannedAction);
+            // No broadcast — plans are private until lock-in.
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
@@ -49,14 +60,21 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         }
     }
 
-    public async Task DeclareAttack(string joinCode, string targetCombatantId)
+    public async Task LockIn(string joinCode)
     {
         try
         {
-            var r = await combatSvc.DeclareAttackAsync(joinCode, Context.UserIdentifier!, targetCombatantId);
-            await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.AttackResolved, r.AttackPayload);
-            if (r.DefeatedPayload is not null)
-                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.CombatantDefeated, r.DefeatedPayload);
+            var result = await planningSvc.LockInAsync(joinCode, Context.UserIdentifier!);
+            var groupName = $"session:{result.SessionId}";
+
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(result.CharacterName));
+
+            if (result.AllLockedIn)
+            {
+                timerSvc.Cancel(Guid.Parse(result.EncounterId));
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
+                // Resolution will be wired here in 3A.2
+            }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
@@ -64,17 +82,20 @@ public class GameHub(ISessionService sessionSvc, IEncounterService encounterSvc,
         }
     }
 
-    public async Task EndTurn(string joinCode)
+    public async Task ForceResolve(string joinCode)
     {
-        var result = await encounterSvc.EndTurnAsync(joinCode, Context.UserIdentifier!);
-        switch (result)
+        try
         {
-            case TurnAdvancedResult r:
-                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.TurnAdvanced, r.Payload);
-                break;
-            case EncounterEndedResult r:
-                await Clients.Group($"session:{r.SessionId}").SendAsync(HubEvents.Events.EncounterEnded, r.Payload);
-                break;
+            var result = await planningSvc.ForceResolveAsync(joinCode, Context.UserIdentifier!);
+            timerSvc.Cancel(Guid.Parse(result.EncounterId));
+
+            var groupName = $"session:{result.SessionId}";
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
+            // Resolution will be wired here in 3A.2
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
     }
 

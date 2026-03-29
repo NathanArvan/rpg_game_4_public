@@ -106,4 +106,65 @@ public class RedisGameState : IRedisGameState
         var db = _redis.GetDatabase();
         await db.SetAddAsync($"encounter:{encounterId}:defeated", combatantId);
     }
+
+    // --- Planning phase ---
+
+    public async Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson)
+    {
+        var db = _redis.GetDatabase();
+        await db.HashSetAsync($"encounter:{encounterId}:planned_actions", combatantId, actionJson);
+    }
+
+    public async Task<Dictionary<string, string>> GetAllPlannedActionsAsync(string encounterId)
+    {
+        var db = _redis.GetDatabase();
+        var entries = await db.HashGetAllAsync($"encounter:{encounterId}:planned_actions");
+        return entries.ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+    }
+
+    public async Task<bool> HasPlannedActionAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        return await db.HashExistsAsync($"encounter:{encounterId}:planned_actions", combatantId);
+    }
+
+    public async Task ClearPlannedActionsAsync(string encounterId)
+    {
+        var db = _redis.GetDatabase();
+        await db.KeyDeleteAsync($"encounter:{encounterId}:planned_actions");
+    }
+
+    // --- Lock-in tracking ---
+
+    public async Task AddLockedInAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        await db.SetAddAsync($"encounter:{encounterId}:locked_in", combatantId);
+    }
+
+    public async Task<bool> IsLockedInAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        return await db.SetContainsAsync($"encounter:{encounterId}:locked_in", combatantId);
+    }
+
+    public async Task<long> GetLockedInCountAsync(string encounterId)
+    {
+        var db = _redis.GetDatabase();
+        return await db.SetLengthAsync($"encounter:{encounterId}:locked_in");
+    }
+
+    public async Task AddLockedInBatchAsync(string encounterId, IEnumerable<string> combatantIds)
+    {
+        var db = _redis.GetDatabase();
+        var values = combatantIds.Select(id => (RedisValue)id).ToArray();
+        if (values.Length > 0)
+            await db.SetAddAsync($"encounter:{encounterId}:locked_in", values);
+    }
+
+    public async Task ClearLockedInAsync(string encounterId)
+    {
+        var db = _redis.GetDatabase();
+        await db.KeyDeleteAsync($"encounter:{encounterId}:locked_in");
+    }
 }

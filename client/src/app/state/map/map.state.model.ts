@@ -7,5 +7,4 @@ export interface MapStateModel {
   gridWidth: number;
   gridHeight: number;
   positions: Record<string, Position>; // keyed by combatantId
-pendingMove: Position | null;
 }

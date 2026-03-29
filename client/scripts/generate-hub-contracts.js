@@ -27,8 +27,8 @@ function mapType(csType) {
 }
 
 function mapBaseType(t) {
-  // List<T> → T[]
-  const listMatch = t.match(/^List<(.+)>$/);
+  // List<T> / IReadOnlyList<T> → T[]
+  const listMatch = t.match(/^(?:List|IReadOnlyList)<(.+)>$/);
   if (listMatch) return `${mapType(listMatch[1])}[]`;
 
   // Dictionary<string, T> → { [key: string]: T }

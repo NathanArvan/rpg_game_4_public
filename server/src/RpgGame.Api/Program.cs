@@ -82,7 +82,8 @@ builder.Services.AddSingleton<IRedisGameState, RedisGameState>();
 
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IEncounterService, EncounterService>();
-builder.Services.AddScoped<ICombatService, CombatService>();
+builder.Services.AddScoped<IPlanningService, PlanningService>();
+builder.Services.AddSingleton<PlanningTimerService>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();
