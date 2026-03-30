@@ -12,6 +12,7 @@ public static class HubEvents
         public const string ActionRejected         = nameof(ActionRejected);
         public const string CombatantDefeated      = nameof(CombatantDefeated);
         public const string EncounterEnded         = nameof(EncounterEnded);
+        public const string ResolutionCompleted    = nameof(ResolutionCompleted);
     }
 
     public static class Methods

@@ -79,6 +79,49 @@ export interface PlayerPresenceChangedPayload {
   isOnline: boolean;
 }
 
+export interface MovementResult {
+  combatantId: string;
+  combatantName: string;
+  path: PositionDto[];
+  finalPosition: PositionDto;
+  wasBlocked: boolean;
+  blockedByCombatantId: string | null;
+}
+
+export interface AttackResult {
+  attackerId: string;
+  attackerName: string;
+  targetId: string;
+  targetName: string;
+  attackType: string;
+  hit: boolean;
+  damage: number;
+  targetNewHp: number;
+  targetDefeated: boolean;
+  wasted: boolean;
+  feedText: string;
+}
+
+export interface EffectResult {
+  combatantId: string;
+  effectType: string;
+  description: string;
+}
+
+export interface TickResult {
+  tickIndex: number;
+  movements: MovementResult[];
+  attacks: AttackResult[];
+  effects: EffectResult[];
+}
+
+export interface ResolutionPayload {
+  ticks: TickResult[];
+  newRoundNumber: number;
+  defeatedCombatantIds: string[];
+  updatedCombatants: PlanningCombatantDto[];
+}
+
 export const HubEvents = {
   Events: {
     PlayerPresenceChanged: 'PlayerPresenceChanged',
@@ -89,6 +132,7 @@ export const HubEvents = {
     ActionRejected: 'ActionRejected',
     CombatantDefeated: 'CombatantDefeated',
     EncounterEnded: 'EncounterEnded',
+    ResolutionCompleted: 'ResolutionCompleted',
   },
   Methods: {
     JoinSession: 'JoinSession',

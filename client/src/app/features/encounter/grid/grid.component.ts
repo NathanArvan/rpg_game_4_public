@@ -1,18 +1,26 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { ClearMyPlannedAction, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
+import { ApplyResolutionPositions } from '../../../state/map/map.actions';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
-import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
+import { PlannedActionEntry, TickResult } from '../../../contracts/hub-contracts.generated';
 
 interface Cell {
   x: number;
   y: number;
+}
+
+interface DamageNumber {
+  combatantId: string;
+  text: string;
+  isHit: boolean;
+  key: string;
 }
 
 @Component({
@@ -73,9 +81,18 @@ interface Cell {
             class="token"
             [class.my-token]="combatant.userId === myUserId"
             [class.defeated-token]="combatant.isDefeated"
+            [class.defeating-token]="isDefeating(combatant)"
             [class.targeted-token]="isTargeted(combatant)"
             [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
             {{ combatant.characterName[0] }}
+          </div>
+          <!-- Damage numbers overlay -->
+          <div
+            *ngFor="let dmg of damageNumbersAt(cell)"
+            class="damage-number"
+            [class.damage-hit]="dmg.isHit"
+            [class.damage-miss]="!dmg.isHit">
+            {{ dmg.text }}
           </div>
         </div>
       </div>
@@ -173,10 +190,30 @@ interface Cell {
     }
     .token.my-token { background: #2e7d32; }
     .token.defeated-token { background: #9e9e9e; opacity: 0.5; cursor: not-allowed; }
+    .token.defeating-token { animation: fadeOut 0.5s forwards; }
     .token.targeted-token { box-shadow: 0 0 0 2px #f44336; }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0.2; } }
+
+    .damage-number {
+      position: absolute;
+      top: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 10;
+      animation: floatUp 0.8s ease-out forwards;
+    }
+    .damage-hit { color: #c62828; }
+    .damage-miss { color: #757575; }
+    @keyframes floatUp {
+      0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    }
   `],
 })
-export class GridComponent implements OnInit {
+export class GridComponent implements OnInit, OnDestroy {
   @Input() joinCode = '';
   @Input() myUserId = '';
   @Input() isGm = false;
@@ -190,8 +227,16 @@ export class GridComponent implements OnInit {
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
 
+  // Playback state
+  private animPositions: Record<string, Position> = {};
+  private isPlayingBack = false;
+  private defeatingNow = new Set<string>();
+  damageNumbers: DamageNumber[] = [];
+
   myPlannedActions: PlannedActionEntry[] = [];
   lockedIn = false;
+
+  private destroyed = false;
 
   constructor(private store: Store, private hub: GameHubService) {}
 
@@ -229,15 +274,38 @@ export class GridComponent implements OnInit {
       // Reset lock-in state when a new planning phase clears plans
       if (a.length === 0) this.lockedIn = false;
     });
+
+    // Trigger playback when resolution ticks arrive
+    this.store.select(EncounterState.resolutionTicks).subscribe(ticks => {
+      if (ticks && ticks.length > 0 && !this.isPlayingBack && !this.destroyed) {
+        this.startPlayback(ticks);
+      }
+    });
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true;
+  }
+
+  // ----- Rendering helpers -----
+
   tokenAt(cell: Cell): Combatant | null {
+    const pos = this.isPlayingBack ? this.animPositions : this.positions;
     for (const combatant of this.combatants) {
-      const pos = this.positions[combatant.id];
-      if (pos && pos.x === cell.x && pos.y === cell.y)
+      const p = pos[combatant.id];
+      if (p && p.x === cell.x && p.y === cell.y)
         return combatant;
     }
     return null;
+  }
+
+  damageNumbersAt(cell: Cell): DamageNumber[] {
+    if (this.damageNumbers.length === 0) return [];
+    const pos = this.isPlayingBack ? this.animPositions : this.positions;
+    return this.damageNumbers.filter(dmg => {
+      const p = pos[dmg.combatantId];
+      return p && p.x === cell.x && p.y === cell.y;
+    });
   }
 
   isInRange(cell: Cell): boolean {
@@ -263,6 +331,10 @@ export class GridComponent implements OnInit {
     );
   }
 
+  isDefeating(combatant: Combatant): boolean {
+    return this.defeatingNow.has(combatant.id);
+  }
+
   get plannedActionType(): string | null {
     return this.myPlannedActions[0]?.type ?? null;
   }
@@ -278,8 +350,10 @@ export class GridComponent implements OnInit {
     return action.type;
   }
 
+  // ----- Interaction -----
+
   onCellClick(cell: Cell): void {
-    if (this.lockedIn) return;
+    if (this.lockedIn || this.isPlayingBack) return;
 
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant || myCombatant.isDefeated) return;
@@ -287,7 +361,6 @@ export class GridComponent implements OnInit {
     const targetCombatant = this.tokenAt(cell);
 
     if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
-      // Click on an enemy/opponent — plan an attack
       const myPos = this.positions[myCombatant.id];
       const targetPos = this.positions[targetCombatant.id];
       const chebyshev = myPos && targetPos
@@ -299,8 +372,6 @@ export class GridComponent implements OnInit {
       this.store.dispatch(new SetMyPlannedAction([action]));
       this.hub.planAction(this.joinCode, { actions: [action] });
     } else if (!targetCombatant && this.isInRange(cell)) {
-      // Empty cell within range — plan a move
-      // If clicking the ghost target again, cancel the plan
       if (this.isGhostTarget(cell)) {
         this.cancelPlan();
         return;
@@ -330,5 +401,75 @@ export class GridComponent implements OnInit {
 
   onForceResolve(): void {
     this.hub.forceResolve(this.joinCode);
+  }
+
+  // ----- Playback animation -----
+
+  private async startPlayback(ticks: TickResult[]): Promise<void> {
+    this.isPlayingBack = true;
+    // Snapshot starting positions
+    this.animPositions = { ...this.positions };
+
+    const tick = ticks[0]; // 3A: always 1 tick
+
+    // Phase 1: Movement (~1.5s)
+    if (tick.movements.length > 0) {
+      const maxPathLen = Math.max(...tick.movements.map(m => m.path.length));
+      if (maxPathLen > 1) {
+        const stepMs = Math.max(80, Math.floor(1500 / maxPathLen));
+        for (let step = 0; step < maxPathLen; step++) {
+          if (this.destroyed) return;
+          for (const movement of tick.movements) {
+            if (step < movement.path.length) {
+              this.animPositions = {
+                ...this.animPositions,
+                [movement.combatantId]: movement.path[step],
+              };
+            }
+          }
+          await this.sleep(stepMs);
+        }
+      }
+    }
+
+    // Phase 2: Attacks — show floating damage numbers (~1.5s)
+    const newDamageNumbers: DamageNumber[] = [];
+    for (const attack of tick.attacks) {
+      if (!attack.wasted) {
+        newDamageNumbers.push({
+          combatantId: attack.targetId,
+          text: attack.hit ? `-${attack.damage}` : 'MISS',
+          isHit: attack.hit,
+          key: Math.random().toString(36).slice(2),
+        });
+      }
+    }
+    this.damageNumbers = newDamageNumbers;
+    await this.sleep(1200);
+    this.damageNumbers = [];
+
+    // Phase 3: Defeat fade (~500ms)
+    const newlyDefeated = new Set(
+      tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId)
+    );
+    if (newlyDefeated.size > 0) {
+      this.defeatingNow = newlyDefeated;
+      await this.sleep(500);
+      this.defeatingNow = new Set();
+    }
+
+    // Commit final positions to MapState
+    const finalPositions: Record<string, Position> = { ...this.positions };
+    for (const movement of tick.movements) {
+      finalPositions[movement.combatantId] = movement.finalPosition;
+    }
+    this.store.dispatch(new ApplyResolutionPositions(finalPositions));
+
+    this.animPositions = {};
+    this.isPlayingBack = false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

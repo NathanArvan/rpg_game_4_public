@@ -9,8 +9,10 @@ import {
   EncounterStarted,
   PlayerLockedIn,
   PlanningPhaseStarted,
+  ResolutionCompleted,
 } from '../../state/encounter/encounter.actions';
-import { MapInitialized } from '../../state/map/map.actions';
+import { ApplyResolutionPositions, MapInitialized } from '../../state/map/map.actions';
+import { AddFeedBatch } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
 import {
   ActionRejectedPayload,
@@ -22,6 +24,7 @@ import {
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
   PlanningPhaseStartedPayload,
+  ResolutionPayload,
 } from '../../contracts/hub-contracts.generated';
 
 @Injectable({ providedIn: 'root' })
@@ -75,6 +78,26 @@ export class GameHubService {
     this.connection.on(HubEvents.Events.AllLockedIn, (_payload: AllLockedInPayload) => {
       console.log('[hub] AllLockedIn received');
       this.ngZone.run(() => this.store.dispatch(new AllLockedIn()));
+    });
+
+    this.connection.on(HubEvents.Events.ResolutionCompleted, (payload: ResolutionPayload) => {
+      console.log('[hub] ResolutionCompleted received:', payload);
+      this.ngZone.run(() => {
+        // Update encounter state (HP, defeated, resolutionTicks)
+        this.store.dispatch(new ResolutionCompleted(payload));
+
+        // Add feed entries as a batch
+        const feedTexts: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
+        for (const tick of payload.ticks) {
+          for (const movement of tick.movements) {
+            feedTexts.push(`${movement.combatantName} moves to (${movement.finalPosition.x}, ${movement.finalPosition.y})${movement.wasBlocked ? ' (blocked)' : ''}`);
+          }
+          for (const attack of tick.attacks) {
+            feedTexts.push(attack.feedText);
+          }
+        }
+        this.store.dispatch(new AddFeedBatch(feedTexts));
+      });
     });
 
     this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {

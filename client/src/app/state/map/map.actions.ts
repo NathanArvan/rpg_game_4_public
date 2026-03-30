@@ -9,3 +9,8 @@ export class MapInitialized {
     public positions: Record<string, Position>
   ) {}
 }
+
+export class ApplyResolutionPositions {
+  static readonly type = '[Map] Apply Resolution Positions';
+  constructor(public positions: Record<string, Position>) {}
+}

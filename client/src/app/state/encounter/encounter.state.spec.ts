@@ -8,9 +8,11 @@ import {
   EncounterStarted,
   PlayerLockedIn,
   PlanningPhaseStarted,
+  ResolutionCompleted,
   SetMyPlannedAction,
   ClearMyPlannedAction,
 } from './encounter.actions';
+import { ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
 
 const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto => ({
@@ -137,6 +139,77 @@ describe('EncounterState', () => {
       const combatants = store.selectSnapshot(EncounterState.combatants);
       expect(combatants.find(c => c.id === 'defeated')!.isDefeated).toBeTrue();
       expect(combatants.find(c => c.id === 'alive')!.isDefeated).toBeFalse();
+    });
+  });
+
+  describe('ResolutionCompleted', () => {
+    const makeResolutionPayload = (overrides: Partial<ResolutionPayload> = {}): ResolutionPayload => ({
+      ticks: [{
+        tickIndex: 0,
+        movements: [],
+        attacks: [{
+          attackerId: 'c2',
+          attackerName: 'Sam',
+          targetId: 'c1',
+          targetName: 'Frodo',
+          attackType: 'melee_attack',
+          hit: true,
+          damage: 5,
+          targetNewHp: 15,
+          targetDefeated: false,
+          wasted: false,
+          feedText: 'Sam strikes Frodo for 5 damage',
+        }],
+        effects: [],
+      }],
+      newRoundNumber: 2,
+      defeatedCombatantIds: [],
+      updatedCombatants: [],
+      ...overrides,
+    });
+
+    it('sets roundPhase to resolving', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 30, [makePlanningCombatantDto({ id: 'c1' })]));
+      store.dispatch(new ResolutionCompleted(makeResolutionPayload()));
+
+      expect(store.snapshot().encounter.roundPhase).toBe('resolving');
+    });
+
+    it('stores resolutionTicks', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 30, [makePlanningCombatantDto({ id: 'c1' })]));
+      store.dispatch(new ResolutionCompleted(makeResolutionPayload()));
+
+      expect(store.snapshot().encounter.resolutionTicks.length).toBe(1);
+    });
+
+    it('updates combatant HP from attack results', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'c1', currentHp: 20 })]));
+      store.dispatch(new ResolutionCompleted(makeResolutionPayload()));
+
+      const combatants = store.selectSnapshot(EncounterState.combatants);
+      expect(combatants.find(c => c.id === 'c1')!.currentHp).toBe(15);
+    });
+
+    it('marks combatant as defeated when in defeatedCombatantIds', () => {
+      store.dispatch(new EncounterStarted('enc-1', [
+        makeCombatantDto({ id: 'c1' }),
+        makeCombatantDto({ id: 'c2' }),
+      ]));
+      store.dispatch(new ResolutionCompleted(makeResolutionPayload({ defeatedCombatantIds: ['c1'] })));
+
+      const combatants = store.selectSnapshot(EncounterState.combatants);
+      expect(combatants.find(c => c.id === 'c1')!.isDefeated).toBeTrue();
+      expect(combatants.find(c => c.id === 'c2')!.isDefeated).toBeFalse();
+    });
+
+    it('PlanningPhaseStarted after resolution clears ticks and returns to planning', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 30, []));
+      store.dispatch(new ResolutionCompleted(makeResolutionPayload()));
+      store.dispatch(new PlanningPhaseStarted(2, 30, []));
+
+      const state = store.snapshot().encounter;
+      expect(state.roundPhase).toBe('planning');
+      expect(state.resolutionTicks).toEqual([]);
     });
   });
 

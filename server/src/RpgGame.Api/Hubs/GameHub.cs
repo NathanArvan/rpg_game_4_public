@@ -10,6 +10,8 @@ public class GameHub(
     ISessionService sessionSvc,
     IEncounterService encounterSvc,
     IPlanningService planningSvc,
+    IResolutionService resolutionSvc,
+    IRedisGameState redisState,
     PlanningTimerService timerSvc,
     ILogger<GameHub> logger) : Hub
 {
@@ -71,9 +73,10 @@ public class GameHub(
 
             if (result.AllLockedIn)
             {
-                timerSvc.Cancel(Guid.Parse(result.EncounterId));
+                var encounterId = Guid.Parse(result.EncounterId);
+                timerSvc.Cancel(encounterId);
                 await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
-                // Resolution will be wired here in 3A.2
+                await RunResolutionAsync(groupName, encounterId, result.SessionId);
             }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
@@ -87,16 +90,38 @@ public class GameHub(
         try
         {
             var result = await planningSvc.ForceResolveAsync(joinCode, Context.UserIdentifier!);
-            timerSvc.Cancel(Guid.Parse(result.EncounterId));
+            var encounterId = Guid.Parse(result.EncounterId);
+            timerSvc.Cancel(encounterId);
 
             var groupName = $"session:{result.SessionId}";
             await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
-            // Resolution will be wired here in 3A.2
+            await RunResolutionAsync(groupName, encounterId, result.SessionId);
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
             await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
+    }
+
+    private async Task RunResolutionAsync(string groupName, Guid encounterId, Guid sessionId)
+    {
+        const int planningTimerSeconds = 30;
+
+        var resolution = await resolutionSvc.ResolveRoundAsync(encounterId);
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.ResolutionCompleted, resolution);
+
+        await Task.Delay(3000); // allow clients to play back before the next planning phase starts
+
+        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(planningTimerSeconds);
+        await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
+
+        var planningPayload = new PlanningPhaseStartedPayload(
+            resolution.NewRoundNumber,
+            planningTimerSeconds,
+            resolution.UpdatedCombatants);
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
+
+        timerSvc.Start(encounterId, sessionId, planningTimerSeconds);
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)

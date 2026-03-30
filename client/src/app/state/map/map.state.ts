@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { MapInitialized } from './map.actions';
+import { ApplyResolutionPositions, MapInitialized } from './map.actions';
 import { MapStateModel, Position } from './map.state.model';
 
 @State<MapStateModel>({
@@ -31,5 +31,10 @@ export class MapState {
   @Action(MapInitialized)
   mapInitialized(ctx: StateContext<MapStateModel>, { gridWidth, gridHeight, positions }: MapInitialized) {
     ctx.patchState({ gridWidth, gridHeight, positions });
+  }
+
+  @Action(ApplyResolutionPositions)
+  applyResolutionPositions(ctx: StateContext<MapStateModel>, { positions }: ApplyResolutionPositions) {
+    ctx.patchState({ positions });
   }
 }
