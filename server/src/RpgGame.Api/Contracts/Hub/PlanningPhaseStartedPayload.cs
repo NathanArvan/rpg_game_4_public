@@ -7,6 +7,7 @@ public record PlanningPhaseStartedPayload(
 
 public record PlanningCombatantDto(
     string Id,
+    string UserId,
     string CharacterName,
     int CurrentHp,
     int MaxHp,

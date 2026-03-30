@@ -122,7 +122,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             new List<string>());
 
         var planningCombatantDtos = combatantDtos.Select(c =>
-            new PlanningCombatantDto(c.Id, c.CharacterName, c.CurrentHp, c.MaxHp, false)).ToList();
+            new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false)).ToList();
 
         var encounterPayload = new EncounterStartedPayload(encounter.Id.ToString(), combatantDtos, mapDto);
         var planningPayload = new PlanningPhaseStartedPayload(1, PlanningTimerSeconds, planningCombatantDtos);
