@@ -25,6 +25,7 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
 
 const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {}): PlanningCombatantDto => ({
   id: 'c1',
+  userId: 'user-1',
   characterName: 'Frodo',
   currentHp: 20,
   maxHp: 20,
