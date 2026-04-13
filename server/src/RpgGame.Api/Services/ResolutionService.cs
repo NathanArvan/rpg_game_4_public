@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IResolutionService
+public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILogger<ResolutionService> logger) : IResolutionService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -52,11 +52,15 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IR
 
     public async Task<ResolutionPayload> ResolveRoundAsync(Guid encounterId)
     {
+        logger.LogInformation("ResolveRound: START for encounter={EncounterId}", encounterId);
+
         // Load encounter with combatants from DB
         var encounter = await db.Encounters
             .Include(e => e.Combatants)
             .FirstOrDefaultAsync(e => e.Id == encounterId)
             ?? throw new InvalidOperationException($"Encounter {encounterId} not found.");
+
+        logger.LogInformation("ResolveRound: loaded {CombatantCount} combatants from DB", encounter.Combatants.Count);
 
         var sessionIdStr = encounter.GameSessionId.ToString();
         var encounterIdStr = encounterId.ToString();
@@ -69,9 +73,11 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IR
 
         // Load planned actions from Redis
         var plannedActionsJson = await redisState.GetAllPlannedActionsAsync(encounterIdStr);
+        logger.LogInformation("ResolveRound: loaded {ActionCount} planned actions from Redis", plannedActionsJson.Count);
         var plannedActions = new Dictionary<string, PlannedActionArray>();
         foreach (var (combatantId, actionJson) in plannedActionsJson)
         {
+            logger.LogDebug("ResolveRound: combatant={CombatantId} action={ActionJson}", combatantId, actionJson);
             var action = JsonSerializer.Deserialize<PlannedActionArray>(actionJson, _jsonOptions);
             if (action is not null)
                 plannedActions[combatantId] = action;
@@ -115,9 +121,13 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IR
 
         for (int tick = 0; tick < maxTicks; tick++)
         {
+            logger.LogInformation("ResolveRound: tick {Tick} — resolving phases", tick);
             var movements = ResolveMovementPhase(plannedActions, snapshots, workingPositions, alreadyDefeated, defeatedThisRound);
+            logger.LogInformation("ResolveRound: tick {Tick} — {MoveCount} movements resolved", tick, movements.Count);
             var attacks = ResolveAttackPhase(plannedActions, snapshots, workingPositions, workingHp, alreadyDefeated, defeatedThisRound);
+            logger.LogInformation("ResolveRound: tick {Tick} — {AttackCount} attacks resolved, {DefeatedCount} defeated this round", tick, attacks.Count, defeatedThisRound.Count);
             var effects = ResolveEffectsPhase(plannedActions, snapshots, alreadyDefeated, defeatedThisRound);
+            logger.LogInformation("ResolveRound: tick {Tick} — {EffectCount} effects resolved", tick, effects.Count);
             tickResults.Add(new TickResult(tick, movements, attacks, effects));
         }
 
@@ -141,11 +151,13 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IR
 
         // Write GameEvents to DB BEFORE Redis mutations
         var events = BuildGameEvents(encounterId, tickResults);
+        logger.LogInformation("ResolveRound: writing {EventCount} GameEvents to DB", events.Count);
         if (events.Count > 0)
         {
             db.GameEvents.AddRange(events);
             await db.SaveChangesAsync();
         }
+        logger.LogInformation("ResolveRound: DB write complete");
 
         // Write Redis mutations
         foreach (var (combatantId, newHp) in workingHp)
@@ -172,6 +184,8 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState) : IR
             await redisState.SetActiveEncounterAsync(sessionIdStr, betweenRounds);
         }
 
+        logger.LogInformation("ResolveRound: COMPLETE — newRound={NewRound}, defeated={DefeatedIds}",
+            newRoundNumber, string.Join(", ", defeatedThisRound));
         return new ResolutionPayload(tickResults, newRoundNumber, defeatedThisRound.ToList(), updatedCombatants);
     }
 
