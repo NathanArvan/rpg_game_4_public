@@ -88,6 +88,7 @@ export class EncounterState {
 
   @Action(PlanningPhaseStarted)
   planningPhaseStarted(ctx: StateContext<EncounterStateModel>, { roundNumber, planningTimerDurationSeconds, combatants }: PlanningPhaseStarted) {
+    console.log('[encounter] PlanningPhaseStarted: round=', roundNumber, 'combatants=', combatants.length);
     const expiresAt = new Date(Date.now() + planningTimerDurationSeconds * 1000).toISOString();
     const mapped: Combatant[] = combatants.map((c: PlanningCombatantDto) => ({
       id: c.id,
@@ -111,6 +112,7 @@ export class EncounterState {
 
   @Action(ResolutionCompleted)
   resolutionCompleted(ctx: StateContext<EncounterStateModel>, { payload }: ResolutionCompleted) {
+    console.log('[encounter] ResolutionCompleted: ticks=', payload.ticks.length, 'defeated=', payload.defeatedCombatantIds);
     // Update combatant HP and defeated flags from resolution results
     const state = ctx.getState();
     const hpMap = new Map<string, number>();
@@ -139,12 +141,14 @@ export class EncounterState {
 
   @Action(PlayerLockedIn)
   playerLockedIn(ctx: StateContext<EncounterStateModel>, { characterName }: PlayerLockedIn) {
+    console.log('[encounter] PlayerLockedIn:', characterName);
     const state = ctx.getState();
     ctx.patchState({ lockedInCombatantNames: [...state.lockedInCombatantNames, characterName] });
   }
 
   @Action(AllLockedIn)
   allLockedIn(ctx: StateContext<EncounterStateModel>) {
+    console.log('[encounter] AllLockedIn: transitioning to resolving');
     ctx.patchState({ roundPhase: 'resolving' });
   }
 

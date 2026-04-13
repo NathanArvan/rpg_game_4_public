@@ -35,6 +35,7 @@ export class MapState {
 
   @Action(ApplyResolutionPositions)
   applyResolutionPositions(ctx: StateContext<MapStateModel>, { positions }: ApplyResolutionPositions) {
+    console.log('[map] ApplyResolutionPositions:', JSON.stringify(positions));
     ctx.patchState({ positions });
   }
 }
