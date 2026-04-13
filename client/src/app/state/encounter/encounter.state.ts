@@ -8,10 +8,11 @@ import {
   EncounterStarted,
   PlayerLockedIn,
   PlanningPhaseStarted,
+  ResolutionCompleted,
   SetMyPlannedAction,
 } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
-import { CombatantDto, PlannedActionEntry, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
+import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
 
 @State<EncounterStateModel>({
   name: 'encounter',
@@ -24,6 +25,7 @@ import { CombatantDto, PlannedActionEntry, PlanningCombatantDto } from '../../co
     myPlannedActions: [],
     lockedInCombatantNames: [],
     planningTimerExpiresAt: null,
+    resolutionTicks: [],
   },
 })
 @Injectable()
@@ -73,6 +75,11 @@ export class EncounterState {
     return state.planningTimerExpiresAt;
   }
 
+  @Selector()
+  static resolutionTicks(state: EncounterStateModel): TickResult[] {
+    return state.resolutionTicks;
+  }
+
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
     const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false }));
@@ -81,6 +88,7 @@ export class EncounterState {
 
   @Action(PlanningPhaseStarted)
   planningPhaseStarted(ctx: StateContext<EncounterStateModel>, { roundNumber, planningTimerDurationSeconds, combatants }: PlanningPhaseStarted) {
+    console.log('[encounter] PlanningPhaseStarted: round=', roundNumber, 'combatants=', combatants.length);
     const expiresAt = new Date(Date.now() + planningTimerDurationSeconds * 1000).toISOString();
     const mapped: Combatant[] = combatants.map((c: PlanningCombatantDto) => ({
       id: c.id,
@@ -98,17 +106,49 @@ export class EncounterState {
       myPlannedActions: [],
       lockedInCombatantNames: [],
       planningTimerExpiresAt: expiresAt,
+      resolutionTicks: [],
+    });
+  }
+
+  @Action(ResolutionCompleted)
+  resolutionCompleted(ctx: StateContext<EncounterStateModel>, { payload }: ResolutionCompleted) {
+    console.log('[encounter] ResolutionCompleted: ticks=', payload.ticks.length, 'defeated=', payload.defeatedCombatantIds);
+    // Update combatant HP and defeated flags from resolution results
+    const state = ctx.getState();
+    const hpMap = new Map<string, number>();
+    const defeatedSet = new Set<string>(payload.defeatedCombatantIds);
+
+    for (const tick of payload.ticks) {
+      for (const attack of tick.attacks) {
+        if (!attack.wasted) {
+          hpMap.set(attack.targetId, attack.targetNewHp);
+        }
+      }
+    }
+
+    const combatants: Combatant[] = state.combatants.map(c => ({
+      ...c,
+      currentHp: hpMap.has(c.id) ? hpMap.get(c.id)! : c.currentHp,
+      isDefeated: c.isDefeated || defeatedSet.has(c.id),
+    }));
+
+    ctx.patchState({
+      roundPhase: 'resolving',
+      resolutionTicks: payload.ticks,
+      combatants,
     });
   }
 
   @Action(PlayerLockedIn)
   playerLockedIn(ctx: StateContext<EncounterStateModel>, { characterName }: PlayerLockedIn) {
+    console.log('[encounter] PlayerLockedIn:', characterName);
     const state = ctx.getState();
     ctx.patchState({ lockedInCombatantNames: [...state.lockedInCombatantNames, characterName] });
   }
 
   @Action(AllLockedIn)
   allLockedIn(ctx: StateContext<EncounterStateModel>) {
+    console.log('[encounter] AllLockedIn: transitioning to resolving');
     ctx.patchState({ roundPhase: 'resolving' });
   }
 
@@ -142,6 +182,7 @@ export class EncounterState {
       myPlannedActions: [],
       lockedInCombatantNames: [],
       planningTimerExpiresAt: null,
+      resolutionTicks: [],
     });
   }
 }

@@ -3,6 +3,11 @@ export class AddFeedEntry {
   constructor(public text: string) {}
 }
 
+export class AddFeedBatch {
+  static readonly type = '[Feed] Add Batch';
+  constructor(public texts: string[]) {}
+}
+
 export class MarkFeedRead {
   static readonly type = '[Feed] Mark Read';
 }

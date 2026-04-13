@@ -1,4 +1,4 @@
-import { CombatantDto, PlanningCombatantDto, PlannedActionEntry } from '../../contracts/hub-contracts.generated';
+import { CombatantDto, PlanningCombatantDto, PlannedActionEntry, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
@@ -38,6 +38,11 @@ export class ClearMyPlannedAction {
 export class CombatantDefeated {
   static readonly type = '[Encounter] Combatant Defeated';
   constructor(public combatantId: string) {}
+}
+
+export class ResolutionCompleted {
+  static readonly type = '[Encounter] Resolution Completed';
+  constructor(public payload: ResolutionPayload) {}
 }
 
 export class ClearEncounter {

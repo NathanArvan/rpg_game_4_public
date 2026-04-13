@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
@@ -49,7 +50,7 @@ public class PlanningServiceTests
         mockRedis.Setup(r => r.IsDefeatedAsync(encounterId.ToString(), combatantId)).ReturnsAsync(false);
         mockRedis.Setup(r => r.GetMapAsync(encounterId.ToString())).ReturnsAsync(mapEntry);
 
-        var service = new PlanningService(db, mockRedis.Object);
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
 
         var action = new PlannedActionArray(new List<PlannedActionEntry>
         {
@@ -95,7 +96,7 @@ public class PlanningServiceTests
         mockRedis.Setup(r => r.SetPlannedActionAsync(encounterId.ToString(), combatantId, It.IsAny<string>()))
                  .Returns(Task.CompletedTask);
 
-        var service = new PlanningService(db, mockRedis.Object);
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
 
         var action = new PlannedActionArray(new List<PlannedActionEntry>
         {
@@ -134,7 +135,7 @@ public class PlanningServiceTests
         var mockRedis = new Mock<IRedisGameState>();
         mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(resolveEntry);
 
-        var service = new PlanningService(db, mockRedis.Object);
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
 
         var action = new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) });
 
@@ -170,7 +171,7 @@ public class PlanningServiceTests
         mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
         mockRedis.Setup(r => r.HasPlannedActionAsync(encounterId.ToString(), combatantId)).ReturnsAsync(false);
 
-        var service = new PlanningService(db, mockRedis.Object);
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
             () => service.LockInAsync(joinCode, userId));

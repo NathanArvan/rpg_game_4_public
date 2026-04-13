@@ -9,6 +9,7 @@ namespace RpgGame.Api.Services;
 public class PlanningTimerService(
     IHubContext<GameHub> hubContext,
     IRedisGameState redisState,
+    IServiceScopeFactory scopeFactory,
     ILogger<PlanningTimerService> logger)
 {
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _timers = new();
@@ -84,5 +85,40 @@ public class PlanningTimerService(
             .SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
 
         logger.LogInformation("Planning timer: AllLockedIn broadcast sent for encounter {EncounterId}", encounterId);
+
+        await RunResolutionAsync(encounterId, sessionId, groupName);
+    }
+
+    private async Task RunResolutionAsync(Guid encounterId, Guid sessionId, string groupName)
+    {
+        const int planningTimerSeconds = 30;
+
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var resolutionSvc = scope.ServiceProvider.GetRequiredService<IResolutionService>();
+
+            var resolution = await resolutionSvc.ResolveRoundAsync(encounterId);
+            await hubContext.Clients.Group(groupName)
+                .SendAsync(HubEvents.Events.ResolutionCompleted, resolution);
+
+            await Task.Delay(3000);
+
+            var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(planningTimerSeconds);
+            await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
+
+            var planningPayload = new PlanningPhaseStartedPayload(
+                resolution.NewRoundNumber,
+                planningTimerSeconds,
+                resolution.UpdatedCombatants);
+            await hubContext.Clients.Group(groupName)
+                .SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
+
+            Start(encounterId, sessionId, planningTimerSeconds);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Resolution error after timer expiry for encounter {EncounterId}", encounterId);
+        }
     }
 }

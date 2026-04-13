@@ -29,4 +29,8 @@ public interface IRedisGameState
     Task<long> GetLockedInCountAsync(string encounterId);
     Task AddLockedInBatchAsync(string encounterId, IEnumerable<string> combatantIds);
     Task ClearLockedInAsync(string encounterId);
+
+    // Resolution support
+    Task<int> GetCharacterHpAsync(string characterId);
+    Task StartNextPlanningPhaseAsync(string sessionId, int roundNumber, DateTimeOffset timerExpiresAt);
 }

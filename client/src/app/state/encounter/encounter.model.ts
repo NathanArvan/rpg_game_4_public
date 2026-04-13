@@ -1,4 +1,4 @@
-import { PlannedActionEntry } from '../../contracts/hub-contracts.generated';
+import { PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
 
 export interface Combatant {
   id: string;
@@ -19,4 +19,5 @@ export interface EncounterStateModel {
   myPlannedActions: PlannedActionEntry[];
   lockedInCombatantNames: string[];
   planningTimerExpiresAt: string | null;
+  resolutionTicks: TickResult[];
 }

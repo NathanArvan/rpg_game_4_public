@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideStore, Store } from '@ngxs/store';
 import { MapState } from './map.state';
-import { MapInitialized } from './map.actions';
+import { ApplyResolutionPositions, MapInitialized } from './map.actions';
 
 describe('MapState', () => {
   let store: Store;
@@ -29,6 +29,25 @@ describe('MapState', () => {
       store.dispatch(new MapInitialized('enc-1', 20, 20, { c1: { x: 5, y: 5 } }));
 
       expect(store.selectSnapshot(MapState.positions)['c1']).toEqual({ x: 5, y: 5 });
+    });
+  });
+
+  describe('ApplyResolutionPositions', () => {
+    it('updates positions map from resolution movement results', () => {
+      store.dispatch(new MapInitialized('enc-1', 20, 20, { c1: { x: 0, y: 0 }, c2: { x: 5, y: 5 } }));
+      store.dispatch(new ApplyResolutionPositions({ c1: { x: 3, y: 4 }, c2: { x: 5, y: 5 } }));
+
+      const positions = store.selectSnapshot(MapState.positions);
+      expect(positions['c1']).toEqual({ x: 3, y: 4 });
+      expect(positions['c2']).toEqual({ x: 5, y: 5 });
+    });
+
+    it('preserves grid dimensions', () => {
+      store.dispatch(new MapInitialized('enc-1', 20, 20, {}));
+      store.dispatch(new ApplyResolutionPositions({ c1: { x: 1, y: 1 } }));
+
+      expect(store.selectSnapshot(MapState.gridWidth)).toBe(20);
+      expect(store.selectSnapshot(MapState.gridHeight)).toBe(20);
     });
   });
 

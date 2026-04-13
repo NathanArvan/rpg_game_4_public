@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPlanningService
+public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogger<PlanningService> logger) : IPlanningService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -42,6 +42,8 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
         var actionJson = JsonSerializer.Serialize(action, _jsonOptions);
         await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantRef.Id, actionJson);
 
+        logger.LogInformation("PlanAction: user={UserId} combatant={CombatantId} action={ActionType}",
+            userId, combatantRef.Id, entry.Type);
         return new PlanActionResult(true);
     }
 
@@ -69,6 +71,8 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState) : IPla
         var allLockedIn = await AreAllLivingCombatantsLockedIn(activeEncounter);
         var combatantName = await GetCombatantCharacterName(encounterId, combatantRef.Id);
 
+        logger.LogInformation("LockIn: user={UserId} combatant={CombatantId} ({CharacterName}) allLockedIn={AllLockedIn} totalCombatants={Total}",
+            userId, combatantRef.Id, combatantName, allLockedIn, activeEncounter.Combatants.Count);
         return new LockInResult(gameSession.Id, combatantRef.Id, combatantName, allLockedIn, encounterId);
     }
 

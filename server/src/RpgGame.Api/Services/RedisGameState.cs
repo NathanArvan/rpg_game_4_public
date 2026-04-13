@@ -167,4 +167,29 @@ public class RedisGameState : IRedisGameState
         var db = _redis.GetDatabase();
         await db.KeyDeleteAsync($"encounter:{encounterId}:locked_in");
     }
+
+    // --- Resolution support ---
+
+    public async Task<int> GetCharacterHpAsync(string characterId)
+    {
+        var db = _redis.GetDatabase();
+        var value = await db.HashGetAsync($"character:live:{characterId}", "currentHp");
+        return value.HasValue ? (int)(long)value : 0;
+    }
+
+    public async Task StartNextPlanningPhaseAsync(string sessionId, int roundNumber, DateTimeOffset timerExpiresAt)
+    {
+        var db = _redis.GetDatabase();
+        var json = await db.StringGetAsync($"session:{sessionId}:active_encounter");
+        if (!json.HasValue) return;
+        var entry = JsonSerializer.Deserialize<ActiveEncounterEntry>(json!, _jsonOptions);
+        if (entry is null) return;
+        var updated = entry with
+        {
+            RoundPhase = "planning",
+            RoundNumber = roundNumber,
+            PlanningTimerExpiresAt = timerExpiresAt,
+        };
+        await db.StringSetAsync($"session:{sessionId}:active_encounter", JsonSerializer.Serialize(updated, _jsonOptions));
+    }
 }

@@ -10,6 +10,8 @@ public class GameHub(
     ISessionService sessionSvc,
     IEncounterService encounterSvc,
     IPlanningService planningSvc,
+    IResolutionService resolutionSvc,
+    IRedisGameState redisState,
     PlanningTimerService timerSvc,
     ILogger<GameHub> logger) : Hub
 {
@@ -67,18 +69,25 @@ public class GameHub(
             var result = await planningSvc.LockInAsync(joinCode, Context.UserIdentifier!);
             var groupName = $"session:{result.SessionId}";
 
+            logger.LogInformation("LockIn: {CharacterName} locked in (allLockedIn={AllLockedIn})", result.CharacterName, result.AllLockedIn);
             await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(result.CharacterName));
 
             if (result.AllLockedIn)
             {
-                timerSvc.Cancel(Guid.Parse(result.EncounterId));
+                var encounterId = Guid.Parse(result.EncounterId);
+                timerSvc.Cancel(encounterId);
                 await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
-                // Resolution will be wired here in 3A.2
+                await RunResolutionAsync(groupName, encounterId, result.SessionId);
             }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
             await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in LockIn for joinCode={JoinCode}, user={UserId}", joinCode, Context.UserIdentifier);
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload("An internal error occurred during lock-in."));
         }
     }
 
@@ -87,16 +96,51 @@ public class GameHub(
         try
         {
             var result = await planningSvc.ForceResolveAsync(joinCode, Context.UserIdentifier!);
-            timerSvc.Cancel(Guid.Parse(result.EncounterId));
+            var encounterId = Guid.Parse(result.EncounterId);
+            timerSvc.Cancel(encounterId);
 
+            logger.LogInformation("ForceResolve: triggered by user={UserId}", Context.UserIdentifier);
             var groupName = $"session:{result.SessionId}";
             await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
-            // Resolution will be wired here in 3A.2
+            await RunResolutionAsync(groupName, encounterId, result.SessionId);
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
             await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in ForceResolve for joinCode={JoinCode}, user={UserId}", joinCode, Context.UserIdentifier);
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload("An internal error occurred during force resolve."));
+        }
+    }
+
+    private async Task RunResolutionAsync(string groupName, Guid encounterId, Guid sessionId)
+    {
+        const int planningTimerSeconds = 30;
+
+        logger.LogInformation("RunResolution: starting for encounter={EncounterId}", encounterId);
+
+        var resolution = await resolutionSvc.ResolveRoundAsync(encounterId);
+        logger.LogInformation("RunResolution: resolved — {TickCount} ticks, {DefeatedCount} defeated, next round={NewRound}",
+            resolution.Ticks.Count, resolution.DefeatedCombatantIds.Count, resolution.NewRoundNumber);
+
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.ResolutionCompleted, resolution);
+        logger.LogInformation("RunResolution: ResolutionCompleted broadcast sent");
+
+        await Task.Delay(3000); // allow clients to play back before the next planning phase starts
+
+        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(planningTimerSeconds);
+        await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
+
+        var planningPayload = new PlanningPhaseStartedPayload(
+            resolution.NewRoundNumber,
+            planningTimerSeconds,
+            resolution.UpdatedCombatants);
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
+        logger.LogInformation("RunResolution: PlanningPhaseStarted broadcast sent for round {Round}", resolution.NewRoundNumber);
+
+        timerSvc.Start(encounterId, sessionId, planningTimerSeconds);
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
