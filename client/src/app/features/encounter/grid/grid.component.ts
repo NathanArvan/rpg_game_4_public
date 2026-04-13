@@ -5,7 +5,7 @@ import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { ClearMyPlannedAction, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
-import { ApplyResolutionPositions } from '../../../state/map/map.actions';
+
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
@@ -229,6 +229,7 @@ export class GridComponent implements OnInit, OnDestroy {
 
   // Playback state
   private animPositions: Record<string, Position> = {};
+  private preResolutionPositions: Record<string, Position> = {};
   private isPlayingBack = false;
   private defeatingNow = new Set<string>();
   damageNumbers: DamageNumber[] = [];
@@ -267,7 +268,13 @@ export class GridComponent implements OnInit, OnDestroy {
       })
     );
 
-    this.store.select(MapState.positions).subscribe(p => this.positions = p);
+    this.store.select(MapState.positions).subscribe(p => {
+      // Snapshot current positions before overwriting — used as playback starting point
+      if (!this.isPlayingBack) {
+        this.preResolutionPositions = this.positions;
+      }
+      this.positions = p;
+    });
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
     this.store.select(EncounterState.myPlannedActions).subscribe(a => {
       this.myPlannedActions = a;
@@ -406,14 +413,19 @@ export class GridComponent implements OnInit, OnDestroy {
   // ----- Playback animation -----
 
   private async startPlayback(ticks: TickResult[]): Promise<void> {
+    console.log('[grid] startPlayback: starting with', ticks.length, 'ticks');
     this.isPlayingBack = true;
-    // Snapshot starting positions
-    this.animPositions = { ...this.positions };
+    // Use pre-resolution positions as starting point for animation
+    this.animPositions = { ...this.preResolutionPositions };
 
     const tick = ticks[0]; // 3A: always 1 tick
+    console.log('[grid] tick 0:', tick.movements.length, 'movements,', tick.attacks.length, 'attacks');
 
     // Phase 1: Movement (~1.5s)
     if (tick.movements.length > 0) {
+      for (const m of tick.movements) {
+        console.log('[grid] movement:', m.combatantName, 'path=', JSON.stringify(m.path), 'final=', JSON.stringify(m.finalPosition));
+      }
       const maxPathLen = Math.max(...tick.movements.map(m => m.path.length));
       if (maxPathLen > 1) {
         const stepMs = Math.max(80, Math.floor(1500 / maxPathLen));
@@ -458,15 +470,11 @@ export class GridComponent implements OnInit, OnDestroy {
       this.defeatingNow = new Set();
     }
 
-    // Commit final positions to MapState
-    const finalPositions: Record<string, Position> = { ...this.positions };
-    for (const movement of tick.movements) {
-      finalPositions[movement.combatantId] = movement.finalPosition;
-    }
-    this.store.dispatch(new ApplyResolutionPositions(finalPositions));
-
+    // Positions already committed to MapState in game-hub.service.ts when ResolutionCompleted arrived.
+    // Just clean up playback state so tokenAt() switches back to this.positions (which has final positions).
     this.animPositions = {};
     this.isPlayingBack = false;
+    console.log('[grid] playback complete');
   }
 
   private sleep(ms: number): Promise<void> {

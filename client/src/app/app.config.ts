@@ -17,6 +17,6 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideStore([SessionState, CharacterState, EncounterState, MapState, FeedState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin()),
+    provideStore([SessionState, CharacterState, EncounterState, MapState, FeedState], withNgxsReduxDevtoolsPlugin(), withNgxsLoggerPlugin({ disabled: true })),
   ],
 };

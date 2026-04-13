@@ -1,6 +1,7 @@
 import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
+import { MapState } from '../../state/map/map.state';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
 import {
   AllLockedIn,
@@ -83,8 +84,20 @@ export class GameHubService {
     this.connection.on(HubEvents.Events.ResolutionCompleted, (payload: ResolutionPayload) => {
       console.log('[hub] ResolutionCompleted received:', payload);
       this.ngZone.run(() => {
-        // Update encounter state (HP, defeated, resolutionTicks)
+        // Update encounter state (HP, defeated, resolutionTicks) — this triggers playback animation
         this.store.dispatch(new ResolutionCompleted(payload));
+
+        // Immediately commit final positions to MapState so they persist
+        // even if playback async timing races with PlanningPhaseStarted.
+        // Playback uses animPositions for the visual animation, so this is safe.
+        const currentPositions = this.store.selectSnapshot(MapState.positions);
+        const finalPositions = { ...currentPositions };
+        for (const tick of payload.ticks) {
+          for (const movement of tick.movements) {
+            finalPositions[movement.combatantId] = movement.finalPosition;
+          }
+        }
+        this.store.dispatch(new ApplyResolutionPositions(finalPositions));
 
         // Add feed entries as a batch
         const feedTexts: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
