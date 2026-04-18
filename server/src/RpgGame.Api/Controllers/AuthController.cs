@@ -10,7 +10,7 @@ using RpgGame.Infrastructure.Identity;
 namespace RpgGame.Api.Controllers;
 
 [ApiController]
-[Route("auth")]
+[Route("api/auth")]
 [Produces("application/json")]
 public class AuthController : ControllerBase
 {

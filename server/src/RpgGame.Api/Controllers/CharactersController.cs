@@ -9,7 +9,7 @@ using RpgGame.Infrastructure.Data;
 namespace RpgGame.Api.Controllers;
 
 [ApiController]
-[Route("characters")]
+[Route("api/characters")]
 [Authorize]
 [Produces("application/json")]
 public class CharactersController : ControllerBase

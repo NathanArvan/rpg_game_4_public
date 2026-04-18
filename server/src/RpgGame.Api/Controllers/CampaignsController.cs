@@ -10,7 +10,7 @@ using RpgGame.Infrastructure.Data;
 namespace RpgGame.Api.Controllers;
 
 [ApiController]
-[Route("campaigns")]
+[Route("api/campaigns")]
 [Authorize]
 [Produces("application/json")]
 public class CampaignsController : ControllerBase
