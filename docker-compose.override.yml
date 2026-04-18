@@ -3,9 +3,37 @@ services:
   postgres:
     ports:
       - "5432:5432"
+    mem_limit: 256m
+    mem_reservation: 128m
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=128MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=16MB
+      -c max_connections=20
+
+  redis:
+    mem_limit: 96m
+    volumes: []
+    command: >
+      redis-server
+      --maxmemory 64mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
 
   api:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_gcServer: "0"
+      DOTNET_GCConserveMemory: "9"
+      DOTNET_GCRetainVM: "0"
+      DOTNET_TieredPGO: "1"
+    mem_limit: 512m
+    mem_reservation: 256m
     volumes:
       - ./server/src:/src/src
+
+  client:
+    mem_limit: 64m
