@@ -32,7 +32,7 @@ cd server
 dotnet watch --project src/RpgGame.Api
 ```
 
-`dotnet watch` gives sub-second hot reload on C# changes. The host-side API connects to `localhost:5432` and `localhost:6379` — both ports are exposed by the base compose file.
+`dotnet watch` gives sub-second hot reload on C# changes. The host-side API connects to `localhost:5432` and `localhost:6379` — both ports are exposed by the base compose file. The API binds to `http://localhost:5291` (set in `launchSettings.json`).
 
 Saves ~300–500MB of memory vs running the API container.
 
