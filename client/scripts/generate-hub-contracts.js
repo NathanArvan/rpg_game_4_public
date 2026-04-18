@@ -69,7 +69,9 @@ function extractRecords(source) {
       // Split on commas that are NOT inside angle brackets
       const params = splitParams(rawParams);
       for (const param of params) {
-        const parts = param.trim().split(/\s+/);
+        // Strip default values (e.g. `string CombatantType = "player"` → `string CombatantType`)
+        const noDefault = param.trim().replace(/\s*=.*$/, '');
+        const parts = noDefault.trim().split(/\s+/);
         const propName = parts[parts.length - 1];
         const csType = parts.slice(0, -1).join(' ');
         properties.push({ name: propName, type: csType });

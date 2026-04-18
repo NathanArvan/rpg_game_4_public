@@ -13,14 +13,18 @@ public static class HubEvents
         public const string CombatantDefeated      = nameof(CombatantDefeated);
         public const string EncounterEnded         = nameof(EncounterEnded);
         public const string ResolutionCompleted    = nameof(ResolutionCompleted);
+        public const string MonsterAdded           = nameof(MonsterAdded);
     }
 
     public static class Methods
     {
-        public const string JoinSession     = nameof(JoinSession);
-        public const string StartEncounter  = nameof(StartEncounter);
-        public const string PlanAction      = nameof(PlanAction);
-        public const string LockIn          = nameof(LockIn);
-        public const string ForceResolve    = nameof(ForceResolve);
+        public const string JoinSession       = nameof(JoinSession);
+        public const string StartEncounter    = nameof(StartEncounter);
+        public const string PlanAction        = nameof(PlanAction);
+        public const string LockIn            = nameof(LockIn);
+        public const string ForceResolve      = nameof(ForceResolve);
+        public const string AddMonster        = nameof(AddMonster);
+        public const string PlanEnemyAction   = nameof(PlanEnemyAction);
+        public const string LockInEnemies     = nameof(LockInEnemies);
     }
 }

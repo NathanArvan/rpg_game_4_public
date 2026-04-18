@@ -11,4 +11,5 @@ public record PlanningCombatantDto(
     string CharacterName,
     int CurrentHp,
     int MaxHp,
-    bool IsDefeated);
+    bool IsDefeated,
+    string CombatantType = "player");

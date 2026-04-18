@@ -8,6 +8,7 @@ export interface Combatant {
   currentHp: number;
   maxHp: number;
   isDefeated: boolean;
+  combatantType: 'player' | 'monster';
 }
 
 export interface EncounterStateModel {

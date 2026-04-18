@@ -163,6 +163,90 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         }
     }
 
+    public async Task<PlanActionResult> PlanEnemyActionAsync(string joinCode, string gmUserId, string combatantId, PlannedActionArray action)
+    {
+        var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
+            ?? throw new GameActionException("Invalid join code.", isActionRejected: true);
+
+        var member = await db.CampaignMembers
+            .FirstOrDefaultAsync(m => m.CampaignId == gameSession.CampaignId && m.UserId == gmUserId);
+
+        if (member is null || member.Role != CampaignRole.Gm)
+            throw new GameActionException("Only the GM can plan enemy actions.", isActionRejected: true);
+
+        var sessionIdStr = gameSession.Id.ToString();
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr)
+            ?? throw new GameActionException("No active encounter.", isActionRejected: true);
+
+        if (activeEncounter.RoundPhase != "planning")
+            throw new GameActionException("Not in planning phase.", isActionRejected: true);
+
+        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId)
+            ?? throw new GameActionException("Combatant not found.", isActionRejected: true);
+
+        if (combatantRef.CombatantType != "monster")
+            throw new GameActionException("This method is only for monster combatants.", isActionRejected: true);
+
+        if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, combatantId))
+            throw new GameActionException("That combatant is defeated.", isActionRejected: true);
+
+        if (action.Actions.Count != 1)
+            throw new GameActionException("Action array must contain exactly 1 action.", isActionRejected: true);
+
+        var entry = action.Actions[0];
+        await ValidateActionEntry(entry, combatantId, activeEncounter);
+
+        var actionJson = JsonSerializer.Serialize(action, _jsonOptions);
+        await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantId, actionJson);
+
+        logger.LogInformation("PlanEnemyAction: gm={GmUserId} combatant={CombatantId} action={ActionType}",
+            gmUserId, combatantId, entry.Type);
+        return new PlanActionResult(true);
+    }
+
+    public async Task<LockInResult> LockInEnemiesAsync(string joinCode, string gmUserId)
+    {
+        var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
+            ?? throw new GameActionException("Invalid join code.", isActionRejected: true);
+
+        var member = await db.CampaignMembers
+            .FirstOrDefaultAsync(m => m.CampaignId == gameSession.CampaignId && m.UserId == gmUserId);
+
+        if (member is null || member.Role != CampaignRole.Gm)
+            throw new GameActionException("Only the GM can lock in enemies.", isActionRejected: true);
+
+        var sessionIdStr = gameSession.Id.ToString();
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr)
+            ?? throw new GameActionException("No active encounter.", isActionRejected: true);
+
+        if (activeEncounter.RoundPhase != "planning")
+            throw new GameActionException("Not in planning phase.", isActionRejected: true);
+
+        var encounterId = activeEncounter.EncounterId;
+        var defendActionJson = JsonSerializer.Serialize(
+            new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) }),
+            _jsonOptions);
+
+        var monsterIds = new List<string>();
+        foreach (var combatant in activeEncounter.Combatants)
+        {
+            if (combatant.CombatantType != "monster") continue;
+            if (await redisState.IsDefeatedAsync(encounterId, combatant.Id)) continue;
+            monsterIds.Add(combatant.Id);
+            if (!await redisState.HasPlannedActionAsync(encounterId, combatant.Id))
+                await redisState.SetPlannedActionAsync(encounterId, combatant.Id, defendActionJson);
+        }
+
+        if (monsterIds.Count > 0)
+            await redisState.AddLockedInBatchAsync(encounterId, monsterIds);
+
+        var allLockedIn = await AreAllLivingCombatantsLockedIn(activeEncounter);
+
+        logger.LogInformation("LockInEnemies: gm={GmUserId} monsters={MonsterCount} allLockedIn={AllLockedIn}",
+            gmUserId, monsterIds.Count, allLockedIn);
+        return new LockInResult(gameSession.Id, "", "GM", allLockedIn, encounterId);
+    }
+
     private async Task<bool> AreAllLivingCombatantsLockedIn(ActiveEncounterEntry activeEncounter)
     {
         var encounterId = activeEncounter.EncounterId;

@@ -19,6 +19,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
     private record CombatantSnapshot(
         string CombatantId,
         string CharacterId,
+        string HpKey,           // combatant ID for monsters, character ID for players
         string CharacterName,
         int CurrentHp,
         int MaxHp,
@@ -65,8 +66,11 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         var sessionIdStr = encounter.GameSessionId.ToString();
         var encounterIdStr = encounterId.ToString();
 
-        // Load character stats from DB (class, dex, maxHp)
-        var charIds = encounter.Combatants.Select(c => c.CharacterId).ToList();
+        // Load character stats from DB (class, dex, maxHp) — monsters have null CharacterId, skip them
+        var charIds = encounter.Combatants
+            .Where(c => c.CharacterId.HasValue)
+            .Select(c => c.CharacterId!.Value)
+            .ToList();
         var characterMap = await db.Characters
             .Where(c => charIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id);
@@ -92,18 +96,21 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         foreach (var c in encounter.Combatants)
         {
             var combatantId = c.Id.ToString();
-            var currentHp = await redisState.GetCharacterHpAsync(c.CharacterId.ToString());
+            var isMonster = c.CombatantType == "monster";
+            var hpKey = isMonster ? combatantId : c.CharacterId!.Value.ToString();
+            var currentHp = await redisState.GetCharacterHpAsync(hpKey);
             var isDefeated = await redisState.IsDefeatedAsync(encounterIdStr, combatantId);
             var pos = mapEntry.Positions.GetValueOrDefault(combatantId, new Position(0, 0));
-            characterMap.TryGetValue(c.CharacterId, out var character);
+            characterMap.TryGetValue(c.CharacterId ?? Guid.Empty, out var character);
 
             snapshots[combatantId] = new CombatantSnapshot(
                 CombatantId: combatantId,
-                CharacterId: c.CharacterId.ToString(),
+                CharacterId: c.CharacterId?.ToString() ?? "",
+                HpKey: hpKey,
                 CharacterName: c.CharacterName,
                 CurrentHp: currentHp,
-                MaxHp: character?.MaxHp ?? currentHp,
-                CharClass: character?.Class ?? "wizard",
+                MaxHp: character?.MaxHp ?? (isMonster ? 20 : currentHp),
+                CharClass: character?.Class ?? (isMonster ? "fighter" : "wizard"),
                 Dex: character?.BaseStats.Dex ?? 10,
                 IsDefeated: isDefeated,
                 CurrentPosition: pos);
@@ -146,7 +153,8 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
                 c.CharacterName,
                 workingHp.GetValueOrDefault(id, snap.CurrentHp),
                 snap.MaxHp,
-                allDefeatedIds.Contains(id));
+                allDefeatedIds.Contains(id),
+                c.CombatantType);
         }).ToList();
 
         // Write GameEvents to DB BEFORE Redis mutations
@@ -164,7 +172,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         {
             var snap = snapshots[combatantId];
             if (newHp != snap.CurrentHp)
-                await redisState.SetHpAsync(snap.CharacterId, newHp);
+                await redisState.SetHpAsync(snap.HpKey, newHp);
         }
 
         foreach (var combatantId in defeatedThisRound)

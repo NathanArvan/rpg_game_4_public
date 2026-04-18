@@ -12,3 +12,9 @@ public record LockInResult(Guid SessionId, string CombatantId, string CharacterN
 public record PlanActionResult(bool Success);
 
 public record ForceResolveResult(Guid SessionId, bool AllLockedIn, string EncounterId);
+
+public record AddMonsterResult(
+    Guid SessionId,
+    string EncounterId,
+    PlanningCombatantDto MonsterDto,
+    PositionDto SpawnPosition);

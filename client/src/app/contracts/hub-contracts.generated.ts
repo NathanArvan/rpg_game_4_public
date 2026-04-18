@@ -16,6 +16,7 @@ export interface CombatantDto {
   characterName: string;
   currentHp: number;
   maxHp: number;
+  combatantType: string;
 }
 
 export interface EncounterEndedPayload {
@@ -38,6 +39,11 @@ export interface MapDto {
   gridHeight: number;
   positions: { [key: string]: PositionDto };
   fogOfWar: string[];
+}
+
+export interface MonsterAddedPayload {
+  monster: PlanningCombatantDto;
+  spawnPosition: PositionDto;
 }
 
 export interface PlannedActionEntry {
@@ -63,6 +69,7 @@ export interface PlanningCombatantDto {
   currentHp: number;
   maxHp: number;
   isDefeated: boolean;
+  combatantType: string;
 }
 
 export interface PlayerLockedInPayload {
@@ -77,6 +84,20 @@ export interface PlayerPresenceChangedPayload {
   displayName: string;
   characterId: string | null;
   isOnline: boolean;
+}
+
+export interface ResolutionPayload {
+  ticks: TickResult[];
+  newRoundNumber: number;
+  defeatedCombatantIds: string[];
+  updatedCombatants: PlanningCombatantDto[];
+}
+
+export interface TickResult {
+  tickIndex: number;
+  movements: MovementResult[];
+  attacks: AttackResult[];
+  effects: EffectResult[];
 }
 
 export interface MovementResult {
@@ -108,20 +129,6 @@ export interface EffectResult {
   description: string;
 }
 
-export interface TickResult {
-  tickIndex: number;
-  movements: MovementResult[];
-  attacks: AttackResult[];
-  effects: EffectResult[];
-}
-
-export interface ResolutionPayload {
-  ticks: TickResult[];
-  newRoundNumber: number;
-  defeatedCombatantIds: string[];
-  updatedCombatants: PlanningCombatantDto[];
-}
-
 export const HubEvents = {
   Events: {
     PlayerPresenceChanged: 'PlayerPresenceChanged',
@@ -133,6 +140,7 @@ export const HubEvents = {
     CombatantDefeated: 'CombatantDefeated',
     EncounterEnded: 'EncounterEnded',
     ResolutionCompleted: 'ResolutionCompleted',
+    MonsterAdded: 'MonsterAdded',
   },
   Methods: {
     JoinSession: 'JoinSession',
@@ -140,5 +148,8 @@ export const HubEvents = {
     PlanAction: 'PlanAction',
     LockIn: 'LockIn',
     ForceResolve: 'ForceResolve',
+    AddMonster: 'AddMonster',
+    PlanEnemyAction: 'PlanEnemyAction',
+    LockInEnemies: 'LockInEnemies',
   },
 } as const;

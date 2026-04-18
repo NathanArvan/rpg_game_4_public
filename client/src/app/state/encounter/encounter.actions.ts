@@ -1,4 +1,4 @@
-import { CombatantDto, PlanningCombatantDto, PlannedActionEntry, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import { CombatantDto, MonsterAddedPayload, PlanningCombatantDto, PlannedActionEntry, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';

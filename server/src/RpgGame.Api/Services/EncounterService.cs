@@ -92,27 +92,29 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             "planning",
             1,
             planningTimerExpiresAt,
-            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId)).ToList());
+            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, "player")).ToList());
 
         await redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
         await redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
 
         foreach (var c in combatants)
         {
-            if (characterMap.TryGetValue(c.CharacterId, out var ch))
-                await redisState.SeedCharacterLiveStateAsync(c.CharacterId.ToString(), ch.CurrentHp, ch.Class);
+            if (c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch))
+                await redisState.SeedCharacterLiveStateAsync(c.CharacterId.Value.ToString(), ch.CurrentHp, ch.Class);
         }
 
         var combatantDtos = combatants.Select(c =>
         {
-            characterMap.TryGetValue(c.CharacterId, out var ch);
+            var hasChar = c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch);
+            var character = hasChar ? characterMap.GetValueOrDefault(c.CharacterId!.Value) : null;
             return new CombatantDto(
                 c.Id.ToString(),
                 c.UserId,
-                c.CharacterId.ToString(),
+                c.CharacterId?.ToString() ?? "",
                 c.CharacterName,
-                ch?.CurrentHp ?? 0,
-                ch?.MaxHp ?? 0);
+                character?.CurrentHp ?? 0,
+                character?.MaxHp ?? 0,
+                c.CombatantType);
         }).ToList();
 
         var mapDto = new MapDto(
@@ -122,11 +124,78 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             new List<string>());
 
         var planningCombatantDtos = combatantDtos.Select(c =>
-            new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false)).ToList();
+            new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false, c.CombatantType)).ToList();
 
         var encounterPayload = new EncounterStartedPayload(encounter.Id.ToString(), combatantDtos, mapDto);
         var planningPayload = new PlanningPhaseStartedPayload(1, PlanningTimerSeconds, planningCombatantDtos);
 
         return new EncounterStartedResult(gameSession.Id, encounterPayload, planningPayload);
+    }
+
+    public async Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName)
+    {
+        var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
+            ?? throw new GameActionException("Invalid join code.", isActionRejected: true);
+
+        var member = await db.CampaignMembers
+            .FirstOrDefaultAsync(m => m.CampaignId == gameSession.CampaignId && m.UserId == gmUserId);
+
+        if (member is null || member.Role != CampaignRole.Gm)
+            throw new GameActionException("Only the GM can add monsters.", isActionRejected: true);
+
+        var sessionId = gameSession.Id.ToString();
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId)
+            ?? throw new GameActionException("No active encounter.", isActionRejected: true);
+
+        if (activeEncounter.RoundPhase != "planning")
+            throw new GameActionException("Monsters can only be added during the planning phase.", isActionRejected: true);
+
+        var encounterGuid = GuidParser.TryParse(activeEncounter.EncounterId)
+            ?? throw new GameActionException("Invalid encounter ID.", isActionRejected: true);
+
+        var monster = new EncounterCombatant
+        {
+            Id = Guid.NewGuid(),
+            EncounterId = encounterGuid,
+            UserId = gmUserId,
+            CharacterId = Guid.Empty,
+            CharacterName = string.IsNullOrWhiteSpace(monsterName) ? "Monster" : monsterName.Trim(),
+            CombatantType = "monster",
+        };
+
+        db.EncounterCombatants.Add(monster);
+        await db.SaveChangesAsync();
+
+        // Find spawn position: scan y=19 downward, x=0 rightward
+        var map = await redisState.GetMapAsync(activeEncounter.EncounterId)
+            ?? throw new GameActionException("Map data not found.", isActionRejected: true);
+
+        var occupied = new HashSet<(int, int)>(map.Positions.Values.Select(p => (p.X, p.Y)));
+        Position? spawnPos = null;
+        for (int y = map.GridHeight - 1; y >= 0 && spawnPos is null; y--)
+            for (int x = 0; x < map.GridWidth && spawnPos is null; x++)
+                if (!occupied.Contains((x, y)))
+                    spawnPos = new Position(x, y);
+
+        spawnPos ??= new Position(0, 0); // fallback if grid is completely full
+
+        var monsterId = monster.Id.ToString();
+
+        // Update Redis map
+        map.Positions[monsterId] = spawnPos;
+        await redisState.SetMapAsync(activeEncounter.EncounterId, map);
+
+        // Seed monster HP using combatant ID as key (no Character row)
+        await redisState.SeedCharacterLiveStateAsync(monsterId, 20, "fighter");
+
+        // Add monster to active encounter combatant list
+        activeEncounter.Combatants.Add(new CombatantRef(monsterId, gmUserId, "monster"));
+        await redisState.SetActiveEncounterAsync(sessionId, activeEncounter);
+
+        var monsterDto = new PlanningCombatantDto(
+            monsterId, gmUserId, monster.CharacterName, 20, 20, false, "monster");
+        var spawnDto = new PositionDto(spawnPos.X, spawnPos.Y);
+
+        return new AddMonsterResult(gameSession.Id, activeEncounter.EncounterId, monsterDto, spawnDto);
     }
 }

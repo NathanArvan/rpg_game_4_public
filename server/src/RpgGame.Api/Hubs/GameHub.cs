@@ -115,6 +115,63 @@ public class GameHub(
         }
     }
 
+    public async Task AddMonster(string joinCode, string monsterName)
+    {
+        try
+        {
+            var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName);
+            var groupName = $"session:{r.SessionId}";
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.MonsterAdded,
+                new MonsterAddedPayload(r.MonsterDto, r.SpawnPosition));
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+    }
+
+    public async Task PlanEnemyAction(string joinCode, string combatantId, PlannedActionArray plannedAction)
+    {
+        try
+        {
+            await planningSvc.PlanEnemyActionAsync(joinCode, Context.UserIdentifier!, combatantId, plannedAction);
+            // No broadcast — enemy plans are hidden from players.
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+    }
+
+    public async Task LockInEnemies(string joinCode)
+    {
+        try
+        {
+            var result = await planningSvc.LockInEnemiesAsync(joinCode, Context.UserIdentifier!);
+            var groupName = $"session:{result.SessionId}";
+
+            logger.LogInformation("LockInEnemies: GM locked in enemies (allLockedIn={AllLockedIn})", result.AllLockedIn);
+            await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(result.CharacterName));
+
+            if (result.AllLockedIn)
+            {
+                var encounterId = Guid.Parse(result.EncounterId);
+                timerSvc.Cancel(encounterId);
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
+                await RunResolutionAsync(groupName, encounterId, result.SessionId);
+            }
+        }
+        catch (GameActionException ex) when (ex.IsActionRejected)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in LockInEnemies for joinCode={JoinCode}, user={UserId}", joinCode, Context.UserIdentifier);
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload("An internal error occurred during enemy lock-in."));
+        }
+    }
+
     private async Task RunResolutionAsync(string groupName, Guid encounterId, Guid sessionId)
     {
         const int planningTimerSeconds = 30;
