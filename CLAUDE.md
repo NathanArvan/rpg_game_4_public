@@ -10,6 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/design/TICK_RESOLUTION.md` — Tick-based resolution loop, path-based movement, action queue schema, opportunity attacks. Supersedes the single-pass phase model in DESIGN_SPIKE.
 - `docs/design/MAGIC_SYSTEM.md` — Environmental magic layer: ley points, resonance, magic pipeline. Defers internal character magic sources to post-playtesting.
 
+### Workflow
+- `docs/DEVELOPMENT_WORKFLOW.md` — Local dev guidance; fast iteration on vertical slices through Angular → SignalR → .NET → Redis/Postgres.
+
 ### Roadmap
 - `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan: what to build, in what order, 
 
@@ -77,22 +80,26 @@ Clean Architecture with three projects:
 - **EncounterCombatant** — Id, EncounterId, UserId, CharacterId, CharacterName, Initiative, InitiativeRoll, DexModifier
 - **GameEvent** — Id, EncounterId, OccurredAt, EventType (string), Payload (JSONB); append-only log
 
+### API Routing Convention
+
+All REST controllers use the `api/` prefix directly in their `[Route]` attribute (e.g. `[Route("api/auth")]`). This means the URL `/api/auth/register` is the actual route on the server — no path rewriting anywhere. The nginx proxy and the Angular dev proxy both forward `/api/` to the API without stripping the prefix. **Never use `[Route("auth")]` without the `api/` prefix — it will work in Docker (where nginx historically rewrote paths) but break the Angular dev proxy and any direct curl/Swagger calls.**
+
 ### API Endpoints
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| POST | `/auth/register` | Register user, returns JWT |
-| POST | `/auth/token` | Login, returns JWT |
-| POST | `/campaigns` | Create campaign (GM becomes first member) |
-| POST | `/campaigns/{id}/sessions` | Start session → returns `{ joinCode, gameSessionId }` |
-| POST | `/characters` | Create character |
-| GET | `/characters/mine` | List caller's characters |
-| GET | `/characters/{id}` | Get character |
-| PUT | `/characters/{id}` | Update character |
-| DELETE | `/characters/{id}` | Delete character |
+| POST | `/api/auth/register` | Register user, returns JWT |
+| POST | `/api/auth/token` | Login, returns JWT |
+| POST | `/api/campaigns` | Create campaign (GM becomes first member) |
+| POST | `/api/campaigns/{id}/sessions` | Start session → returns `{ joinCode, gameSessionId }` |
+| POST | `/api/characters` | Create character |
+| GET | `/api/characters/mine` | List caller's characters |
+| GET | `/api/characters/{id}` | Get character |
+| PUT | `/api/characters/{id}` | Update character |
+| DELETE | `/api/characters/{id}` | Delete character |
 
 ### Auth Flow
-1. Client POSTs to `/auth/register` or `/auth/token` → receives JWT
+1. Client POSTs to `/api/auth/register` or `/api/auth/token` → receives JWT
 2. JWT stored in `sessionStorage` by `AuthService`
 3. HTTP `AuthInterceptor` adds `Authorization: Bearer {token}` to all requests
 4. SignalR connection passes JWT via `accessTokenFactory` → query string `?access_token=<token>`
