@@ -82,7 +82,7 @@ export class EncounterState {
 
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
-    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false }));
+    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false, combatantType: c.combatantType as 'player' | 'monster' }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
 
@@ -98,6 +98,7 @@ export class EncounterState {
       currentHp: c.currentHp,
       maxHp: c.maxHp,
       isDefeated: c.isDefeated,
+      combatantType: c.combatantType as 'player' | 'monster',
     }));
     ctx.patchState({
       roundPhase: 'planning',
