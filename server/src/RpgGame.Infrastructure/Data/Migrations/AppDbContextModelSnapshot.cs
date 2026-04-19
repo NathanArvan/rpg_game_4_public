@@ -270,7 +270,7 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("CharacterId")
+                    b.Property<Guid?>("CharacterId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("CharacterName")
@@ -549,8 +549,7 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.HasOne("RpgGame.Domain.Entities.Character", null)
                         .WithMany()
                         .HasForeignKey("CharacterId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("RpgGame.Domain.Entities.Encounter", "Encounter")
                         .WithMany("Combatants")
