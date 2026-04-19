@@ -174,15 +174,27 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         if (member is null || member.Role != CampaignRole.Gm)
             throw new GameActionException("Only the GM can plan enemy actions.", isActionRejected: true);
 
+        logger.LogInformation("PlanEnemyAction: GM validated, encounterId lookup for session={SessionId}", gameSession.Id);
+
         var sessionIdStr = gameSession.Id.ToString();
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr)
             ?? throw new GameActionException("No active encounter.", isActionRejected: true);
 
+        logger.LogInformation("PlanEnemyAction: phase={Phase} encounterId={EncounterId} combatantCount={Count}",
+            activeEncounter.RoundPhase, activeEncounter.EncounterId, activeEncounter.Combatants.Count);
+
         if (activeEncounter.RoundPhase != "planning")
             throw new GameActionException("Not in planning phase.", isActionRejected: true);
 
-        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId)
-            ?? throw new GameActionException("Combatant not found.", isActionRejected: true);
+        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId);
+        if (combatantRef is null)
+        {
+            logger.LogWarning("PlanEnemyAction: combatant {CombatantId} not found in encounter. Known ids: {KnownIds}",
+                combatantId, string.Join(", ", activeEncounter.Combatants.Select(c => c.Id)));
+            throw new GameActionException("Combatant not found.", isActionRejected: true);
+        }
+
+        logger.LogInformation("PlanEnemyAction: combatant found, type={CombatantType}", combatantRef.CombatantType);
 
         if (combatantRef.CombatantType != "monster")
             throw new GameActionException("This method is only for monster combatants.", isActionRejected: true);
@@ -194,12 +206,13 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
             throw new GameActionException("Action array must contain exactly 1 action.", isActionRejected: true);
 
         var entry = action.Actions[0];
+        logger.LogInformation("PlanEnemyAction: validating action type={Type}", entry.Type);
         await ValidateActionEntry(entry, combatantId, activeEncounter);
 
         var actionJson = JsonSerializer.Serialize(action, _jsonOptions);
         await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantId, actionJson);
 
-        logger.LogInformation("PlanEnemyAction: gm={GmUserId} combatant={CombatantId} action={ActionType}",
+        logger.LogInformation("PlanEnemyAction: gm={GmUserId} combatant={CombatantId} action={ActionType} — stored",
             gmUserId, combatantId, entry.Type);
         return new PlanActionResult(true);
     }
@@ -231,9 +244,15 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         foreach (var combatant in activeEncounter.Combatants)
         {
             if (combatant.CombatantType != "monster") continue;
-            if (await redisState.IsDefeatedAsync(encounterId, combatant.Id)) continue;
+            if (await redisState.IsDefeatedAsync(encounterId, combatant.Id))
+            {
+                logger.LogInformation("LockInEnemies: skipping defeated monster {MonsterId}", combatant.Id);
+                continue;
+            }
             monsterIds.Add(combatant.Id);
-            if (!await redisState.HasPlannedActionAsync(encounterId, combatant.Id))
+            var hasAction = await redisState.HasPlannedActionAsync(encounterId, combatant.Id);
+            logger.LogInformation("LockInEnemies: monster {MonsterId} — hasAction={HasAction}", combatant.Id, hasAction);
+            if (!hasAction)
                 await redisState.SetPlannedActionAsync(encounterId, combatant.Id, defendActionJson);
         }
 

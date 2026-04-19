@@ -117,10 +117,12 @@ public class GameHub(
 
     public async Task AddMonster(string joinCode, string monsterName)
     {
+        logger.LogInformation("AddMonster hub: joinCode={JoinCode} userId={UserId} monsterName={MonsterName}", joinCode, Context.UserIdentifier, monsterName);
         try
         {
             var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName);
             var groupName = $"session:{r.SessionId}";
+            logger.LogInformation("AddMonster hub: broadcasting MonsterAdded to group {GroupName}", groupName);
             await Clients.Group(groupName).SendAsync(HubEvents.Events.MonsterAdded,
                 new MonsterAddedPayload(r.MonsterDto, r.SpawnPosition));
         }
@@ -128,10 +130,16 @@ public class GameHub(
         {
             await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in AddMonster for joinCode={JoinCode}, user={UserId}", joinCode, Context.UserIdentifier);
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload("An internal error occurred while adding the monster."));
+        }
     }
 
     public async Task PlanEnemyAction(string joinCode, string combatantId, PlannedActionArray plannedAction)
     {
+        logger.LogInformation("PlanEnemyAction hub: joinCode={JoinCode} userId={UserId} combatantId={CombatantId}", joinCode, Context.UserIdentifier, combatantId);
         try
         {
             await planningSvc.PlanEnemyActionAsync(joinCode, Context.UserIdentifier!, combatantId, plannedAction);
@@ -140,6 +148,11 @@ public class GameHub(
         catch (GameActionException ex) when (ex.IsActionRejected)
         {
             await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in PlanEnemyAction for joinCode={JoinCode}, user={UserId}", joinCode, Context.UserIdentifier);
+            await Clients.Caller.SendAsync(HubEvents.Events.ActionRejected, new ActionRejectedPayload("An internal error occurred while planning enemy action."));
         }
     }
 

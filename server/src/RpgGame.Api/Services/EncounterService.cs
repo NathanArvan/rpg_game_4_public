@@ -6,7 +6,7 @@ using RpgGame.Infrastructure.Data;
 
 namespace RpgGame.Api.Services;
 
-public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEncounterService
+public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogger<EncounterService> logger) : IEncounterService
 {
 
     public async Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId)
@@ -133,6 +133,8 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
 
     public async Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName)
     {
+        logger.LogInformation("AddMonster: joinCode={JoinCode} gmUserId={GmUserId} monsterName={MonsterName}", joinCode, gmUserId, monsterName);
+
         var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
             ?? throw new GameActionException("Invalid join code.", isActionRejected: true);
 
@@ -142,9 +144,14 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         if (member is null || member.Role != CampaignRole.Gm)
             throw new GameActionException("Only the GM can add monsters.", isActionRejected: true);
 
+        logger.LogInformation("AddMonster: GM validated, sessionId={SessionId}", gameSession.Id);
+
         var sessionId = gameSession.Id.ToString();
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId)
             ?? throw new GameActionException("No active encounter.", isActionRejected: true);
+
+        logger.LogInformation("AddMonster: activeEncounter found, encounterId={EncounterId} phase={Phase} combatantCount={Count}",
+            activeEncounter.EncounterId, activeEncounter.RoundPhase, activeEncounter.Combatants.Count);
 
         if (activeEncounter.RoundPhase != "planning")
             throw new GameActionException("Monsters can only be added during the planning phase.", isActionRejected: true);
@@ -165,11 +172,16 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         db.EncounterCombatants.Add(monster);
         await db.SaveChangesAsync();
 
+        var monsterId = monster.Id.ToString();
+        logger.LogInformation("AddMonster: monster saved to DB, monsterId={MonsterId}", monsterId);
+
         // Find spawn position: scan y=19 downward, x=0 rightward
         var map = await redisState.GetMapAsync(activeEncounter.EncounterId)
             ?? throw new GameActionException("Map data not found.", isActionRejected: true);
 
         var occupied = new HashSet<(int, int)>(map.Positions.Values.Select(p => (p.X, p.Y)));
+        logger.LogInformation("AddMonster: map found, occupiedCells={Count}", occupied.Count);
+
         Position? spawnPos = null;
         for (int y = map.GridHeight - 1; y >= 0 && spawnPos is null; y--)
             for (int x = 0; x < map.GridWidth && spawnPos is null; x++)
@@ -177,8 +189,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
                     spawnPos = new Position(x, y);
 
         spawnPos ??= new Position(0, 0); // fallback if grid is completely full
-
-        var monsterId = monster.Id.ToString();
+        logger.LogInformation("AddMonster: spawn position=({X},{Y})", spawnPos.X, spawnPos.Y);
 
         // Update Redis map
         map.Positions[monsterId] = spawnPos;
@@ -191,10 +202,13 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
         activeEncounter.Combatants.Add(new CombatantRef(monsterId, gmUserId, "monster"));
         await redisState.SetActiveEncounterAsync(sessionId, activeEncounter);
 
+        logger.LogInformation("AddMonster: Redis updated — map, HP seeded, encounter combatants updated");
+
         var monsterDto = new PlanningCombatantDto(
             monsterId, gmUserId, monster.CharacterName, 20, 20, false, "monster");
         var spawnDto = new PositionDto(spawnPos.X, spawnPos.Y);
 
+        logger.LogInformation("AddMonster: complete, returning MonsterAdded result");
         return new AddMonsterResult(gameSession.Id, activeEncounter.EncounterId, monsterDto, spawnDto);
     }
 }
