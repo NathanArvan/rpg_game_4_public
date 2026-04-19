@@ -174,7 +174,6 @@ public class GameHub(
 
     private async Task RunResolutionAsync(string groupName, Guid encounterId, Guid sessionId)
     {
-        const int planningTimerSeconds = 30;
 
         logger.LogInformation("RunResolution: starting for encounter={EncounterId}", encounterId);
 
@@ -187,17 +186,17 @@ public class GameHub(
 
         await Task.Delay(3000); // allow clients to play back before the next planning phase starts
 
-        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(planningTimerSeconds);
+        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
         await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
 
         var planningPayload = new PlanningPhaseStartedPayload(
             resolution.NewRoundNumber,
-            planningTimerSeconds,
+            GameConstants.PlanningTimerSeconds,
             resolution.UpdatedCombatants);
         await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
         logger.LogInformation("RunResolution: PlanningPhaseStarted broadcast sent for round {Round}", resolution.NewRoundNumber);
 
-        timerSvc.Start(encounterId, sessionId, planningTimerSeconds);
+        timerSvc.Start(encounterId, sessionId, GameConstants.PlanningTimerSeconds);
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)

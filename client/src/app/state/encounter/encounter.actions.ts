@@ -1,5 +1,25 @@
 import { CombatantDto, MonsterAddedPayload, PlanningCombatantDto, PlannedActionEntry, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 
+export class MonsterAdded {
+  static readonly type = '[Encounter] Monster Added';
+  constructor(public payload: MonsterAddedPayload) {}
+}
+
+export class GmSelectEnemy {
+  static readonly type = '[Encounter] GM Select Enemy';
+  constructor(public combatantId: string | null) {}
+}
+
+export class GmSetEnemyPlan {
+  static readonly type = '[Encounter] GM Set Enemy Plan';
+  constructor(public combatantId: string, public action: PlannedActionEntry) {}
+}
+
+export class GmClearEnemyPlan {
+  static readonly type = '[Encounter] GM Clear Enemy Plan';
+  constructor(public combatantId: string) {}
+}
+
 export class EncounterStarted {
   static readonly type = '[Encounter] Encounter Started';
   constructor(

@@ -13,6 +13,7 @@ import { FeedComponent } from '../encounter/feed/feed.component';
 import { AuthPanelComponent } from './auth-panel/auth-panel.component';
 import { PlayerJoinComponent } from './player-join/player-join.component';
 import { GmFlowComponent } from './gm-flow/gm-flow.component';
+import { GmEnemyPlannerComponent } from '../encounter/gm-enemy-planner/gm-enemy-planner.component';
 
 @Component({
   selector: 'app-lobby',
@@ -26,6 +27,7 @@ import { GmFlowComponent } from './gm-flow/gm-flow.component';
     AuthPanelComponent,
     PlayerJoinComponent,
     GmFlowComponent,
+    GmEnemyPlannerComponent,
   ],
   templateUrl: './lobby.component.html',
   styleUrl: './lobby.component.css',

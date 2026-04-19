@@ -4,7 +4,7 @@ import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { ClearMyPlannedAction, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
+import { ClearMyPlannedAction, GmSelectEnemy, GmSetEnemyPlan, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant } from '../../../state/encounter/encounter.model';
@@ -75,6 +75,7 @@ interface DamageNumber {
           class="cell"
           [class.in-range]="isInRange(cell)"
           [class.ghost]="isGhostTarget(cell)"
+          [class.enemy-ghost]="isEnemyGhostTarget(cell)"
           (click)="onCellClick(cell)">
           <div
             *ngIf="tokenAt(cell) as combatant"
@@ -174,6 +175,7 @@ interface DamageNumber {
     .cell:hover { background: #d4c9a8; }
     .cell.in-range { background: #c8e6c9; }
     .cell.ghost { background: #bbdefb; }
+    .cell.enemy-ghost { background: #ffcdd2; }
     .token {
       width: 24px;
       height: 24px;
@@ -236,6 +238,8 @@ export class GridComponent implements OnInit, OnDestroy {
 
   myPlannedActions: PlannedActionEntry[] = [];
   lockedIn = false;
+  gmSelectedEnemyId: string | null = null;
+  enemyPlannedActions: Record<string, PlannedActionEntry> = {};
 
   private destroyed = false;
 
@@ -281,6 +285,8 @@ export class GridComponent implements OnInit, OnDestroy {
       // Reset lock-in state when a new planning phase clears plans
       if (a.length === 0) this.lockedIn = false;
     });
+    this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
+    this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
 
     // Trigger playback when resolution ticks arrive
     this.store.select(EncounterState.resolutionTicks).subscribe(ticks => {
@@ -316,6 +322,15 @@ export class GridComponent implements OnInit, OnDestroy {
   }
 
   isInRange(cell: Cell): boolean {
+    // GM enemy planning mode — show range around selected enemy
+    if (this.isGm && this.gmSelectedEnemyId) {
+      const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
+      if (!enemy) return false;
+      const enemyPos = this.positions[enemy.id];
+      if (!enemyPos) return false;
+      const chebyshev = Math.max(Math.abs(cell.x - enemyPos.x), Math.abs(cell.y - enemyPos.y));
+      return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
+    }
     if (this.lockedIn) return false;
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant) return false;
@@ -323,6 +338,15 @@ export class GridComponent implements OnInit, OnDestroy {
     if (!myPos) return false;
     const chebyshev = Math.max(Math.abs(cell.x - myPos.x), Math.abs(cell.y - myPos.y));
     return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
+  }
+
+  isEnemyGhostTarget(cell: Cell): boolean {
+    for (const action of Object.values(this.enemyPlannedActions)) {
+      if (action.type === 'move' && action.targetCell) {
+        if (action.targetCell.x === cell.x && action.targetCell.y === cell.y) return true;
+      }
+    }
+    return false;
   }
 
   isGhostTarget(cell: Cell): boolean {
@@ -360,7 +384,35 @@ export class GridComponent implements OnInit, OnDestroy {
   // ----- Interaction -----
 
   onCellClick(cell: Cell): void {
-    if (this.lockedIn || this.isPlayingBack) return;
+    if (this.isPlayingBack) return;
+
+    // GM enemy planning mode
+    if (this.isGm && this.gmSelectedEnemyId) {
+      const enemyId = this.gmSelectedEnemyId;
+      const targetCombatant = this.tokenAt(cell);
+
+      if (targetCombatant && targetCombatant.id !== enemyId && !targetCombatant.isDefeated) {
+        const enemyPos = this.positions[enemyId];
+        const targetPos = this.positions[targetCombatant.id];
+        const chebyshev = enemyPos && targetPos
+          ? Math.max(Math.abs(targetPos.x - enemyPos.x), Math.abs(targetPos.y - enemyPos.y))
+          : 99;
+        const attackType = chebyshev <= 1 ? 'melee_attack' : 'ranged_attack';
+        const action: PlannedActionEntry = { type: attackType, targetCell: null, targetCombatantId: targetCombatant.id };
+        this.store.dispatch(new GmSetEnemyPlan(enemyId, action));
+        this.hub.planEnemyAction(this.joinCode, enemyId, { actions: [action] });
+        this.store.dispatch(new GmSelectEnemy(null));
+      } else if (!targetCombatant && this.isInRange(cell)) {
+        const action: PlannedActionEntry = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
+        this.store.dispatch(new GmSetEnemyPlan(enemyId, action));
+        this.hub.planEnemyAction(this.joinCode, enemyId, { actions: [action] });
+        this.store.dispatch(new GmSelectEnemy(null));
+      }
+      return;
+    }
+
+    // Normal player mode
+    if (this.lockedIn) return;
 
     const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
     if (!myCombatant || myCombatant.isDefeated) return;

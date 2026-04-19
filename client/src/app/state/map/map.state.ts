@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
 import { ApplyResolutionPositions, MapInitialized } from './map.actions';
 import { MapStateModel, Position } from './map.state.model';
+import { MonsterAdded } from '../encounter/encounter.actions';
 
 @State<MapStateModel>({
   name: 'map',
@@ -37,5 +38,16 @@ export class MapState {
   applyResolutionPositions(ctx: StateContext<MapStateModel>, { positions }: ApplyResolutionPositions) {
     console.log('[map] ApplyResolutionPositions:', JSON.stringify(positions));
     ctx.patchState({ positions });
+  }
+
+  @Action(MonsterAdded)
+  monsterAdded(ctx: StateContext<MapStateModel>, { payload }: MonsterAdded) {
+    const state = ctx.getState();
+    ctx.patchState({
+      positions: {
+        ...state.positions,
+        [payload.monster.id]: { x: payload.spawnPosition.x, y: payload.spawnPosition.y },
+      },
+    });
   }
 }

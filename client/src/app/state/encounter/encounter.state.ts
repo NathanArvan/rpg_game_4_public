@@ -6,6 +6,10 @@ import {
   ClearMyPlannedAction,
   CombatantDefeated,
   EncounterStarted,
+  GmClearEnemyPlan,
+  GmSelectEnemy,
+  GmSetEnemyPlan,
+  MonsterAdded,
   PlayerLockedIn,
   PlanningPhaseStarted,
   ResolutionCompleted,
@@ -13,6 +17,7 @@ import {
 } from './encounter.actions';
 import { Combatant, EncounterStateModel } from './encounter.model';
 import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
+import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
 
 @State<EncounterStateModel>({
   name: 'encounter',
@@ -26,6 +31,8 @@ import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } fr
     lockedInCombatantNames: [],
     planningTimerExpiresAt: null,
     resolutionTicks: [],
+    gmSelectedEnemyId: null,
+    enemyPlannedActions: {},
   },
 })
 @Injectable()
@@ -80,6 +87,21 @@ export class EncounterState {
     return state.resolutionTicks;
   }
 
+  @Selector()
+  static gmSelectedEnemyId(state: EncounterStateModel): string | null {
+    return state.gmSelectedEnemyId;
+  }
+
+  @Selector()
+  static enemyPlannedActions(state: EncounterStateModel): Record<string, PlannedActionEntry> {
+    return state.enemyPlannedActions;
+  }
+
+  @Selector()
+  static monsterCombatants(state: EncounterStateModel): Combatant[] {
+    return state.combatants.filter(c => c.combatantType === 'monster' && !c.isDefeated);
+  }
+
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
     const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false, combatantType: c.combatantType as 'player' | 'monster' }));
@@ -108,6 +130,8 @@ export class EncounterState {
       lockedInCombatantNames: [],
       planningTimerExpiresAt: expiresAt,
       resolutionTicks: [],
+      gmSelectedEnemyId: null,
+      enemyPlannedActions: {},
     });
   }
 
@@ -172,6 +196,43 @@ export class EncounterState {
     ctx.patchState({ combatants });
   }
 
+  @Action(MonsterAdded)
+  monsterAdded(ctx: StateContext<EncounterStateModel>, { payload }: MonsterAdded) {
+    const state = ctx.getState();
+    const monster: Combatant = {
+      id: payload.monster.id,
+      userId: payload.monster.userId,
+      characterId: '',
+      characterName: payload.monster.characterName,
+      currentHp: payload.monster.currentHp,
+      maxHp: payload.monster.maxHp,
+      isDefeated: payload.monster.isDefeated,
+      combatantType: 'monster',
+    };
+    ctx.patchState({ combatants: [...state.combatants, monster] });
+  }
+
+  @Action(GmSelectEnemy)
+  gmSelectEnemy(ctx: StateContext<EncounterStateModel>, { combatantId }: GmSelectEnemy) {
+    ctx.patchState({ gmSelectedEnemyId: combatantId });
+  }
+
+  @Action(GmSetEnemyPlan)
+  gmSetEnemyPlan(ctx: StateContext<EncounterStateModel>, { combatantId, action }: GmSetEnemyPlan) {
+    const state = ctx.getState();
+    ctx.patchState({
+      enemyPlannedActions: { ...state.enemyPlannedActions, [combatantId]: action },
+    });
+  }
+
+  @Action(GmClearEnemyPlan)
+  gmClearEnemyPlan(ctx: StateContext<EncounterStateModel>, { combatantId }: GmClearEnemyPlan) {
+    const state = ctx.getState();
+    const updated = { ...state.enemyPlannedActions };
+    delete updated[combatantId];
+    ctx.patchState({ enemyPlannedActions: updated });
+  }
+
   @Action(ClearEncounter)
   clearEncounter(ctx: StateContext<EncounterStateModel>) {
     ctx.patchState({
@@ -184,6 +245,8 @@ export class EncounterState {
       lockedInCombatantNames: [],
       planningTimerExpiresAt: null,
       resolutionTicks: [],
+      gmSelectedEnemyId: null,
+      enemyPlannedActions: {},
     });
   }
 }

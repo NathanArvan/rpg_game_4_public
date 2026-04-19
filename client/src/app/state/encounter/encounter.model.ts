@@ -21,4 +21,6 @@ export interface EncounterStateModel {
   lockedInCombatantNames: string[];
   planningTimerExpiresAt: string | null;
   resolutionTicks: TickResult[];
+  gmSelectedEnemyId: string | null;
+  enemyPlannedActions: Record<string, PlannedActionEntry>;
 }

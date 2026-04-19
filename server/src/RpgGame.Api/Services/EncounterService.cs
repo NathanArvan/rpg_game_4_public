@@ -8,7 +8,6 @@ namespace RpgGame.Api.Services;
 
 public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEncounterService
 {
-    private const int PlanningTimerSeconds = 30;
 
     public async Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId)
     {
@@ -86,7 +85,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             positions[combatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), 0);
 
         var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
-        var planningTimerExpiresAt = DateTimeOffset.UtcNow.AddSeconds(PlanningTimerSeconds);
+        var planningTimerExpiresAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
         var activeEncounterEntry = new ActiveEncounterEntry(
             encounter.Id.ToString(),
             "planning",
@@ -127,7 +126,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false, c.CombatantType)).ToList();
 
         var encounterPayload = new EncounterStartedPayload(encounter.Id.ToString(), combatantDtos, mapDto);
-        var planningPayload = new PlanningPhaseStartedPayload(1, PlanningTimerSeconds, planningCombatantDtos);
+        var planningPayload = new PlanningPhaseStartedPayload(1, GameConstants.PlanningTimerSeconds, planningCombatantDtos);
 
         return new EncounterStartedResult(gameSession.Id, encounterPayload, planningPayload);
     }
@@ -158,7 +157,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState) : IEn
             Id = Guid.NewGuid(),
             EncounterId = encounterGuid,
             UserId = gmUserId,
-            CharacterId = Guid.Empty,
+            CharacterId = null,
             CharacterName = string.IsNullOrWhiteSpace(monsterName) ? "Monster" : monsterName.Trim(),
             CombatantType = "monster",
         };

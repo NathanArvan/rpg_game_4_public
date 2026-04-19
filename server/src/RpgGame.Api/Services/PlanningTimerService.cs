@@ -91,7 +91,6 @@ public class PlanningTimerService(
 
     private async Task RunResolutionAsync(Guid encounterId, Guid sessionId, string groupName)
     {
-        const int planningTimerSeconds = 30;
 
         try
         {
@@ -104,17 +103,17 @@ public class PlanningTimerService(
 
             await Task.Delay(3000);
 
-            var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(planningTimerSeconds);
+            var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
             await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
 
             var planningPayload = new PlanningPhaseStartedPayload(
                 resolution.NewRoundNumber,
-                planningTimerSeconds,
+                GameConstants.PlanningTimerSeconds,
                 resolution.UpdatedCombatants);
             await hubContext.Clients.Group(groupName)
                 .SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
 
-            Start(encounterId, sessionId, planningTimerSeconds);
+            Start(encounterId, sessionId, GameConstants.PlanningTimerSeconds);
         }
         catch (Exception ex)
         {

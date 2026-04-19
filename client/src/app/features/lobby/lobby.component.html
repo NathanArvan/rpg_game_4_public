@@ -25,6 +25,10 @@
   </div>
 
   <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
+  <app-gm-enemy-planner
+    *ngIf="(encounterActive$ | async) && (isGm$ | async)"
+    [joinCode]="(joinCode$ | async) ?? ''">
+  </app-gm-enemy-planner>
   <app-feed *ngIf="encounterActive$ | async"></app-feed>
   <app-grid
     *ngIf="encounterActive$ | async"

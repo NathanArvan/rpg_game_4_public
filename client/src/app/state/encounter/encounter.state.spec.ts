@@ -22,6 +22,7 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
   characterName: 'Frodo',
   currentHp: 20,
   maxHp: 20,
+  combatantType: 'player',
   ...overrides,
 });
 
@@ -32,6 +33,7 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   currentHp: 20,
   maxHp: 20,
   isDefeated: false,
+  combatantType: 'player',
   ...overrides,
 });
 

@@ -8,6 +8,7 @@ import {
   ClearMyPlannedAction,
   CombatantDefeated,
   EncounterStarted,
+  MonsterAdded,
   PlayerLockedIn,
   PlanningPhaseStarted,
   ResolutionCompleted,
@@ -21,6 +22,7 @@ import {
   CombatantDefeatedPayload,
   EncounterStartedPayload,
   HubEvents,
+  MonsterAddedPayload,
   PlannedActionArray,
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
@@ -123,6 +125,11 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
     });
 
+    this.connection.on(HubEvents.Events.MonsterAdded, (payload: MonsterAddedPayload) => {
+      console.log('[hub] MonsterAdded received:', payload);
+      this.ngZone.run(() => this.store.dispatch(new MonsterAdded(payload)));
+    });
+
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
     this.connection.onreconnected((id) => console.log('[hub] reconnected, connectionId:', id));
@@ -154,5 +161,17 @@ export class GameHubService {
 
   async forceResolve(joinCode: string): Promise<void> {
     await this.connection.invoke(HubEvents.Methods.ForceResolve, joinCode);
+  }
+
+  async addMonster(joinCode: string, name: string): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.AddMonster, joinCode, name);
+  }
+
+  async planEnemyAction(joinCode: string, combatantId: string, action: PlannedActionArray): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.PlanEnemyAction, joinCode, combatantId, action);
+  }
+
+  async lockInEnemies(joinCode: string): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.LockInEnemies, joinCode);
   }
 }
