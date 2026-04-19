@@ -20,6 +20,38 @@ public class PlanningServiceTests
         new(encounterId, "planning", 1, DateTimeOffset.UtcNow.AddSeconds(30),
             new List<CombatantRef> { new(combatantId, userId) });
 
+    private static ActiveEncounterEntry MakeActiveEncounterWithMonster(
+        string encounterId, string gmUserId, string monsterId, string? playerId = null, string? playerCombatantId = null)
+    {
+        var combatants = new List<CombatantRef> { new(monsterId, gmUserId, "monster") };
+        if (playerId is not null && playerCombatantId is not null)
+            combatants.Add(new CombatantRef(playerCombatantId, playerId, "player"));
+        return new(encounterId, "planning", 1, DateTimeOffset.UtcNow.AddSeconds(30), combatants);
+    }
+
+    private static async Task<(Guid sessionId, Guid campaignId)> SetupGmSession(
+        AppDbContext db, string joinCode, string gmUserId)
+    {
+        var campaignId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        db.GameSessions.Add(new GameSession
+        {
+            Id = sessionId,
+            CampaignId = campaignId,
+            JoinCode = joinCode,
+            StartedAt = DateTimeOffset.UtcNow,
+        });
+        db.CampaignMembers.Add(new CampaignMember
+        {
+            Id = Guid.NewGuid(),
+            CampaignId = campaignId,
+            UserId = gmUserId,
+            Role = CampaignRole.Gm,
+        });
+        await db.SaveChangesAsync();
+        return (sessionId, campaignId);
+    }
+
     [Fact]
     public async Task PlanAction_RejectsMoveOutOfRange()
     {
@@ -144,6 +176,191 @@ public class PlanningServiceTests
 
         Assert.True(ex.IsActionRejected);
         Assert.Contains("planning phase", ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanEnemyAction_RejectsNonGmUser()
+    {
+        await using var db = CreateDb();
+        var campaignId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        const string joinCode = "ENM01";
+
+        db.GameSessions.Add(new GameSession { Id = sessionId, CampaignId = campaignId, JoinCode = joinCode, StartedAt = DateTimeOffset.UtcNow });
+        db.CampaignMembers.Add(new CampaignMember { Id = Guid.NewGuid(), CampaignId = campaignId, UserId = "player-1", Role = CampaignRole.Player });
+        await db.SaveChangesAsync();
+
+        var mockRedis = new Mock<IRedisGameState>();
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        var action = new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) });
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanEnemyActionAsync(joinCode, "player-1", Guid.NewGuid().ToString(), action));
+
+        Assert.True(ex.IsActionRejected);
+        Assert.Contains("Only the GM", ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanEnemyAction_RejectsPlayerCombatant()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-1";
+        const string joinCode = "ENM02";
+        var (sessionId, _) = await SetupGmSession(db, joinCode, gmUserId);
+
+        var encounterId = Guid.NewGuid().ToString();
+        var playerCombatantId = Guid.NewGuid().ToString();
+        // Active encounter has that combatant as a PLAYER, not monster
+        var activeEntry = new ActiveEncounterEntry(encounterId, "planning", 1,
+            DateTimeOffset.UtcNow.AddSeconds(30),
+            new List<CombatantRef> { new(playerCombatantId, "player-1", "player") });
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
+
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        var action = new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) });
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanEnemyActionAsync(joinCode, gmUserId, playerCombatantId, action));
+
+        Assert.True(ex.IsActionRejected);
+        Assert.Contains("monster combatants", ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanEnemyAction_StoresDefendActionForMonster()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-1";
+        const string joinCode = "ENM03";
+        var (sessionId, _) = await SetupGmSession(db, joinCode, gmUserId);
+
+        var encounterId = Guid.NewGuid().ToString();
+        var monsterId = Guid.NewGuid().ToString();
+        var activeEntry = MakeActiveEncounterWithMonster(encounterId, gmUserId, monsterId);
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
+        mockRedis.Setup(r => r.IsDefeatedAsync(encounterId, monsterId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.SetPlannedActionAsync(encounterId, monsterId, It.IsAny<string>())).Returns(Task.CompletedTask);
+
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        var action = new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) });
+        var result = await service.PlanEnemyActionAsync(joinCode, gmUserId, monsterId, action);
+
+        Assert.True(result.Success);
+        mockRedis.Verify(r => r.SetPlannedActionAsync(encounterId, monsterId, It.IsAny<string>()), Times.Once());
+    }
+
+    [Fact]
+    public async Task LockInEnemies_AssignsDefaultDefendToUnplannedMonster()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-1";
+        const string joinCode = "LENM01";
+        var (sessionId, _) = await SetupGmSession(db, joinCode, gmUserId);
+
+        var encounterId = Guid.NewGuid().ToString();
+        var monsterId = Guid.NewGuid().ToString();
+        var activeEntry = MakeActiveEncounterWithMonster(encounterId, gmUserId, monsterId);
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
+        mockRedis.Setup(r => r.IsDefeatedAsync(encounterId, monsterId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.HasPlannedActionAsync(encounterId, monsterId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.SetPlannedActionAsync(encounterId, monsterId, It.IsAny<string>())).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.AddLockedInBatchAsync(encounterId, It.IsAny<IEnumerable<string>>())).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.IsLockedInAsync(encounterId, monsterId)).ReturnsAsync(true);
+
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        var result = await service.LockInEnemiesAsync(joinCode, gmUserId);
+
+        Assert.True(result.AllLockedIn);
+        mockRedis.Verify(r => r.SetPlannedActionAsync(encounterId, monsterId, It.Is<string>(s => s.Contains("defend"))), Times.Once());
+        mockRedis.Verify(r => r.AddLockedInBatchAsync(encounterId, It.Is<IEnumerable<string>>(ids => ids.Contains(monsterId))), Times.Once());
+    }
+
+    [Fact]
+    public async Task LockInEnemies_SkipsDefeatedMonsters()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-1";
+        const string joinCode = "LENM02";
+        var (sessionId, _) = await SetupGmSession(db, joinCode, gmUserId);
+
+        var encounterId = Guid.NewGuid().ToString();
+        var deadMonsterId = Guid.NewGuid().ToString();
+        var aliveMonsterId = Guid.NewGuid().ToString();
+        var activeEntry = new ActiveEncounterEntry(encounterId, "planning", 1,
+            DateTimeOffset.UtcNow.AddSeconds(30), new List<CombatantRef>
+            {
+                new(deadMonsterId, gmUserId, "monster"),
+                new(aliveMonsterId, gmUserId, "monster"),
+            });
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
+        mockRedis.Setup(r => r.IsDefeatedAsync(encounterId, deadMonsterId)).ReturnsAsync(true);
+        mockRedis.Setup(r => r.IsDefeatedAsync(encounterId, aliveMonsterId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.HasPlannedActionAsync(encounterId, aliveMonsterId)).ReturnsAsync(true);
+        mockRedis.Setup(r => r.AddLockedInBatchAsync(encounterId, It.IsAny<IEnumerable<string>>())).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.IsLockedInAsync(encounterId, deadMonsterId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.IsLockedInAsync(encounterId, aliveMonsterId)).ReturnsAsync(true);
+
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        await service.LockInEnemiesAsync(joinCode, gmUserId);
+
+        // Defeated monster must NOT be locked in
+        mockRedis.Verify(r => r.AddLockedInBatchAsync(encounterId,
+            It.Is<IEnumerable<string>>(ids => ids.Contains(aliveMonsterId) && !ids.Contains(deadMonsterId))),
+            Times.Once());
+    }
+
+    [Fact]
+    public async Task ForceResolve_AssignsDefendAndLocksInUnplannedCombatants()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-1";
+        const string joinCode = "FORCE01";
+        var (sessionId, _) = await SetupGmSession(db, joinCode, gmUserId);
+
+        var encounterId = Guid.NewGuid().ToString();
+        var lockedCombatantId = Guid.NewGuid().ToString();
+        var unlockedCombatantId = Guid.NewGuid().ToString();
+        var activeEntry = new ActiveEncounterEntry(encounterId, "planning", 1,
+            DateTimeOffset.UtcNow.AddSeconds(30), new List<CombatantRef>
+            {
+                new(lockedCombatantId, "player-1", "player"),
+                new(unlockedCombatantId, "player-2", "player"),
+            });
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(activeEntry);
+        mockRedis.Setup(r => r.IsDefeatedAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync(false);
+        mockRedis.Setup(r => r.HasPlannedActionAsync(encounterId, lockedCombatantId)).ReturnsAsync(true);
+        mockRedis.Setup(r => r.HasPlannedActionAsync(encounterId, unlockedCombatantId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.IsLockedInAsync(encounterId, lockedCombatantId)).ReturnsAsync(true);
+        mockRedis.Setup(r => r.IsLockedInAsync(encounterId, unlockedCombatantId)).ReturnsAsync(false);
+        mockRedis.Setup(r => r.SetPlannedActionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.AddLockedInBatchAsync(It.IsAny<string>(), It.IsAny<IEnumerable<string>>())).Returns(Task.CompletedTask);
+
+        var service = new PlanningService(db, mockRedis.Object, NullLogger<PlanningService>.Instance);
+
+        var result = await service.ForceResolveAsync(joinCode, gmUserId);
+
+        Assert.True(result.AllLockedIn);
+        // Only the unlocked combatant should get a defend action
+        mockRedis.Verify(r => r.SetPlannedActionAsync(encounterId, unlockedCombatantId, It.Is<string>(s => s.Contains("defend"))), Times.Once());
+        mockRedis.Verify(r => r.SetPlannedActionAsync(encounterId, lockedCombatantId, It.IsAny<string>()), Times.Never());
+        // Only the unlocked combatant is batch-locked
+        mockRedis.Verify(r => r.AddLockedInBatchAsync(encounterId,
+            It.Is<IEnumerable<string>>(ids => ids.Contains(unlockedCombatantId) && !ids.Contains(lockedCombatantId))),
+            Times.Once());
     }
 
     [Fact]
