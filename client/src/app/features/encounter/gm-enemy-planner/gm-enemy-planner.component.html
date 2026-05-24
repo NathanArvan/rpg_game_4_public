@@ -1,0 +1,70 @@
+<div class="enemy-planner">
+  <h3>Enemy Control</h3>
+
+  <!-- Add Monster -->
+  <div class="add-monster-row">
+    <input
+      type="text"
+      [(ngModel)]="newMonsterName"
+      placeholder="Monster name"
+      class="monster-name-input"
+      (keyup.enter)="onAddMonster()" />
+    <button class="add-btn" (click)="onAddMonster()" [disabled]="!newMonsterName.trim()">
+      + Add Monster
+    </button>
+  </div>
+
+  <!-- Enemy Planning Panel (planning phase only) -->
+  <ng-container *ngIf="isPlanning$ | async">
+    <div class="enemies-header">
+      <span>Enemies</span>
+      <span *ngIf="gmSelectedEnemyId$ | async as selId" class="selection-hint">
+        Click a cell or token on the grid to plan
+      </span>
+    </div>
+
+    <div class="enemy-list">
+      <div
+        *ngFor="let enemy of monsters$ | async"
+        class="enemy-row"
+        [class.selected]="(gmSelectedEnemyId$ | async) === enemy.id">
+
+        <div class="enemy-info" (click)="onSelectEnemy(enemy.id)">
+          <span class="enemy-name">{{ enemy.characterName }}</span>
+          <span class="enemy-hp">{{ enemy.currentHp }}/{{ enemy.maxHp }} HP</span>
+        </div>
+
+        <div class="enemy-plan-badge" *ngIf="getPlan(enemy.id) as plan">
+          {{ planSummary(plan) }}
+        </div>
+        <div class="enemy-plan-badge empty" *ngIf="!getPlan(enemy.id)">
+          (will defend)
+        </div>
+
+        <div class="enemy-actions">
+          <button class="defend-btn" (click)="onDefend(enemy.id)" title="Plan Defend">
+            🛡
+          </button>
+          <button
+            class="clear-btn"
+            *ngIf="getPlan(enemy.id)"
+            (click)="onClearPlan(enemy.id)"
+            title="Clear plan">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div class="no-enemies" *ngIf="(monsters$ | async)?.length === 0">
+        No enemies. Add one above.
+      </div>
+    </div>
+
+    <button
+      class="lock-in-enemies-btn"
+      [disabled]="lockedIn"
+      (click)="onLockInEnemies()">
+      {{ lockedIn ? 'Enemies Locked In ✓' : 'Lock In Enemies' }}
+    </button>
+  </ng-container>
+</div>

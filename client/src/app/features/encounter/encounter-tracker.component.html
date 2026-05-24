@@ -1,0 +1,38 @@
+<div class="encounter-tracker">
+  <div class="header">
+    <h2>
+      <ng-container *ngIf="isPlanning$ | async">Planning — Round {{ roundNumber$ | async }}</ng-container>
+      <ng-container *ngIf="isResolving$ | async">Resolving...</ng-container>
+      <ng-container *ngIf="!(isPlanning$ | async) && !(isResolving$ | async)">Combatants</ng-container>
+    </h2>
+  </div>
+
+  <ul class="lock-in-list" *ngIf="isPlanning$ | async">
+    <li *ngFor="let name of lockedIn$ | async">
+      ✓ {{ name }}
+    </li>
+    <li *ngIf="!(lockedIn$ | async)?.length" class="waiting">Waiting for players to lock in...</li>
+  </ul>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>HP</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let c of combatants$ | async" [class.defeated]="c.isDefeated">
+        <td><strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong></td>
+        <td>
+          <span *ngIf="!c.isDefeated">{{ c.currentHp }}/{{ c.maxHp }}</span>
+        </td>
+        <td>
+          <span *ngIf="c.isDefeated" class="defeated-label">DEFEATED</span>
+          <span *ngIf="!c.isDefeated && isLockedIn(c)" class="locked-in-badge">✓ Ready</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

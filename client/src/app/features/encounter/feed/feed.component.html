@@ -1,0 +1,13 @@
+<div class="feed" (click)="markRead()">
+  <h3>
+    Combat Log
+    <span class="unread-badge" *ngIf="(unreadCount$ | async) as count">{{ count }}</span>
+  </h3>
+  <div class="entries">
+    <div *ngFor="let entry of entries$ | async" class="entry">
+      <span class="timestamp">{{ entry.timestamp | date:'HH:mm:ss' }}</span>
+      {{ entry.text }}
+    </div>
+    <div *ngIf="!(entries$ | async)?.length" class="empty">No events yet.</div>
+  </div>
+</div>

@@ -1,0 +1,70 @@
+<div class="grid-wrapper">
+
+  <!-- Planning phase action bar -->
+  <div class="action-bar" *ngIf="isPlanning$ | async">
+    <div class="action-buttons">
+      <button
+        class="action-btn"
+        [class.active]="plannedActionType === 'defend'"
+        (click)="planDefend()">
+        🛡 Defend
+      </button>
+      <button
+        class="lock-in-btn"
+        [disabled]="!myPlannedActions.length || lockedIn"
+        (click)="onLockIn()">
+        {{ lockedIn ? 'Locked in ✓' : 'Lock In' }}
+      </button>
+      <button
+        class="force-btn"
+        *ngIf="isGm"
+        (click)="onForceResolve()">
+        ⚡ Force Resolve
+      </button>
+    </div>
+    <div class="planned-action-display" *ngIf="myPlannedActions.length">
+      Planned: <strong>{{ plannedActionSummary }}</strong>
+      <span *ngIf="!lockedIn" class="cancel-link" (click)="cancelPlan()">(cancel)</span>
+    </div>
+    <div class="timer" *ngIf="timerSeconds$ | async as secs" [class.urgent]="(secs ?? 0) < 10">
+      ⏱ {{ secs }}s
+    </div>
+  </div>
+
+  <!-- Resolving indicator -->
+  <div class="resolving-banner" *ngIf="isResolving$ | async">
+    Resolving...
+  </div>
+
+  <!-- Grid -->
+  <div
+    class="grid"
+    [style.grid-template-columns]="gridColumns$ | async">
+    <div
+      *ngFor="let cell of cells$ | async"
+      class="cell"
+      [class.in-range]="isInRange(cell)"
+      [class.ghost]="isGhostTarget(cell)"
+      [class.enemy-ghost]="isEnemyGhostTarget(cell)"
+      (click)="onCellClick(cell)">
+      <div
+        *ngIf="tokenAt(cell) as combatant"
+        class="token"
+        [class.my-token]="combatant.userId === myUserId"
+        [class.defeated-token]="combatant.isDefeated"
+        [class.defeating-token]="isDefeating(combatant)"
+        [class.targeted-token]="isTargeted(combatant)"
+        [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
+        {{ combatant.characterName[0] }}
+      </div>
+      <!-- Damage numbers overlay -->
+      <div
+        *ngFor="let dmg of damageNumbersAt(cell)"
+        class="damage-number"
+        [class.damage-hit]="dmg.isHit"
+        [class.damage-miss]="!dmg.isHit">
+        {{ dmg.text }}
+      </div>
+    </div>
+  </div>
+</div>

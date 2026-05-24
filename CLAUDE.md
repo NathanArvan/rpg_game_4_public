@@ -46,6 +46,8 @@ npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C#
 
 **Angular code generation:** Always use the Angular CLI (`ng generate`) to scaffold new Angular artifacts — components, services, interceptors, guards, pipes, directives, state classes, etc. Do not write these files by hand. Run `ng generate` from the `client/` directory (e.g., `npx ng generate component foo/bar`).
 
+**Component files:** All components must use separate `.html` and `.css` files (`templateUrl` + `styleUrl`). Never use inline `template:` or `styles:` in the `@Component` decorator.
+
 ### Server (.NET 8)
 ```bash
 cd server

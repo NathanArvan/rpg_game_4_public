@@ -1,0 +1,69 @@
+<div class="character-sheet">
+  <h1>My Characters</h1>
+  <a routerLink="/">← Back to Lobby</a>
+
+  <div *ngIf="loading$ | async">Loading...</div>
+
+  <!-- Detail / Edit View -->
+  <div *ngIf="selected$ | async as selected">
+    <h2>Edit Character</h2>
+    <label>Name <input [(ngModel)]="form.name" /></label>
+    <label>Race <input [(ngModel)]="form.race" /></label>
+    <label>Class <input [(ngModel)]="form.class" /></label>
+    <label>Level <input type="number" [(ngModel)]="form.level" /></label>
+    <label>Max HP <input type="number" [(ngModel)]="form.maxHp" /></label>
+    <label>Current HP <input type="number" [(ngModel)]="form.currentHp" /></label>
+    <h3>Base Stats</h3>
+    <label>STR <input type="number" [(ngModel)]="form.baseStats.str" /></label>
+    <label>DEX <input type="number" [(ngModel)]="form.baseStats.dex" /></label>
+    <label>CON <input type="number" [(ngModel)]="form.baseStats.con" /></label>
+    <label>INT <input type="number" [(ngModel)]="form.baseStats.int" /></label>
+    <label>WIS <input type="number" [(ngModel)]="form.baseStats.wis" /></label>
+    <label>CHA <input type="number" [(ngModel)]="form.baseStats.cha" /></label>
+    <div class="actions">
+      <button (click)="saveCharacter(selected.id)">Save</button>
+      <button (click)="deleteCharacter(selected.id)" class="danger">Delete</button>
+      <button (click)="back()">Back</button>
+    </div>
+    <p *ngIf="formError" class="error">{{ formError }}</p>
+  </div>
+
+  <!-- List View -->
+  <div *ngIf="!(selected$ | async)">
+    <div *ngIf="!(loading$ | async)">
+      <div *ngFor="let c of characters$ | async" class="character-card" (click)="selectCharacter(c)">
+        <strong>{{ c.name }}</strong>
+        <span>{{ c.race }} {{ c.class }} — Level {{ c.level }}</span>
+        <span>HP: {{ c.currentHp }}/{{ c.maxHp }}</span>
+      </div>
+
+      <div *ngIf="!(characters$ | async)?.length" class="empty">No characters yet.</div>
+
+      <button *ngIf="!showCreate" (click)="showCreate = true">+ New Character</button>
+      <button *ngIf="!showCreate" (click)="quickCreateCharacter()" class="dev-btn">⚡ Quick Create Random</button>
+
+      <!-- Create Form -->
+      <div *ngIf="showCreate" class="create-form">
+        <h2>New Character</h2>
+        <label>Name <input [(ngModel)]="form.name" /></label>
+        <label>Race <input [(ngModel)]="form.race" /></label>
+        <label>Class <input [(ngModel)]="form.class" /></label>
+        <label>Level <input type="number" [(ngModel)]="form.level" /></label>
+        <label>Max HP <input type="number" [(ngModel)]="form.maxHp" /></label>
+        <label>Current HP <input type="number" [(ngModel)]="form.currentHp" /></label>
+        <h3>Base Stats</h3>
+        <label>STR <input type="number" [(ngModel)]="form.baseStats.str" /></label>
+        <label>DEX <input type="number" [(ngModel)]="form.baseStats.dex" /></label>
+        <label>CON <input type="number" [(ngModel)]="form.baseStats.con" /></label>
+        <label>INT <input type="number" [(ngModel)]="form.baseStats.int" /></label>
+        <label>WIS <input type="number" [(ngModel)]="form.baseStats.wis" /></label>
+        <label>CHA <input type="number" [(ngModel)]="form.baseStats.cha" /></label>
+        <div class="actions">
+          <button (click)="createCharacter()">Create</button>
+          <button (click)="cancelCreate()">Cancel</button>
+        </div>
+        <p *ngIf="formError" class="error">{{ formError }}</p>
+      </div>
+    </div>
+  </div>
+</div>
