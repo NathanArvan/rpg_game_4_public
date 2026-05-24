@@ -1,4 +1,5 @@
-<div class="lobby">
+<!-- Lobby mode -->
+<div class="lobby" *ngIf="!(encounterActive$ | async)">
   <h1>RPG Game Lobby</h1>
 
   <app-auth-panel *ngIf="!auth.isLoggedIn()" (authenticated)="onAuthenticated()"></app-auth-panel>
@@ -23,17 +24,12 @@
       </li>
     </ul>
   </div>
-
-  <app-encounter-tracker *ngIf="encounterActive$ | async"></app-encounter-tracker>
-  <app-gm-enemy-planner
-    *ngIf="(encounterActive$ | async) && (isGm$ | async)"
-    [joinCode]="(joinCode$ | async) ?? ''">
-  </app-gm-enemy-planner>
-  <app-feed *ngIf="encounterActive$ | async"></app-feed>
-  <app-grid
-    *ngIf="encounterActive$ | async"
-    [joinCode]="(joinCode$ | async) ?? ''"
-    [myUserId]="auth.getUserId()"
-    [isGm]="(isGm$ | async) ?? false">
-  </app-grid>
 </div>
+
+<!-- Combat mode -->
+<app-combat-layout
+  *ngIf="encounterActive$ | async"
+  [isGm]="(isGm$ | async) ?? false"
+  [joinCode]="(joinCode$ | async) ?? ''"
+  [myUserId]="auth.getUserId()">
+</app-combat-layout>

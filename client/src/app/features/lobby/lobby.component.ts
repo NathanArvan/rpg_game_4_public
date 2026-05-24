@@ -7,13 +7,10 @@ import { AuthService } from '../../core/services/auth.service';
 import { ConnectedPlayer } from '../../state/session/session.model';
 import { SessionState } from '../../state/session/session.state';
 import { EncounterState } from '../../state/encounter/encounter.state';
-import { EncounterTrackerComponent } from '../encounter/encounter-tracker.component';
-import { GridComponent } from '../encounter/grid/grid.component';
-import { FeedComponent } from '../encounter/feed/feed.component';
 import { AuthPanelComponent } from './auth-panel/auth-panel.component';
 import { PlayerJoinComponent } from './player-join/player-join.component';
 import { GmFlowComponent } from './gm-flow/gm-flow.component';
-import { GmEnemyPlannerComponent } from '../encounter/gm-enemy-planner/gm-enemy-planner.component';
+import { CombatLayoutComponent } from '../encounter/combat-layout/combat-layout.component';
 
 @Component({
   selector: 'app-lobby',
@@ -21,13 +18,10 @@ import { GmEnemyPlannerComponent } from '../encounter/gm-enemy-planner/gm-enemy-
   imports: [
     CommonModule,
     RouterLink,
-    EncounterTrackerComponent,
-    GridComponent,
-    FeedComponent,
     AuthPanelComponent,
     PlayerJoinComponent,
     GmFlowComponent,
-    GmEnemyPlannerComponent,
+    CombatLayoutComponent,
   ],
   templateUrl: './lobby.component.html',
   styleUrl: './lobby.component.css',

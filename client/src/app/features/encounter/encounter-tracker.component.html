@@ -1,12 +1,4 @@
 <div class="encounter-tracker">
-  <div class="header">
-    <h2>
-      <ng-container *ngIf="isPlanning$ | async">Planning — Round {{ roundNumber$ | async }}</ng-container>
-      <ng-container *ngIf="isResolving$ | async">Resolving...</ng-container>
-      <ng-container *ngIf="!(isPlanning$ | async) && !(isResolving$ | async)">Combatants</ng-container>
-    </h2>
-  </div>
-
   <ul class="lock-in-list" *ngIf="isPlanning$ | async">
     <li *ngFor="let name of lockedIn$ | async">
       ✓ {{ name }}

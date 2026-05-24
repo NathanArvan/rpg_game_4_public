@@ -1,0 +1,40 @@
+.round-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 12px;
+  background: #1a237e;
+  color: white;
+  font-size: 0.95em;
+  min-height: 36px;
+}
+
+.phase {
+  font-weight: bold;
+}
+
+.phase.resolving {
+  font-style: italic;
+}
+
+.timer {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.timer.urgent {
+  background: #c62828;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.locked-in {
+  margin-left: auto;
+  font-size: 0.85em;
+  opacity: 0.85;
+}

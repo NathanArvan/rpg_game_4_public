@@ -1,0 +1,17 @@
+<div class="round-banner">
+  <ng-container *ngIf="isPlanning$ | async">
+    <span class="phase">Planning &mdash; Round {{ roundNumber$ | async }}</span>
+    <span
+      class="timer"
+      *ngIf="timerSeconds$ | async as secs"
+      [class.urgent]="secs < 10">
+      &#9200; {{ secs }}s
+    </span>
+    <span class="locked-in" *ngIf="(lockedIn$ | async)?.length as count">
+      {{ count }} locked in
+    </span>
+  </ng-container>
+  <ng-container *ngIf="isResolving$ | async">
+    <span class="phase resolving">Resolving&hellip;</span>
+  </ng-container>
+</div>

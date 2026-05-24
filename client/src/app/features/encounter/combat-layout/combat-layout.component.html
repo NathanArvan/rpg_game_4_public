@@ -1,0 +1,12 @@
+<div class="combat-layout">
+  <div class="col-left">
+    <app-combat-sidebar [isGm]="isGm" [joinCode]="joinCode"></app-combat-sidebar>
+  </div>
+  <div class="col-center">
+    <app-round-banner></app-round-banner>
+    <app-grid [joinCode]="joinCode" [myUserId]="myUserId" [isGm]="isGm"></app-grid>
+  </div>
+  <div class="col-right">
+    <app-feed></app-feed>
+  </div>
+</div>
