@@ -1,3 +1,5 @@
+> **OBSOLETE** — This document describes the old sequential-turn model (initiative, EndTurn, MoveToken, DeclareAttack). It has not been updated for the simultaneous planning system introduced in Phase 3A. See `SPRINT_3A.md` for the current two-tab test procedures.
+
 # 3-Tab Smoke Test
 
 ## Prerequisites
