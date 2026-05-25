@@ -33,11 +33,9 @@
       </div>
     </div>
   </div>
-  <br>
-  <br>
 
-  <!-- Planning phase action bar -->
-  <div class="action-bar" *ngIf="isPlanning$ | async">
+  <!-- Planning phase action bar (players only) -->
+  <div class="action-bar" *ngIf="(isPlanning$ | async) && !isGm">
     <div class="action-buttons">
       <button
         class="action-btn"
@@ -51,12 +49,6 @@
         (click)="onLockIn()">
         {{ lockedIn ? 'Locked in ✓' : 'Lock In' }}
       </button>
-      <button
-        class="force-btn"
-        *ngIf="isGm"
-        (click)="onForceResolve()">
-        ⚡ Force Resolve
-      </button>
     </div>
     <div class="planned-action-display" *ngIf="myPlannedActions.length">
       Planned: <strong>{{ plannedActionSummary }}</strong>
@@ -65,6 +57,12 @@
     <div class="timer" *ngIf="timerSeconds$ | async as secs" [class.urgent]="(secs ?? 0) < 10">
       ⏱ {{ secs }}s
     </div>
+  </div>
+
+  <!-- GM bottom bar: enemy control + force resolve -->
+  <div class="gm-bottom-bar" *ngIf="(isPlanning$ | async) && isGm">
+    <app-gm-enemy-planner [joinCode]="joinCode"></app-gm-enemy-planner>
+    <button class="force-btn" (click)="onForceResolve()">⚡ Force Resolve</button>
   </div>
 
   <!-- Resolving indicator -->

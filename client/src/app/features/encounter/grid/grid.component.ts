@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { GmEnemyPlannerComponent } from '../gm-enemy-planner/gm-enemy-planner.component';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
@@ -26,7 +27,7 @@ interface DamageNumber {
 @Component({
   selector: 'app-grid',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, GmEnemyPlannerComponent],
   templateUrl: './grid.component.html',
   styleUrl: './grid.component.css',
 })
