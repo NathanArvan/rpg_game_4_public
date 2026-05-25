@@ -1,1 +1,8 @@
+<nav class="dev-nav" *ngIf="devMode">
+  <span class="dev-nav-label">DEV</span>
+  <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Lobby</a>
+  <a routerLink="/character" routerLinkActive="active">Characters</a>
+  <a routerLink="/preview" routerLinkActive="active">Encounter Preview</a>
+</nav>
+
 <router-outlet />

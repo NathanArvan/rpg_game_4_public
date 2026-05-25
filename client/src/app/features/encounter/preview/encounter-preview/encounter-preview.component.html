@@ -1,0 +1,21 @@
+<div class="preview-toolbar">
+  <span class="preview-label">PREVIEW</span>
+
+  <div class="toolbar-group">
+    <button (click)="toggleRole()" [class.active]="!isGm">Player</button>
+    <button (click)="toggleRole()" [class.active]="isGm">GM</button>
+  </div>
+
+  <div class="toolbar-group">
+    <button (click)="setPhase('planning')" [class.active]="phase === 'planning'">Planning</button>
+    <button (click)="setPhase('resolving')" [class.active]="phase === 'resolving'">Resolving</button>
+  </div>
+
+  <button class="reset-btn" (click)="reset()">Reset</button>
+</div>
+
+<app-combat-layout
+  [isGm]="isGm"
+  [joinCode]="'PREVIEW'"
+  [myUserId]="myUserId">
+</app-combat-layout>
