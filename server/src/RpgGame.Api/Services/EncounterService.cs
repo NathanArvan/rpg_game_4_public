@@ -65,6 +65,20 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
         if (combatants.Count == 0)
             throw new GameActionException("No players with characters are connected.");
 
+        // Inject any monsters staged before the encounter was started
+        var pendingMonsterNames = await redisState.GetPendingMonstersAsync(sessionId);
+        foreach (var name in pendingMonsterNames)
+        {
+            combatants.Add(new EncounterCombatant
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                CharacterId = null,
+                CharacterName = name,
+                CombatantType = "monster",
+            });
+        }
+
         var encounter = new Encounter
         {
             Id = Guid.NewGuid(),
@@ -81,8 +95,12 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
         const int gridWidth = 20;
         const int gridHeight = 20;
         var positions = new Dictionary<string, Position>();
-        for (int i = 0; i < combatants.Count; i++)
-            positions[combatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), 0);
+        var playerCombatants = combatants.Where(c => c.CombatantType == "player").ToList();
+        var monsterCombatants = combatants.Where(c => c.CombatantType == "monster").ToList();
+        for (int i = 0; i < playerCombatants.Count; i++)
+            positions[playerCombatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), 0);
+        for (int i = 0; i < monsterCombatants.Count; i++)
+            positions[monsterCombatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), gridHeight - 1);
 
         var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
         var planningTimerExpiresAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
@@ -91,19 +109,25 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
             "planning",
             1,
             planningTimerExpiresAt,
-            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, "player")).ToList());
+            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, c.CombatantType)).ToList());
 
         await redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
         await redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
 
-        foreach (var c in combatants)
+        foreach (var c in playerCombatants)
         {
             if (c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch))
                 await redisState.SeedCharacterLiveStateAsync(c.CharacterId.Value.ToString(), ch.CurrentHp, ch.Class);
         }
+        foreach (var m in monsterCombatants)
+            await redisState.SeedCharacterLiveStateAsync(m.Id.ToString(), 20, "fighter");
+
+        await redisState.ClearPendingMonstersAsync(sessionId);
 
         var combatantDtos = combatants.Select(c =>
         {
+            if (c.CombatantType == "monster")
+                return new CombatantDto(c.Id.ToString(), c.UserId, "", c.CharacterName, 20, 20, c.CombatantType);
             var hasChar = c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch);
             var character = hasChar ? characterMap.GetValueOrDefault(c.CharacterId!.Value) : null;
             return new CombatantDto(
@@ -146,9 +170,18 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
 
         logger.LogInformation("AddMonster: GM validated, sessionId={SessionId}", gameSession.Id);
 
+        var trimmedName = string.IsNullOrWhiteSpace(monsterName) ? "Monster" : monsterName.Trim();
         var sessionId = gameSession.Id.ToString();
-        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId)
-            ?? throw new GameActionException("No active encounter.", isActionRejected: true);
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId);
+
+        if (activeEncounter is null)
+        {
+            await redisState.AddPendingMonsterAsync(sessionId, trimmedName);
+            var tempId = Guid.NewGuid().ToString();
+            var tempDto = new PlanningCombatantDto(tempId, gmUserId, trimmedName, 20, 20, false, "monster");
+            logger.LogInformation("AddMonster: no active encounter — staged pending monster '{Name}'", trimmedName);
+            return new AddMonsterResult(gameSession.Id, "", tempDto, new PositionDto(0, 0));
+        }
 
         logger.LogInformation("AddMonster: activeEncounter found, encounterId={EncounterId} phase={Phase} combatantCount={Count}",
             activeEncounter.EncounterId, activeEncounter.RoundPhase, activeEncounter.Combatants.Count);
@@ -165,7 +198,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
             EncounterId = encounterGuid,
             UserId = gmUserId,
             CharacterId = null,
-            CharacterName = string.IsNullOrWhiteSpace(monsterName) ? "Monster" : monsterName.Trim(),
+            CharacterName = trimmedName,
             CombatantType = "monster",
         };
 

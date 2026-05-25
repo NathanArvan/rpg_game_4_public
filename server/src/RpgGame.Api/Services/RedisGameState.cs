@@ -168,6 +168,27 @@ public class RedisGameState : IRedisGameState
         await db.KeyDeleteAsync($"encounter:{encounterId}:locked_in");
     }
 
+    // --- Pending monsters (pre-encounter staging) ---
+
+    public async Task<List<string>> GetPendingMonstersAsync(string sessionId)
+    {
+        var db = _redis.GetDatabase();
+        var values = await db.ListRangeAsync($"session:{sessionId}:pending_monsters");
+        return values.Select(v => v.ToString()).ToList();
+    }
+
+    public async Task AddPendingMonsterAsync(string sessionId, string name)
+    {
+        var db = _redis.GetDatabase();
+        await db.ListRightPushAsync($"session:{sessionId}:pending_monsters", name);
+    }
+
+    public async Task ClearPendingMonstersAsync(string sessionId)
+    {
+        var db = _redis.GetDatabase();
+        await db.KeyDeleteAsync($"session:{sessionId}:pending_monsters");
+    }
+
     // --- Resolution support ---
 
     public async Task<int> GetCharacterHpAsync(string characterId)

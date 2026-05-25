@@ -30,6 +30,11 @@ public interface IRedisGameState
     Task AddLockedInBatchAsync(string encounterId, IEnumerable<string> combatantIds);
     Task ClearLockedInAsync(string encounterId);
 
+    // Pending monsters (pre-encounter staging)
+    Task<List<string>> GetPendingMonstersAsync(string sessionId);
+    Task AddPendingMonsterAsync(string sessionId, string name);
+    Task ClearPendingMonstersAsync(string sessionId);
+
     // Resolution support
     Task<int> GetCharacterHpAsync(string characterId);
     Task StartNextPlanningPhaseAsync(string sessionId, int roundNumber, DateTimeOffset timerExpiresAt);

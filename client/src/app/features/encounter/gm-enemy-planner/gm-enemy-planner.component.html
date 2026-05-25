@@ -1,19 +1,6 @@
 <div class="enemy-planner">
   <h3>Enemy Control</h3>
 
-  <!-- Add Monster -->
-  <div class="add-monster-row">
-    <input
-      type="text"
-      [(ngModel)]="newMonsterName"
-      placeholder="Monster name"
-      class="monster-name-input"
-      (keyup.enter)="onAddMonster()" />
-    <button class="add-btn" (click)="onAddMonster()" [disabled]="!newMonsterName.trim()">
-      + Add Monster
-    </button>
-  </div>
-
   <!-- Enemy Planning Panel (planning phase only) -->
   <ng-container *ngIf="isPlanning$ | async">
     <div class="enemies-header">

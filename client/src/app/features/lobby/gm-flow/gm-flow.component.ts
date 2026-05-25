@@ -2,9 +2,12 @@ import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Store } from '@ngxs/store';
+import { Observable } from 'rxjs';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { CampaignService } from '../../../core/services/campaign.service';
 import { SetGmSession } from '../../../state/session/session.actions';
+import { EncounterState } from '../../../state/encounter/encounter.state';
+import { Combatant } from '../../../state/encounter/encounter.model';
 
 @Component({
   selector: 'app-gm-flow',
@@ -23,12 +26,16 @@ export class GmFlowComponent {
   gmConnected = false;
   gmError = '';
   encounterError = '';
+  newMonsterName = '';
+  monsters$: Observable<Combatant[]>;
 
   constructor(
     private campaignService: CampaignService,
     private hub: GameHubService,
     private store: Store
-  ) {}
+  ) {
+    this.monsters$ = store.select(EncounterState.monsterCombatants);
+  }
 
   createCampaign(): void {
     if (!this.campaignName) {
@@ -66,6 +73,13 @@ export class GmFlowComponent {
       console.error('[gm connect] error:', e);
       this.gmError = 'Failed to connect: ' + (e?.message ?? 'Unknown error');
     }
+  }
+
+  async addMonster(): Promise<void> {
+    const name = this.newMonsterName.trim();
+    if (!name || !this.gmJoinCode) return;
+    await this.hub.addMonster(this.gmJoinCode, name);
+    this.newMonsterName = '';
   }
 
   async startEncounter(): Promise<void> {

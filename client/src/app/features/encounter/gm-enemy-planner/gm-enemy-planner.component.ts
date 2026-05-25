@@ -25,7 +25,6 @@ export class GmEnemyPlannerComponent {
 
   private enemyPlannedActions: Record<string, PlannedActionEntry> = {};
 
-  newMonsterName = '';
   lockedIn = false;
 
   constructor(private store: Store, private hub: GameHubService) {
@@ -53,13 +52,6 @@ export class GmEnemyPlannerComponent {
     if (action.type === 'ranged_attack') return '🏹 Ranged Attack';
     if (action.type === 'defend') return '🛡 Defend';
     return action.type;
-  }
-
-  onAddMonster(): void {
-    const name = this.newMonsterName.trim();
-    if (!name) return;
-    this.hub.addMonster(this.joinCode, name);
-    this.newMonsterName = '';
   }
 
   onSelectEnemy(combatantId: string): void {

@@ -8,32 +8,6 @@
 }
 h3 { margin: 0 0 10px; font-size: 1em; color: #ff8a65; }
 
-.add-monster-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.monster-name-input {
-  flex: 1;
-  padding: 5px 8px;
-  border: 1px solid #555;
-  border-radius: 4px;
-  background: #3a3a3a;
-  color: #f0e6d3;
-  font-size: 0.85em;
-}
-.add-btn {
-  background: #e53935;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85em;
-  white-space: nowrap;
-}
-.add-btn:disabled { background: #555; cursor: not-allowed; }
-
 .enemies-header {
   display: flex;
   justify-content: space-between;

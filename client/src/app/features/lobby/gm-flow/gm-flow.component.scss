@@ -27,6 +27,46 @@ button {
   margin: 12px 0;
 }
 
+.add-monster-row {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+
+  input {
+    flex: 1;
+    margin: 0;
+  }
+
+  button {
+    margin: 0;
+    white-space: nowrap;
+  }
+}
+
+.monster-list {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.monster-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.monster-name {
+  font-weight: bold;
+}
+
+.monster-hp {
+  color: #666;
+}
+
 .encounter-btn {
   background: #8b0000;
   color: white;

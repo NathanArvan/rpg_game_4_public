@@ -22,6 +22,25 @@
 
   <div *ngIf="gmConnected">
     <div class="join-code">{{ gmJoinCode }}</div>
+
+    <div class="add-monster-row">
+      <input
+        type="text"
+        [(ngModel)]="newMonsterName"
+        placeholder="Monster name"
+        (keyup.enter)="addMonster()" />
+      <button (click)="addMonster()" [disabled]="!newMonsterName.trim()">
+        + Add Monster
+      </button>
+    </div>
+
+    <div class="monster-list" *ngIf="(monsters$ | async)?.length">
+      <div class="monster-item" *ngFor="let m of monsters$ | async">
+        <span class="monster-name">{{ m.characterName }}</span>
+        <span class="monster-hp">{{ m.currentHp }}/{{ m.maxHp }} HP</span>
+      </div>
+    </div>
+
     <button
       (click)="startEncounter()"
       [disabled]="playerCount === 0"
