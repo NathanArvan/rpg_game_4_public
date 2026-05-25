@@ -1,5 +1,10 @@
 .grid-wrapper { margin-top: 16px; }
 
+.grid-container {
+  display: flex;
+  justify-content: center;
+}
+
 .action-bar {
   display: flex;
   align-items: center;
