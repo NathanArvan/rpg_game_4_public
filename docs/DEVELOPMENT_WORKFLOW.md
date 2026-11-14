@@ -38,20 +38,23 @@ Saves ~300–500MB of memory vs running the API container.
 
 ### Client-side work (Angular components, NGXS state, templates)
 
-Run infra + API in containers, Angular dev server on the host.
+Run infra in containers, API and Angular dev server on the host.
 
 ```bash
-docker compose up postgres redis api
+docker compose up postgres redis
 ```
 
-In another terminal:
+In two more terminals:
 
 ```bash
-cd client
-npm start
+cd server && dotnet watch --project src/RpgGame.Api
 ```
 
-The Angular dev server at `http://localhost:4200` proxies `/api/` and `/hubs/` to the containerized API. You get live reload, source maps, and the error overlay — all degraded or absent when serving a production build through nginx.
+```bash
+cd client && npm start
+```
+
+The Angular dev server at `http://localhost:4200` proxies `/api/` and `/hubs/` to the host API on `http://localhost:5291` (`client/proxy.conf.json`). The containerized API listens on 5000 instead, so `npm start` will not reach it without editing the proxy. You get live reload, source maps, and the error overlay — all degraded or absent when serving a production build through nginx.
 
 ### End-to-end smoke test
 
@@ -61,7 +64,7 @@ When a slice is ready to exercise across all layers the way it will ship:
 docker compose up --build
 ```
 
-This runs the production-built Angular served by nginx, API in whatever mode the compose stack dictates, real nginx proxy rules. Use this with `smoke-test.md` for the 3-tab scenario.
+This runs the production-built Angular served by nginx, API in whatever mode the compose stack dictates, real nginx proxy rules. Then run the automated two-browser E2E suite (`cd e2e && npm test`) — see `smoke-test.md`.
 
 ### Contract-boundary work (SignalR events, new DTOs)
 
@@ -116,9 +119,9 @@ Skipping containers (per workflow above) drops this further.
 | Task | Run in containers | Run on host |
 |---|---|---|
 | Server slice work | `postgres`, `redis` | `dotnet watch` |
-| Client slice work | `postgres`, `redis`, `api` | `npm start` |
+| Client slice work | `postgres`, `redis` | `dotnet watch` + `npm start` |
 | Contract boundary | `postgres`, `redis` | `dotnet watch` + `npm start` |
-| End-to-end smoke test | all four | — |
+| End-to-end smoke test | all four | `cd e2e && npm test` |
 | EF migration work | `postgres` | `dotnet ef` commands |
 
 ---

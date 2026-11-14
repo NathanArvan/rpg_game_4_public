@@ -1,6 +1,6 @@
 # Design Spike — Locked Decisions for Phase 3A
 
-> **Status:** All five blocking decisions are resolved. This document is the authoritative reference for implementing Phase 3A (slices 3A.1, 3A.2, 3A.3). Hand this to Claude Code alongside `ROADMAP_SIMULTANEOUS.md`.
+> **Status:** All five blocking decisions are resolved. This document is the authoritative reference for implementing Phase 3A (slices 3A.1, 3A.2, 3A.3). Hand this to Claude Code alongside `ROADMAP_STRATEGIC.md`.
 
 ---
 

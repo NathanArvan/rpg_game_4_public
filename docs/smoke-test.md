@@ -1,90 +1,50 @@
-> **OBSOLETE** — This document describes the old sequential-turn model (initiative, EndTurn, MoveToken, DeclareAttack). It has not been updated for the simultaneous planning system introduced in Phase 3A. See `SPRINT_3A.md` for the current two-tab test procedures.
+# Smoke Test
 
-# 3-Tab Smoke Test
+How to check that the client ↔ SignalR ↔ API ↔ Redis/Postgres loop still works after a change.
 
-## Prerequisites
-App is running (`docker-compose up` or dev server).
+## Automated (preferred) — Playwright E2E
 
----
+`e2e/tests/combat-loop.spec.ts` plays a real session with two isolated browser contexts (GM + player). It runs in CI on every PR (`e2e` job in `.github/workflows/ci.yml`) and takes ~10 seconds locally.
 
-## Setup — All 3 Tabs
+```bash
+docker compose up -d --build          # anything serving the app on :4200 works
+cd e2e
+npm ci
+npx playwright install chromium       # first time only
+npm test                              # headless
+npm run test:headed                   # watch both browsers drive the game
+npm run test:ui                       # Playwright UI mode: step through, time-travel the DOM
+```
 
-**All tabs:** Navigate to `http://localhost:4200` (`LobbyComponent`).
-Click **⚡ Quick Register** on each tab.
+Set `E2E_BASE_URL` to target something other than `http://localhost:4200` (for example the Angular dev server when the API runs on the host).
 
-> `quickRegister()` calls `DevService.randomUser()` → `POST /auth/register` → JWT stored in `sessionStorage` by `AuthService`.
+**What it covers**
 
----
+| Step | Asserts |
+|---|---|
+| GM quick-registers → creates campaign → starts session → connects → adds "Goblin" | REST auth/campaign/session endpoints, `JoinSession`, `AddMonster` staging |
+| Player quick-registers → quick-creates a character → joins with the code | Character CRUD, `JoinSession`, `PlayerPresenceChanged` reaches the GM |
+| GM starts encounter | `EncounterStarted` + `PlanningPhaseStarted` on both screens; player at (0,0), monster at (0,19) |
+| Round 1: player plans a move to (3,3), locks in; GM locks in enemies | `PlanAction`, `LockIn`, `PlayerLockedIn` shown to GM, `LockInEnemies` triggers resolution |
+| Resolution | `ResolutionCompleted` feed entry + token at (3,3) on **both** screens, round 2 planning begins |
+| Round 2: player plans a ranged attack on the Goblin | Attack line appears in both feeds (hit/miss is random, so only the line is asserted), round 3 begins |
 
-## Tab 1 — GM Flow
+On failure, Playwright keeps a trace, screenshots, and video in `e2e/test-results/`; open the trace with `npx playwright show-trace <path>/trace.zip`. In CI they are uploaded as the `playwright-report` artifact along with container logs.
 
-1. Click the **GM** tab (`activeFlow = 'gm'`).
-2. Enter a campaign name → click **Create Campaign**.
-   > `CampaignService.createCampaign()` → `POST /campaigns`; stores `gmCampaignId`.
-3. Click **Start Session**.
-   > `CampaignService.startSession()` → `POST /campaigns/{id}/sessions`; displays the 6-char join code in the big `<div class="join-code">` box. Dispatches `SetGmSession` to `SessionState`.
-4. Click **Connect to Session**.
-   > `GameHubService.connect()` + `hub.joinSession(joinCode, 'GM', null)` → SignalR `JoinSession` on the hub. Adds GM to `session:{sessionId}:players` Redis hash. Broadcasts `PlayerPresenceChanged` → `SessionState.connectedPlayers` updates. `gmConnected = true`, **Start Encounter** button appears (disabled until players join).
+**Extending it:** helpers live in `e2e/tests/support/actors.ts` (`newActor`, `gmOpenSession`, `playerJoinSession`, `cell(page, x, y)`, `tokenAt`, …). Grid cells carry `data-x` / `data-y` attributes for targeting. Add a new spec per slice (e.g. `ap-budget.spec.ts` for 3B.2) rather than growing one giant test.
 
----
+## Manual — when you want to eyeball it
 
-## Tabs 2 & 3 — Player Flow (do each tab in sequence)
+1. `docker compose up --build`, open `http://localhost:4200` in two windows (one normal, one private so they don't share `sessionStorage`).
+2. **Window A (GM):** ⚡ Quick Register → **GM** tab → name a campaign → Create Campaign → Start Session → note the join code → Connect to Session → add a monster.
+3. **Window B (player):** ⚡ Quick Register → My Characters → ⚡ Quick Create Random → Back to Lobby → enter join code + display name, pick the character → Join Session. Window A should list the player under Connected Players.
+4. **A:** Start Encounter. Both windows switch to the combat layout showing "Planning — Round 1".
+5. **B:** click a green in-range cell (move) or the monster token (attack) → Lock In. **A** sees the ✓ in the tracker → Lock In Enemies (or ⚡ Force Resolve).
+6. Both windows animate the resolution, add a "Round 1 Resolution" block to the Combat Log, and move on to Round 2.
 
-1. Click **My Characters** link → navigates to `/character` (`CharacterComponent`).
-2. Click **⚡ Quick Create Random**.
-   > `DevService.randomCharacter()` → `CharacterService.createCharacter()` → `POST /characters`. Dispatches `SetMyCharacter` + `LoadMyCharacters` to `CharacterState`.
-3. Click **← Back to Lobby**.
-4. On the **Player** tab, enter the join code from Tab 1, a display name, and select the character from the dropdown.
-5. Click **Join Session**.
-   > Dispatches `JoinSession` action to `SessionState`. `GameHubService.connect()` + `hub.joinSession(joinCode, displayName, characterId)` → SignalR `JoinSession` hub method. Server validates join code via DB, upserts player into Redis. Broadcasts `PlayerPresenceChanged` to all tabs → connected players list updates everywhere.
+For UI-only work with no server at all, use `http://localhost:4200/preview` (`EncounterPreviewComponent`), which seeds mock state and lets you toggle GM/player and planning/resolving.
 
-> After both players join, Tab 1's **Start Encounter** button becomes enabled.
+## Known gaps
 
----
-
-## Tab 1 — Start Encounter
-
-Click **Start Encounter**.
-> `hub.startEncounter(joinCode)` → SignalR `StartEncounter` (GM-only).
-> Server (`EncounterService`): rolls initiative (1d20 + DEX modifier via `CombatDice`), creates `Encounter` + `EncounterCombatant` rows in DB, seeds Redis (`session:{sessionId}:active_encounter`, `encounter:map:{encounterId}`, `character:live:{characterId}` hashes). Broadcasts `EncounterStarted` to all tabs.
-> All tabs: `EncounterTrackerComponent` (initiative order + HP), `GridComponent` (20×20 map), and `FeedComponent` (combat log) appear.
-
----
-
-## Playing a Turn
-
-**On whichever tab has the active turn** (highest initiative first, shown highlighted in `EncounterTrackerComponent`):
-
-The grid shows **"Your turn!"** with a green **End Turn** button (`isMyTurn$` observable resolves `true`). Other tabs show **"Waiting for [name]..."**.
-
-**To move:** Click an empty cell on the grid.
-> `GridComponent.onCellClick()` → empty cell → dispatches `SetPendingMove` (highlights cell blue) + `hub.moveToken(joinCode, combatantId, x, y)`.
-> Server (`EncounterService.MoveToken`): validates Chebyshev distance ≤ 6, bounds 0–19, updates map JSON in Redis. Broadcasts `TokenMoved` → `MapState.positions` updates on all tabs.
-
-**To attack:** Click an enemy token (red/dark, `enemy-token` class).
-> `hub.declareAttack(joinCode, targetCombatantId)`.
-> Server (`CombatService.DeclareAttack`): validates it's your turn, rolls damage by class (Fighter: 1d8, Rogue: 1d6, others: 1d4), decrements HP in `character:live:{id}` Redis hash, appends `GameEvent` to DB. Broadcasts `AttackResolved` (HP update on all tabs) and `CombatantDefeated` if HP ≤ 0 (token greys out, strikethrough in tracker).
-
-**To end turn:** Click **End Turn**.
-> `hub.endTurn(joinCode)`.
-> Server (`EncounterService.EndTurn`): advances `activeTurnCombatantId` to next non-defeated combatant, or ends encounter if all defeated. Broadcasts `TurnAdvanced` (or `EncounterEnded`) → active turn indicator shifts to the next tab.
-
-**Repeat** with the other player's tab until the encounter resolves.
-
----
-
-## What This Tests End-to-End
-
-| Layer | What's exercised |
-|-------|-----------------|
-| `AuthService` + `POST /auth/register` | Quick Register on all tabs |
-| `CampaignService` + REST endpoints | Campaign create, session start |
-| `CharacterService` + `GET\|POST /characters` | Character CRUD, `CharacterState` |
-| `GameHubService` + SignalR `/hubs/game` | Connect, all hub methods |
-| `SessionState` | Player presence, join code, GM flag |
-| `EncounterState` | Combatant list, active turn, defeated |
-| `MapState` | Token positions, pending move |
-| `FeedState` | Combat log entries |
-| Redis (via `RedisGameState`) | Players hash, encounter JSON, map JSON, HP hash, defeated set |
-| DB (via `EncounterService`, `CombatService`) | Encounter + Combatant rows, GameEvent log |
-| Real-time broadcast | All SignalR broadcasts reflected across all 3 tabs simultaneously |
+- Encounters never end: `EncounterEnded` is not broadcast yet, so rounds continue after one side is wiped out.
+- The planning timer is 300s (`GameConstants.PlanningTimerSeconds`); timer-expiry resolution is not covered by E2E.
