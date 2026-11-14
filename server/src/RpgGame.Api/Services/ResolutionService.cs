@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILogger<ResolutionService> logger) : IResolutionService
+public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDiceRoller dice, ILogger<ResolutionService> logger) : IResolutionService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -131,7 +131,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
             logger.LogInformation("ResolveRound: tick {Tick} — resolving phases", tick);
             var movements = ResolveMovementPhase(plannedActions, snapshots, workingPositions, alreadyDefeated, defeatedThisRound);
             logger.LogInformation("ResolveRound: tick {Tick} — {MoveCount} movements resolved", tick, movements.Count);
-            var attacks = ResolveAttackPhase(plannedActions, snapshots, workingPositions, workingHp, alreadyDefeated, defeatedThisRound);
+            var attacks = ResolveAttackPhase(plannedActions, snapshots, workingPositions, workingHp, alreadyDefeated, defeatedThisRound, dice);
             logger.LogInformation("ResolveRound: tick {Tick} — {AttackCount} attacks resolved, {DefeatedCount} defeated this round", tick, attacks.Count, defeatedThisRound.Count);
             var effects = ResolveEffectsPhase(plannedActions, snapshots, alreadyDefeated, defeatedThisRound);
             logger.LogInformation("ResolveRound: tick {Tick} — {EffectCount} effects resolved", tick, effects.Count);
@@ -349,7 +349,8 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
         Dictionary<string, Position> workingPositions,
         Dictionary<string, int> workingHp,
         HashSet<string> alreadyDefeated,
-        HashSet<string> defeatedThisRound)
+        HashSet<string> defeatedThisRound,
+        IDiceRoller dice)
     {
         var results = new List<AttackResult>();
         var computations = new List<AttackComputation>();
@@ -392,12 +393,12 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, ILog
             if (!comp.Wasted)
             {
                 snapshots.TryGetValue(combatantId, out var attacker);
-                int hitRoll = CombatDice.RollD20(); // +0 accuracyBonus in 3A
+                int hitRoll = CombatDice.RollD20(dice); // +0 accuracyBonus in 3A
                 comp.Hit = hitRoll >= 10;            // dodgeThreshold = 10 in 3A
 
                 if (comp.Hit)
                 {
-                    comp.Damage = CombatDice.RollDamage(attacker?.CharClass ?? "wizard");
+                    comp.Damage = CombatDice.RollDamage(dice, attacker?.CharClass ?? "wizard");
                     hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - comp.Damage;
                 }
             }

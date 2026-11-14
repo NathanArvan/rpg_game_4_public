@@ -10,7 +10,7 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Tests;
 
-public class ResolutionServiceTests
+public partial class ResolutionServiceTests
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -164,7 +164,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -206,7 +206,7 @@ public class ResolutionServiceTests
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry,
             hpByKey: new Dictionary<string, int> { [characterId.ToString()] = 20, [monsterIdStr] = 20 });
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -246,7 +246,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -285,7 +285,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -319,7 +319,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(15, 3), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -350,7 +350,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -375,7 +375,7 @@ public class ResolutionServiceTests
             new List<string>());
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), new Dictionary<string, string>(), mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -407,7 +407,7 @@ public class ResolutionServiceTests
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry,
             preDefeated: new HashSet<string> { defeatedId.ToString() });
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
