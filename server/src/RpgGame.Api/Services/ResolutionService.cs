@@ -8,7 +8,17 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDiceRoller dice, ILogger<ResolutionService> logger) : IResolutionService
+/// <summary>
+/// Adapter between persistence (EF + Redis) and the pure rules engine. Loads the round's state,
+/// maps it into <see cref="EncounterState"/> and plans, runs <see cref="RoundResolver"/>, maps the
+/// <see cref="RoundOutcome"/> back to hub contracts, and persists the results.
+/// No game rules live here — only data seeding defaults, mapping, feed text and I/O.
+/// </summary>
+public class ResolutionService(
+    AppDbContext db,
+    IRedisGameState redisState,
+    IDiceRoller dice,
+    ILogger<ResolutionService> logger) : IResolutionService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -16,47 +26,19 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
         PropertyNameCaseInsensitive = true,
     };
 
-    // Internal state snapshot per combatant for a resolution run
-    private record CombatantSnapshot(
-        string CombatantId,
-        string CharacterId,
+    // Persistence-side facts about a combatant that the rules engine doesn't need.
+    private record CombatantRecord(
         string HpKey,           // combatant ID for monsters, character ID for players
-        string CharacterName,
-        int CurrentHp,
+        int StartingHp,
         int MaxHp,
-        string CharClass,
-        int Dex,
-        bool IsDefeated,
-        Position CurrentPosition);
-
-    // Tracks a combatant's movement through the lockstep loop
-    private class MoverState
-    {
-        public string CombatantId { get; init; } = "";
-        public List<Position> FullPath { get; init; } = [];
-        public int Dex { get; init; }
-        public int CurrentStep { get; set; } = 0;
-        public bool Stopped { get; set; } = false;
-        public string? BlockedBy { get; set; }
-    }
-
-    // Intermediate attack result before HP deltas are applied
-    private class AttackComputation
-    {
-        public string AttackerId { get; init; } = "";
-        public string TargetId { get; init; } = "";
-        public string AttackType { get; init; } = "";
-        public bool Wasted { get; set; }
-        public string WastedReason { get; set; } = "";
-        public bool Hit { get; set; }
-        public int Damage { get; set; }
-    }
+        CombatantState State);
 
     public async Task<ResolutionPayload> ResolveRoundAsync(Guid encounterId)
     {
         logger.LogInformation("ResolveRound: START for encounter={EncounterId}", encounterId);
 
-        // Load encounter with combatants from DB
+        // ----- Load -----
+
         var encounter = await db.Encounters
             .Include(e => e.Combatants)
             .FirstOrDefaultAsync(e => e.Id == encounterId)
@@ -67,7 +49,7 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
         var sessionIdStr = encounter.GameSessionId.ToString();
         var encounterIdStr = encounterId.ToString();
 
-        // Load character stats from DB (class, dex, maxHp) — monsters have null CharacterId, skip them
+        // Character stats (class, dex, maxHp) — monsters have null CharacterId, skip them
         var charIds = encounter.Combatants
             .Where(c => c.CharacterId.HasValue)
             .Select(c => c.CharacterId!.Value)
@@ -76,87 +58,55 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
             .Where(c => charIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id);
 
-        // Load planned actions from Redis
         var plannedActionsJson = await redisState.GetAllPlannedActionsAsync(encounterIdStr);
         logger.LogInformation("ResolveRound: loaded {ActionCount} planned actions from Redis", plannedActionsJson.Count);
-        var plannedActions = new Dictionary<string, PlannedActionArray>();
-        foreach (var (combatantId, actionJson) in plannedActionsJson)
-        {
-            logger.LogDebug("ResolveRound: combatant={CombatantId} action={ActionJson}", combatantId, actionJson);
-            var action = JsonSerializer.Deserialize<PlannedActionArray>(actionJson, _jsonOptions);
-            if (action is not null)
-                plannedActions[combatantId] = action;
-        }
 
-        // Load map from Redis
         var mapEntry = await redisState.GetMapAsync(encounterIdStr)
             ?? throw new InvalidOperationException($"Map for encounter {encounterId} not found.");
 
-        // Build per-combatant snapshots
-        var snapshots = new Dictionary<string, CombatantSnapshot>();
+        var records = new Dictionary<string, CombatantRecord>();
         foreach (var c in encounter.Combatants)
         {
             var combatantId = c.Id.ToString();
-            var isMonster = c.CombatantType == "monster";
-            var hpKey = isMonster ? combatantId : c.CharacterId!.Value.ToString();
+            var hpKey = c.CombatantType == "monster" ? combatantId : c.CharacterId!.Value.ToString();
             var currentHp = await redisState.GetCharacterHpAsync(hpKey);
             var isDefeated = await redisState.IsDefeatedAsync(encounterIdStr, combatantId);
-            var pos = mapEntry.Positions.GetValueOrDefault(combatantId, new Position(0, 0));
             characterMap.TryGetValue(c.CharacterId ?? Guid.Empty, out var character);
-
-            snapshots[combatantId] = new CombatantSnapshot(
-                CombatantId: combatantId,
-                CharacterId: c.CharacterId?.ToString() ?? "",
-                HpKey: hpKey,
-                CharacterName: c.CharacterName,
-                CurrentHp: currentHp,
-                MaxHp: character?.MaxHp ?? (isMonster ? 20 : currentHp),
-                CharClass: character?.Class ?? (isMonster ? "fighter" : "wizard"),
-                Dex: character?.BaseStats.Dex ?? 10,
-                IsDefeated: isDefeated,
-                CurrentPosition: pos);
+            records[combatantId] = ToRecord(c, hpKey, currentHp, isDefeated, character, mapEntry);
         }
 
-        // Working copies (mutated during resolution)
-        var workingPositions = new Dictionary<string, Position>(mapEntry.Positions);
-        var workingHp = snapshots.ToDictionary(kv => kv.Key, kv => kv.Value.CurrentHp);
-        var alreadyDefeated = new HashSet<string>(snapshots.Where(kv => kv.Value.IsDefeated).Select(kv => kv.Key));
-        var defeatedThisRound = new HashSet<string>();
+        var plans = MapPlans(plannedActionsJson, records);
 
-        // Tick loop — always 1 tick in 3A (extension point for future AP system)
-        var tickResults = new List<TickResult>();
-        const int maxTicks = 1;
+        // ----- Resolve (pure) -----
 
-        for (int tick = 0; tick < maxTicks; tick++)
-        {
-            logger.LogInformation("ResolveRound: tick {Tick} — resolving phases", tick);
-            var movements = ResolveMovementPhase(plannedActions, snapshots, workingPositions, alreadyDefeated, defeatedThisRound);
-            logger.LogInformation("ResolveRound: tick {Tick} — {MoveCount} movements resolved", tick, movements.Count);
-            var attacks = ResolveAttackPhase(plannedActions, snapshots, workingPositions, workingHp, alreadyDefeated, defeatedThisRound, dice);
-            logger.LogInformation("ResolveRound: tick {Tick} — {AttackCount} attacks resolved, {DefeatedCount} defeated this round", tick, attacks.Count, defeatedThisRound.Count);
-            var effects = ResolveEffectsPhase(plannedActions, snapshots, alreadyDefeated, defeatedThisRound);
-            logger.LogInformation("ResolveRound: tick {Tick} — {EffectCount} effects resolved", tick, effects.Count);
-            tickResults.Add(new TickResult(tick, movements, attacks, effects));
-        }
+        var state = new EncounterState(mapEntry.GridWidth, mapEntry.GridHeight, records.Values.Select(r => r.State).ToList());
+        var outcome = RoundResolver.Resolve(state, plans, dice);
+        logger.LogInformation("ResolveRound: {TickCount} tick(s) resolved, {DefeatedCount} defeated this round",
+            outcome.Ticks.Count, outcome.DefeatedThisRound.Count);
 
-        // Build updated combatant list for next planning phase
+        var finalStates = outcome.Next.Combatants.ToDictionary(c => c.Id);
+        var tickResults = outcome.Ticks.Select(t => ToTickResult(t, records)).ToList();
+
+        // ----- Build payload -----
+
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr);
         var newRoundNumber = (activeEncounter?.RoundNumber ?? 1) + 1;
-        var allDefeatedIds = new HashSet<string>(alreadyDefeated.Union(defeatedThisRound));
 
         var updatedCombatants = encounter.Combatants.Select(c =>
         {
             var id = c.Id.ToString();
-            var snap = snapshots[id];
+            var final = finalStates[id];
             return new PlanningCombatantDto(
                 id,
                 c.UserId,
                 c.CharacterName,
-                workingHp.GetValueOrDefault(id, snap.CurrentHp),
-                snap.MaxHp,
-                allDefeatedIds.Contains(id),
+                final.Hp,
+                records[id].MaxHp,
+                final.IsDefeated,
                 c.CombatantType);
         }).ToList();
+
+        // ----- Persist -----
 
         // Write GameEvents to DB BEFORE Redis mutations
         var events = BuildGameEvents(encounterId, tickResults);
@@ -168,20 +118,25 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
         }
         logger.LogInformation("ResolveRound: DB write complete");
 
-        // Write Redis mutations
-        foreach (var (combatantId, newHp) in workingHp)
+        foreach (var (combatantId, record) in records)
         {
-            var snap = snapshots[combatantId];
-            if (newHp != snap.CurrentHp)
-                await redisState.SetHpAsync(snap.HpKey, newHp);
+            var newHp = finalStates[combatantId].Hp;
+            if (newHp != record.StartingHp)
+                await redisState.SetHpAsync(record.HpKey, newHp);
         }
 
-        foreach (var combatantId in defeatedThisRound)
+        foreach (var combatantId in outcome.DefeatedThisRound)
             await redisState.MarkDefeatedAsync(encounterIdStr, combatantId);
+
+        // Start from the stored map so entries the engine doesn't know about are kept as-is.
+        var positions = new Dictionary<string, Position>(mapEntry.Positions);
+        foreach (var final in outcome.Next.Combatants)
+            if (final.Position is { } p)
+                positions[final.Id] = new Position(p.X, p.Y);
 
         await redisState.SetMapAsync(encounterIdStr, new MapEntry(
             mapEntry.GridWidth, mapEntry.GridHeight,
-            workingPositions, mapEntry.FogOfWar));
+            positions, mapEntry.FogOfWar));
 
         await redisState.ClearPlannedActionsAsync(encounterIdStr);
         await redisState.ClearLockedInAsync(encounterIdStr);
@@ -194,300 +149,108 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
         }
 
         logger.LogInformation("ResolveRound: COMPLETE — newRound={NewRound}, defeated={DefeatedIds}",
-            newRoundNumber, string.Join(", ", defeatedThisRound));
-        return new ResolutionPayload(tickResults, newRoundNumber, defeatedThisRound.ToList(), updatedCombatants);
+            newRoundNumber, string.Join(", ", outcome.DefeatedThisRound));
+        return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants);
     }
 
-    // ----- Phase 1: Movement -----
+    // ----- Inbound mapping -----
 
-    private static List<MovementResult> ResolveMovementPhase(
-        Dictionary<string, PlannedActionArray> plannedActions,
-        Dictionary<string, CombatantSnapshot> snapshots,
-        Dictionary<string, Position> workingPositions,
-        HashSet<string> alreadyDefeated,
-        HashSet<string> defeatedThisRound)
+    /// <summary>
+    /// Data-seeding defaults (not rules): monsters have no Character row, so they get MaxHp 20 and
+    /// the fighter damage die; a player whose Character is missing gets MaxHp = current HP and the
+    /// wizard die. Dex (default 10) feeds Speed until 3B.1 adds a real Speed stat.
+    /// </summary>
+    private static CombatantRecord ToRecord(
+        EncounterCombatant c, string hpKey, int currentHp, bool isDefeated, Character? character, MapEntry map)
     {
-        var results = new List<MovementResult>();
+        var isMonster = c.CombatantType == "monster";
+        var maxHp = character?.MaxHp ?? (isMonster ? 20 : currentHp);
+        var charClass = character?.Class ?? (isMonster ? "fighter" : "wizard");
+        var dex = character?.BaseStats.Dex ?? 10;
+        GridPosition? position = map.Positions.TryGetValue(c.Id.ToString(), out var pos)
+            ? new GridPosition(pos.X, pos.Y)
+            : null; // the engine treats a missing position as (0, 0)
 
-        // Build mover list
-        var movers = new List<MoverState>();
-        foreach (var (combatantId, actionArray) in plannedActions)
-        {
-            if (alreadyDefeated.Contains(combatantId) || defeatedThisRound.Contains(combatantId)) continue;
-            var action = actionArray.Actions.FirstOrDefault();
-            if (action?.Type != "move" || action.TargetCell is null) continue;
+        var state = new CombatantState(
+            Id: c.Id.ToString(),
+            Name: c.CharacterName,
+            Hp: currentHp,
+            MaxHp: maxHp,
+            Speed: dex,
+            Damage: CombatMath.DamageDieForClass(charClass),
+            Position: position,
+            IsDefeated: isDefeated);
 
-            var startPos = workingPositions.GetValueOrDefault(combatantId, new Position(0, 0));
-            var targetPos = new Position(action.TargetCell.X, action.TargetCell.Y);
-            var path = ComputeChebyshevPath(startPos, targetPos);
-
-            if (path.Count <= 1) continue; // Already at target
-
-            snapshots.TryGetValue(combatantId, out var snap);
-            movers.Add(new MoverState
-            {
-                CombatantId = combatantId,
-                FullPath = path,
-                Dex = snap?.Dex ?? 10,
-            });
-        }
-
-        if (movers.Count == 0) return results;
-
-        int maxSteps = movers.Max(m => m.FullPath.Count - 1);
-
-        for (int step = 0; step < maxSteps; step++)
-        {
-            var active = movers.Where(m => !m.Stopped && m.CurrentStep < m.FullPath.Count - 1).ToList();
-            if (active.Count == 0) break;
-
-            // Desired next positions
-            var desired = active.ToDictionary(m => m.CombatantId, m => m.FullPath[m.CurrentStep + 1]);
-
-            var blocked = new HashSet<string>();
-
-            // Resolve mover-vs-mover conflicts (two movers claiming same cell)
-            var cellClaims = desired
-                .GroupBy(kv => kv.Value, new PositionComparer())
-                .Where(g => g.Count() > 1);
-
-            foreach (var group in cellClaims)
-            {
-                var claimants = group.Select(kv => kv.Key).ToList();
-                var sorted = claimants.OrderByDescending(id =>
-                    movers.First(m => m.CombatantId == id).Dex).ToList();
-
-                int highDex = movers.First(m => m.CombatantId == sorted[0]).Dex;
-                int secondDex = movers.First(m => m.CombatantId == sorted[1]).Dex;
-
-                if (highDex == secondDex)
-                {
-                    // Tied Dex — all claimants stop
-                    foreach (var id in claimants)
-                    {
-                        blocked.Add(id);
-                        var mover = movers.First(m => m.CombatantId == id);
-                        mover.BlockedBy = claimants.First(other => other != id);
-                    }
-                }
-                else
-                {
-                    // Winner is sorted[0], losers stop
-                    foreach (var id in claimants.Skip(1))
-                    {
-                        blocked.Add(id);
-                        var mover = movers.First(m => m.CombatantId == id);
-                        mover.BlockedBy = sorted[0];
-                    }
-                }
-            }
-
-            // Resolve mover-vs-stationary conflicts (mover wants cell occupied by a non-active-mover)
-            foreach (var (moverId, nextCell) in desired)
-            {
-                if (blocked.Contains(moverId)) continue;
-
-                foreach (var (occupantId, pos) in workingPositions)
-                {
-                    if (occupantId == moverId) continue;
-                    if (pos.X != nextCell.X || pos.Y != nextCell.Y) continue;
-
-                    // Is this occupant a currently active mover who is not blocked?
-                    bool isActiveUnblockedMover = active.Any(m => m.CombatantId == occupantId)
-                        && !blocked.Contains(occupantId);
-
-                    if (!isActiveUnblockedMover)
-                    {
-                        blocked.Add(moverId);
-                        movers.First(m => m.CombatantId == moverId).BlockedBy = occupantId;
-                        break;
-                    }
-                }
-            }
-
-            // Apply step
-            foreach (var mover in active)
-            {
-                if (blocked.Contains(mover.CombatantId))
-                {
-                    mover.Stopped = true;
-                }
-                else
-                {
-                    mover.CurrentStep++;
-                    workingPositions[mover.CombatantId] = mover.FullPath[mover.CurrentStep];
-                }
-            }
-        }
-
-        // Build MovementResults
-        foreach (var mover in movers)
-        {
-            var takenPath = mover.FullPath
-                .Take(mover.CurrentStep + 1)
-                .Select(p => new PositionDto(p.X, p.Y))
-                .ToList();
-            var finalPos = mover.FullPath[mover.CurrentStep];
-            snapshots.TryGetValue(mover.CombatantId, out var snap);
-
-            results.Add(new MovementResult(
-                mover.CombatantId,
-                snap?.CharacterName ?? "Unknown",
-                takenPath,
-                new PositionDto(finalPos.X, finalPos.Y),
-                mover.Stopped,
-                mover.BlockedBy));
-        }
-
-        return results;
+        return new CombatantRecord(hpKey, currentHp, maxHp, state);
     }
 
-    // ----- Phase 2: Attacks -----
-
-    private static List<AttackResult> ResolveAttackPhase(
-        Dictionary<string, PlannedActionArray> plannedActions,
-        Dictionary<string, CombatantSnapshot> snapshots,
-        Dictionary<string, Position> workingPositions,
-        Dictionary<string, int> workingHp,
-        HashSet<string> alreadyDefeated,
-        HashSet<string> defeatedThisRound,
-        IDiceRoller dice)
+    /// <summary>
+    /// Deserializes Redis plans, preserving Redis order (the engine treats plan order as meaningful).
+    /// Plans for ids that aren't combatants in this encounter are dropped; PlanningService never
+    /// stores those. Unrecognized action types are dropped (PlanningService rejects them too).
+    /// </summary>
+    private Dictionary<string, IReadOnlyList<PlannedAction>> MapPlans(
+        Dictionary<string, string> plannedActionsJson, Dictionary<string, CombatantRecord> records)
     {
-        var results = new List<AttackResult>();
-        var computations = new List<AttackComputation>();
-
-        // Collect attack actions and compute hit/damage
-        var hpDeltas = new Dictionary<string, int>(); // targetId → net delta (negative = damage)
-
-        foreach (var (combatantId, actionArray) in plannedActions)
+        var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
+        foreach (var (combatantId, actionJson) in plannedActionsJson)
         {
-            if (alreadyDefeated.Contains(combatantId) || defeatedThisRound.Contains(combatantId)) continue;
-            var action = actionArray.Actions.FirstOrDefault();
-            if (action?.Type is not ("melee_attack" or "ranged_attack")) continue;
+            logger.LogDebug("ResolveRound: combatant={CombatantId} action={ActionJson}", combatantId, actionJson);
+            var array = JsonSerializer.Deserialize<PlannedActionArray>(actionJson, _jsonOptions);
+            if (array is null) continue;
 
-            var targetId = action.TargetCombatantId ?? "";
-            var comp = new AttackComputation
+            if (!records.ContainsKey(combatantId))
             {
-                AttackerId = combatantId,
-                TargetId = targetId,
-                AttackType = action.Type,
-            };
-
-            // Validate attack
-            if (!snapshots.ContainsKey(targetId) || alreadyDefeated.Contains(targetId) || defeatedThisRound.Contains(targetId))
-            {
-                comp.Wasted = true;
-                comp.WastedReason = "target already defeated";
-            }
-            else if (action.Type == "melee_attack")
-            {
-                var attackerPos = workingPositions.GetValueOrDefault(combatantId, new Position(0, 0));
-                var targetPos = workingPositions.GetValueOrDefault(targetId, new Position(0, 0));
-                var chebyshev = Math.Max(Math.Abs(attackerPos.X - targetPos.X), Math.Abs(attackerPos.Y - targetPos.Y));
-                if (chebyshev > 1)
-                {
-                    comp.Wasted = true;
-                    comp.WastedReason = "target out of melee range";
-                }
+                logger.LogWarning("ResolveRound: ignoring plan for unknown combatant {CombatantId}", combatantId);
+                continue;
             }
 
-            if (!comp.Wasted)
+            var queue = new List<PlannedAction>();
+            foreach (var entry in array.Actions)
             {
-                snapshots.TryGetValue(combatantId, out var attacker);
-                int hitRoll = CombatDice.RollD20(dice); // +0 accuracyBonus in 3A
-                comp.Hit = hitRoll >= 10;            // dodgeThreshold = 10 in 3A
-
-                if (comp.Hit)
-                {
-                    comp.Damage = CombatDice.RollDamage(dice, attacker?.CharClass ?? "wizard");
-                    hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - comp.Damage;
-                }
+                if (RulesWireMapping.ParseActionType(entry.Type) is not { } type) continue;
+                queue.Add(new PlannedAction(
+                    type,
+                    entry.TargetCell is null ? null : new GridPosition(entry.TargetCell.X, entry.TargetCell.Y),
+                    entry.TargetCombatantId));
             }
-
-            computations.Add(comp);
+            plans[combatantId] = queue;
         }
-
-        // Snapshot HP before applying deltas (for feed text "HP: X → Y")
-        var hpBefore = new Dictionary<string, int>(workingHp);
-
-        // Apply all HP deltas in one batch
-        foreach (var (targetId, delta) in hpDeltas)
-            workingHp[targetId] = workingHp.GetValueOrDefault(targetId, 0) + delta;
-
-        // Check defeats AFTER all damage applied
-        foreach (var (targetId, newHp) in workingHp)
-        {
-            if (!alreadyDefeated.Contains(targetId) && !defeatedThisRound.Contains(targetId) && newHp <= 0)
-                defeatedThisRound.Add(targetId);
-        }
-
-        // Build AttackResults
-        foreach (var comp in computations)
-        {
-            snapshots.TryGetValue(comp.AttackerId, out var attacker);
-            snapshots.TryGetValue(comp.TargetId, out var target);
-            int newHp = workingHp.GetValueOrDefault(comp.TargetId, 0);
-            bool targetDefeated = defeatedThisRound.Contains(comp.TargetId);
-            string attackerName = attacker?.CharacterName ?? "Unknown";
-            string targetName = target?.CharacterName ?? "Unknown";
-            string attackVerb = comp.AttackType == "ranged_attack" ? "shoots at" : "strikes";
-
-            string feedText;
-            if (comp.Wasted)
-                feedText = $"{attackerName}'s attack on {targetName} fails — {comp.WastedReason}";
-            else if (!comp.Hit)
-                feedText = $"{attackerName} swings at {targetName} and misses";
-            else if (targetDefeated)
-                feedText = $"{attackerName} {attackVerb} {targetName} for {comp.Damage} damage — defeated!";
-            else
-                feedText = $"{attackerName} {attackVerb} {targetName} for {comp.Damage} damage (HP: {hpBefore.GetValueOrDefault(comp.TargetId, 0)} → {newHp})";
-
-            results.Add(new AttackResult(
-                comp.AttackerId, attackerName,
-                comp.TargetId, targetName,
-                comp.AttackType, comp.Hit, comp.Damage,
-                newHp, targetDefeated, comp.Wasted, feedText));
-        }
-
-        return results;
+        return plans;
     }
 
-    // ----- Phase 3: Effects -----
+    // ----- Outbound mapping -----
 
-    private static List<EffectResult> ResolveEffectsPhase(
-        Dictionary<string, PlannedActionArray> plannedActions,
-        Dictionary<string, CombatantSnapshot> snapshots,
-        HashSet<string> alreadyDefeated,
-        HashSet<string> defeatedThisRound)
+    private static TickResult ToTickResult(TickOutcome tick, Dictionary<string, CombatantRecord> records)
     {
-        var results = new List<EffectResult>();
-        foreach (var (combatantId, actionArray) in plannedActions)
-        {
-            if (alreadyDefeated.Contains(combatantId) || defeatedThisRound.Contains(combatantId)) continue;
-            var action = actionArray.Actions.FirstOrDefault();
-            if (action?.Type != "defend") continue;
-            snapshots.TryGetValue(combatantId, out var snap);
-            results.Add(new EffectResult(combatantId, "defend", $"{snap?.CharacterName ?? "Unknown"} holds position"));
-        }
-        return results;
-    }
+        string NameOf(string id) => records.TryGetValue(id, out var r) ? r.State.Name : "Unknown";
 
-    // ----- Helpers -----
+        var movements = tick.Movements.Select(m => new MovementResult(
+            m.CombatantId,
+            NameOf(m.CombatantId),
+            m.Path.Select(p => new PositionDto(p.X, p.Y)).ToList(),
+            new PositionDto(m.FinalPosition.X, m.FinalPosition.Y),
+            m.WasBlocked,
+            m.BlockedById)).ToList();
 
-    private static List<Position> ComputeChebyshevPath(Position start, Position target)
-    {
-        var path = new List<Position> { start };
-        var current = start;
-        while (current.X != target.X || current.Y != target.Y)
+        var attacks = tick.Attacks.Select(a =>
         {
-            int dx = target.X - current.X;
-            int dy = target.Y - current.Y;
-            int stepX = dx == 0 ? 0 : (dx > 0 ? 1 : -1);
-            int stepY = dy == 0 ? 0 : (dy > 0 ? 1 : -1);
-            current = new Position(current.X + stepX, current.Y + stepY);
-            path.Add(current);
-        }
-        return path;
+            var attackerName = NameOf(a.AttackerId);
+            var targetName = NameOf(a.TargetId);
+            return new AttackResult(
+                a.AttackerId, attackerName,
+                a.TargetId, targetName,
+                RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
+                a.TargetHpAfter, a.TargetDefeated, a.Wasted,
+                ResolutionFeedFormatter.Attack(a, attackerName, targetName));
+        }).ToList();
+
+        var effects = tick.Effects.Select(e => new EffectResult(
+            e.CombatantId,
+            RulesWireMapping.ToWire(e.Type),
+            ResolutionFeedFormatter.Effect(e, NameOf(e.CombatantId)))).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects);
     }
 
     private static List<GameEvent> BuildGameEvents(Guid encounterId, List<TickResult> tickResults)
@@ -523,14 +286,5 @@ public class ResolutionService(AppDbContext db, IRedisGameState redisState, IDic
         }
 
         return events;
-    }
-
-    // Equality comparer for Position used in LINQ GroupBy
-    private class PositionComparer : IEqualityComparer<Position>
-    {
-        public bool Equals(Position? x, Position? y) =>
-            x is not null && y is not null && x.X == y.X && x.Y == y.Y;
-
-        public int GetHashCode(Position p) => HashCode.Combine(p.X, p.Y);
     }
 }

@@ -414,4 +414,35 @@ public partial class ResolutionServiceTests
 
         Assert.Empty(result.Ticks[0].Attacks);
     }
+
+    [Fact]
+    public async Task ResolveRound_PlanForUnknownCombatant_IsIgnored()
+    {
+        // Intentional deviation in the rules-engine extraction: PlanningService never stores plans
+        // for non-combatants, but if one appears the adapter now drops it instead of resolving it
+        // as an "Unknown" Dex-10 / d4 combatant.
+        await using var db = CreateDb();
+        var sessionId = Guid.NewGuid();
+        var monsterId = Guid.NewGuid();
+        var encounterId = await SeedEncounterWithMonsters(db, sessionId, (monsterId, "Goblin"));
+        var encounterIdStr = encounterId.ToString();
+
+        var mapEntry = new MapEntry(20, 20,
+            new Dictionary<string, Position> { [monsterId.ToString()] = new(5, 5) },
+            new List<string>());
+
+        var plannedActions = new Dictionary<string, string>
+        {
+            [Guid.NewGuid().ToString()] = ActionJson("move", new PositionDto(3, 3)),
+            [monsterId.ToString()] = ActionJson("move", new PositionDto(6, 5)),
+        };
+
+        var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
+
+        var result = await service.ResolveRoundAsync(encounterId);
+
+        var movement = Assert.Single(result.Ticks[0].Movements);
+        Assert.Equal(monsterId.ToString(), movement.CombatantId);
+    }
 }
