@@ -1,0 +1,19 @@
+{
+  // Phase 3A shape: one action each. Damage within a tick is simultaneous and the
+  // defeat check runs after all of it is applied, so both combatants go down.
+  "description": "3A single action: adjacent melee trade kills both",
+  "combatants": [
+    { "id": "Knight", "hp": 4, "damage": "d8", "at": [0, 0] },
+    { "id": "Rogue",  "hp": 6, "damage": "d6", "at": [1, 0] }
+  ],
+  "plans": {
+    "Knight": ["melee Rogue"],
+    "Rogue":  ["melee Knight"]
+  },
+  "dice": [10, 6, 19, 4],
+  "expect": {
+    "ticks": 1,
+    "hp": { "Knight": 0, "Rogue": 0 },
+    "defeated": ["Knight", "Rogue"]
+  }
+}

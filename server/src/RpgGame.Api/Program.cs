@@ -8,6 +8,7 @@ using RpgGame.Api.Services;
 using RpgGame.Api.Swagger;
 using RpgGame.Infrastructure.Data;
 using RpgGame.Infrastructure.Identity;
+using RpgGame.Rules;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -83,6 +84,7 @@ builder.Services.AddSingleton<IRedisGameState, RedisGameState>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IEncounterService, EncounterService>();
 builder.Services.AddScoped<IPlanningService, PlanningService>();
+builder.Services.AddSingleton<IDiceRoller, RandomDice>();
 builder.Services.AddScoped<IResolutionService, ResolutionService>();
 builder.Services.AddSingleton<PlanningTimerService>();
 

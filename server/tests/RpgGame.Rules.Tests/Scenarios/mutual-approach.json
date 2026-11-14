@@ -1,0 +1,26 @@
+{
+  // TICK_RESOLUTION.md Scenario 3 (Mutual Approach).
+  // Tick 1: both run at (4,5). On the second step they contest it; A has higher speed
+  //         (and is listed first — see README "plan order"), so B stops one cell short.
+  // Tick 2: they hit each other simultaneously — mutual kill.
+  "description": "Mutual approach: contested cell, then simultaneous melee kills both",
+  "combatants": [
+    { "id": "A", "hp": 8, "speed": 12, "damage": "d8", "at": [2, 5] },
+    { "id": "B", "hp": 5, "speed": 10, "damage": "d8", "at": [6, 5] }
+  ],
+  "plans": {
+    "A": ["move 4,5", "melee B", "defend"],
+    "B": ["move 4,5", "melee A", "defend"]
+  },
+  "dice": [
+    13, 5,   // tick 2: A melee B → 5 (B 5 → 0)
+    16, 8    // tick 2: B melee A → 8 (A 8 → 0)
+  ],
+  "expect": {
+    "positions": { "A": [4, 5], "B": [5, 5] },
+    "blocked": [ { "tick": 1, "id": "B" } ],
+    "hp": { "A": 0, "B": 0 },
+    "defeated": ["A", "B"],
+    "hits": [ { "tick": 2, "attacker": "A" }, { "tick": 2, "attacker": "B" } ]
+  }
+}

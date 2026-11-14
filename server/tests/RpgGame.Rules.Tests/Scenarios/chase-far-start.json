@@ -1,0 +1,22 @@
+{
+  // TICK_RESOLUTION.md Scenario 1 (Chase), starting distance 3:
+  // the mage's retreat buys a tick and the fighter's melee whiffs.
+  "description": "Chase: fighter starting 3 cells away is still out of reach on tick 3",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [2, 5] },
+    { "id": "Mage",    "hp": 20, "damage": "d4", "at": [5, 5] }
+  ],
+  "plans": {
+    "Fighter": ["move 3,5", "move 4,5", "melee Mage"],
+    "Mage":    ["move 6,5", "ranged Fighter", "defend"]
+  },
+  "dice": [
+    14, 3    // tick 2: Mage ranged hits for 3. Fighter's melee on tick 3 is wasted — no roll.
+  ],
+  "expect": {
+    "positions": { "Fighter": [4, 5], "Mage": [6, 5] },
+    "hp": { "Fighter": 17, "Mage": 20 },
+    "hits": [ { "tick": 2, "attacker": "Mage" } ],
+    "wasted": [ { "tick": 3, "attacker": "Fighter" } ]
+  }
+}

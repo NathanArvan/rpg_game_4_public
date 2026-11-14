@@ -6,11 +6,12 @@ using RpgGame.Api.Models;
 using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
+using RpgGame.Rules;
 using System.Text.Json;
 
 namespace RpgGame.Api.Tests;
 
-public class ResolutionServiceTests
+public partial class ResolutionServiceTests
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -164,7 +165,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -206,7 +207,7 @@ public class ResolutionServiceTests
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry,
             hpByKey: new Dictionary<string, int> { [characterId.ToString()] = 20, [monsterIdStr] = 20 });
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -246,7 +247,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -285,7 +286,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -319,7 +320,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(15, 3), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -350,7 +351,7 @@ public class ResolutionServiceTests
         };
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -375,7 +376,7 @@ public class ResolutionServiceTests
             new List<string>());
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), new Dictionary<string, string>(), mapEntry);
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
@@ -407,10 +408,41 @@ public class ResolutionServiceTests
 
         var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry,
             preDefeated: new HashSet<string> { defeatedId.ToString() });
-        var service = new ResolutionService(db, mockRedis.Object, NullLogger<ResolutionService>.Instance);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
 
         var result = await service.ResolveRoundAsync(encounterId);
 
         Assert.Empty(result.Ticks[0].Attacks);
+    }
+
+    [Fact]
+    public async Task ResolveRound_PlanForUnknownCombatant_IsIgnored()
+    {
+        // Intentional deviation in the rules-engine extraction: PlanningService never stores plans
+        // for non-combatants, but if one appears the adapter now drops it instead of resolving it
+        // as an "Unknown" Dex-10 / d4 combatant.
+        await using var db = CreateDb();
+        var sessionId = Guid.NewGuid();
+        var monsterId = Guid.NewGuid();
+        var encounterId = await SeedEncounterWithMonsters(db, sessionId, (monsterId, "Goblin"));
+        var encounterIdStr = encounterId.ToString();
+
+        var mapEntry = new MapEntry(20, 20,
+            new Dictionary<string, Position> { [monsterId.ToString()] = new(5, 5) },
+            new List<string>());
+
+        var plannedActions = new Dictionary<string, string>
+        {
+            [Guid.NewGuid().ToString()] = ActionJson("move", new PositionDto(3, 3)),
+            [monsterId.ToString()] = ActionJson("move", new PositionDto(6, 5)),
+        };
+
+        var mockRedis = BuildMockRedis(encounterIdStr, sessionId.ToString(), plannedActions, mapEntry);
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(), NullLogger<ResolutionService>.Instance);
+
+        var result = await service.ResolveRoundAsync(encounterId);
+
+        var movement = Assert.Single(result.Ticks[0].Movements);
+        Assert.Equal(monsterId.ToString(), movement.CombatantId);
     }
 }

@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\RpgGame.Domain\RpgGame.Domain.csproj" />
     <ProjectReference Include="..\RpgGame.Infrastructure\RpgGame.Infrastructure.csproj" />
+    <ProjectReference Include="..\RpgGame.Rules\RpgGame.Rules.csproj" />
   </ItemGroup>
 
   <ItemGroup>

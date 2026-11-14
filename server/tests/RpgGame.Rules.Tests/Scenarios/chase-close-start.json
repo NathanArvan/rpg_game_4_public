@@ -1,0 +1,26 @@
+{
+  // TICK_RESOLUTION.md Scenario 1 (Chase), starting distance 2:
+  // the fighter closes in and lands the melee on tick 3.
+  "description": "Chase: fighter starting 2 cells away catches the retreating mage",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [3, 5] },
+    { "id": "Mage",    "hp": 20, "damage": "d4", "at": [5, 5] }
+  ],
+  "plans": {
+    "Fighter": ["move 4,5", "move 5,5", "melee Mage"],
+    "Mage":    ["move 6,5", "ranged Fighter", "defend"]
+  },
+  "dice": [
+    14, 3,   // tick 2: Mage ranged — d20 14 hits, d4 3 damage
+    11, 6    // tick 3: Fighter melee — d20 11 hits, d8 6 damage
+  ],
+  "expect": {
+    "ticks": 3,
+    "positions": { "Fighter": [5, 5], "Mage": [6, 5] },
+    "hp": { "Fighter": 17, "Mage": 14 },
+    "hits": [ { "tick": 2, "attacker": "Mage" }, { "tick": 3, "attacker": "Fighter" } ],
+    "wasted": [],
+    "blocked": [],
+    "defeated": []
+  }
+}

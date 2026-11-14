@@ -1,0 +1,19 @@
+{
+  // Movement resolves before attacks within a tick, and melee reach is checked against
+  // post-movement positions. The target steps away, so the swing is wasted (no dice rolled).
+  "description": "Melee whiffs when the target moves out of reach in the same tick",
+  "combatants": [
+    { "id": "Orc",   "at": [0, 0] },
+    { "id": "Scout", "at": [1, 0] }
+  ],
+  "plans": {
+    "Orc":   ["melee Scout"],
+    "Scout": ["move 4,0"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Orc": [0, 0], "Scout": [4, 0] },
+    "hp": { "Scout": 20 },
+    "wasted": [ { "tick": 1, "attacker": "Orc" } ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  // TICK_RESOLUTION.md Scenario 2 (Focus Fire).
+  // Tick 1: B steps next to C; A's ranged shot and C's melee on B resolve simultaneously.
+  // Tick 2: A and B both hit C, damage is netted, and C drops.
+  // Tick 3: C's queued defend is voided because C was defeated in tick 2.
+  "description": "Focus fire: two attackers bring C down on tick 2",
+  "combatants": [
+    { "id": "A", "hp": 20, "damage": "d6", "at": [0, 5] },
+    { "id": "B", "hp": 20, "damage": "d8", "at": [5, 3] },
+    { "id": "C", "hp": 14, "damage": "d8", "at": [5, 5] }
+  ],
+  "plans": {
+    "A": ["ranged C", "ranged C", "defend"],
+    "B": ["move 5,4", "melee C", "defend"],
+    "C": ["melee B", "defend", "defend"]
+  },
+  "dice": [
+    12, 4,   // tick 1: A ranged C → 4   (C 14 → 10)
+    15, 7,   // tick 1: C melee B  → 7   (B 20 → 13) — B is adjacent after moving
+    10, 2,   // tick 2: A ranged C → 2
+    18, 8    // tick 2: B melee C  → 8   (C 10 → 0, defeated)
+  ],
+  "expect": {
+    "ticks": 3,
+    "positions": { "B": [5, 4], "C": [5, 5] },
+    "hp": { "A": 20, "B": 13, "C": 0 },
+    "defeated": ["C"],
+    "hits": [
+      { "tick": 1, "attacker": "A" }, { "tick": 1, "attacker": "C" },
+      { "tick": 2, "attacker": "A" }, { "tick": 2, "attacker": "B" }
+    ],
+    "wasted": []
+  }
+}

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure combat rules engine. Deliberately has NO package or project references:
+    no EF, Redis, SignalR, ASP.NET or logging. RpgGame.Api references this project,
+    never the reverse.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RpgGame.Rules.Tests" />
+  </ItemGroup>
+
+</Project>
