@@ -192,7 +192,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk1_RangedMiss_SaysSwingsAt()
+    public async Task Char_RangedMiss_UsesShootsAt()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin A", (0, 0));
@@ -201,7 +201,7 @@ public partial class ResolutionServiceTests
 
         var r = await s.Run(new ScriptedDice(1));
 
-        Assert.Equal("Goblin A swings at Goblin B and misses", SingleAttack(r).FeedText);
+        Assert.Equal("Goblin A shoots at Goblin B and misses", SingleAttack(r).FeedText);
     }
 
     [Fact]

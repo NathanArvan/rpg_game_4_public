@@ -11,12 +11,14 @@ internal static class ResolutionFeedFormatter
 {
     public static string Attack(AttackOutcome attack, string attackerName, string targetName)
     {
-        string attackVerb = attack.AttackType == ActionType.RangedAttack ? "shoots at" : "strikes";
+        bool ranged = attack.AttackType == ActionType.RangedAttack;
+        string attackVerb = ranged ? "shoots at" : "strikes";
+        string missVerb = ranged ? "shoots at" : "swings at";
 
         if (attack.Wasted)
             return $"{attackerName}'s attack on {targetName} fails — {WastedReasonText(attack.WastedReason)}";
         if (!attack.Hit)
-            return $"{attackerName} swings at {targetName} and misses"; // Quirk 1: ranged misses also "swing"
+            return $"{attackerName} {missVerb} {targetName} and misses";
         if (attack.TargetDefeated)
             return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage — defeated!";
         return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
