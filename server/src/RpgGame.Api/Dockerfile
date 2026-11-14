@@ -1,9 +1,9 @@
 # Stage 1: Build
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy solution and project files first (layer-cache friendly restore)
-COPY RpgGame.sln ./
+COPY RpgGame.sln global.json ./
 COPY src/RpgGame.Api/RpgGame.Api.csproj             src/RpgGame.Api/
 COPY src/RpgGame.Domain/RpgGame.Domain.csproj        src/RpgGame.Domain/
 COPY src/RpgGame.Infrastructure/RpgGame.Infrastructure.csproj src/RpgGame.Infrastructure/
@@ -18,7 +18,7 @@ RUN dotnet publish src/RpgGame.Api/RpgGame.Api.csproj \
     -c Release -o /app/publish
 
 # Stage 2: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 
