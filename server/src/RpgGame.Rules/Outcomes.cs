@@ -14,7 +14,7 @@ public sealed record TickOutcome(
     IReadOnlyList<EffectOutcome> Effects);
 
 /// <param name="Path">Cells actually traversed, starting with the origin cell.</param>
-/// <param name="BlockedById">Who stopped this mover (may be the mover itself — see quirk 7).</param>
+/// <param name="BlockedById">Who stopped this mover.</param>
 public sealed record MovementOutcome(
     string CombatantId,
     IReadOnlyList<GridPosition> Path,

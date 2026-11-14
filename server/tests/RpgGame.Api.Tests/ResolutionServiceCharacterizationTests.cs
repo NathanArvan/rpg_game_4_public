@@ -547,7 +547,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk7_ContestedCell_FirstPlannedClaimantWins_EvenIfSlower()
+    public async Task Char_ContestedCell_FasterClaimantWins_EvenIfPlannedSecond()
     {
         await using var s = new Scene();
         var monster = s.Monster("Goblin", (2, 0));               // Dex 10
@@ -560,11 +560,11 @@ public partial class ResolutionServiceTests
         var mvs = Assert.Single(r.Ticks).Movements;
         var m = mvs.Single(x => x.CombatantId == monster);
         var p = mvs.Single(x => x.CombatantId == player);
-        Assert.False(m.WasBlocked);
-        Assert.Equal(new PositionDto(1, 0), m.FinalPosition);
-        Assert.True(p.WasBlocked);
-        Assert.Equal(player, p.BlockedByCombatantId); // blocked by itself
-        Assert.Equal(new PositionDto(0, 0), p.FinalPosition);
+        Assert.False(p.WasBlocked);
+        Assert.Equal(new PositionDto(1, 0), p.FinalPosition);
+        Assert.True(m.WasBlocked);
+        Assert.Equal(player, m.BlockedByCombatantId);
+        Assert.Equal(new PositionDto(2, 0), m.FinalPosition);
     }
 
     [Fact]

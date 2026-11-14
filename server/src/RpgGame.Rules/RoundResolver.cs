@@ -9,8 +9,8 @@ namespace RpgGame.Rules;
 /// <para>Pure: never mutates its inputs and does no I/O, logging or clock access. All randomness
 /// comes from the supplied <see cref="IDiceRoller"/>.</para>
 /// <para><b>Plan order matters.</b> <c>plans</c> is enumerated in its given order, which decides
-/// the order dice are rolled, the order of results within a tick, and the contested-cell winner
-/// (quirk 7). Pass an insertion-ordered dictionary such as <see cref="Dictionary{TKey,TValue}"/>.</para>
+/// the order dice are rolled, the order of results within a tick, and who is reported as the
+/// blocker when tied-speed movers contest a cell. Pass an insertion-ordered dictionary such as <see cref="Dictionary{TKey,TValue}"/>.</para>
 /// <para>Comments tagged "Quirk N" mark current behavior that is preserved deliberately but may
 /// not match the design docs; see the refactor/extract-rules-engine PR for the list.</para>
 /// </remarks>
@@ -109,12 +109,9 @@ public static class RoundResolver
                 }
                 else
                 {
-                    // Quirk 7: the losers are every claimant except the FIRST IN PLAN ORDER,
-                    // not every claimant except the fastest. So the first-planned claimant
-                    // takes the cell even when slower, and the fastest can end up blocked by
-                    // itself. Design intent (DESIGN_SPIKE / TICK_RESOLUTION) is "higher Speed
-                    // wins" — fixing this is a gameplay change, deferred.
-                    foreach (var id in claimants.Skip(1))
+                    // Higher Speed wins (DESIGN_SPIKE / TICK_RESOLUTION): the fastest claimant
+                    // takes the cell regardless of plan order; everyone else is blocked by it.
+                    foreach (var id in bySpeed.Skip(1))
                     {
                         blocked.Add(id);
                         byId[id].BlockedBy = bySpeed[0];

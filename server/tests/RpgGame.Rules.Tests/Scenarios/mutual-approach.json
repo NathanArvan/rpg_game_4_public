@@ -1,7 +1,7 @@
 {
   // TICK_RESOLUTION.md Scenario 3 (Mutual Approach).
-  // Tick 1: both run at (4,5). On the second step they contest it; A has higher speed
-  //         (and is listed first — see README "plan order"), so B stops one cell short.
+  // Tick 1: both run at (4,5). On the second step they contest it; A has higher speed,
+  //         so B stops one cell short.
   // Tick 2: they hit each other simultaneously — mutual kill.
   "description": "Mutual approach: contested cell, then simultaneous melee kills both",
   "combatants": [

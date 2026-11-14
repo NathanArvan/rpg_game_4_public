@@ -1,0 +1,18 @@
+{
+  // Same as contested-cell-speed-winner.json, but the slower mover is planned first.
+  // Plan order must not matter: the faster one still claims the cell (issue #75).
+  "description": "Contested cell: faster mover wins even when the slower one is planned first",
+  "combatants": [
+    { "id": "Fast", "speed": 14, "at": [0, 0] },
+    { "id": "Slow", "speed": 10, "at": [2, 0] }
+  ],
+  "plans": {
+    "Slow": ["move 1,0"],
+    "Fast": ["move 1,0"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Fast": [1, 0], "Slow": [2, 0] },
+    "blocked": [ { "tick": 1, "id": "Slow" } ]
+  }
+}
