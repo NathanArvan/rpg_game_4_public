@@ -518,7 +518,8 @@ public record EffectResult(
 
 Each `AttackResult` includes a `FeedText` string for the combat log. Examples:
 - Hit: `"Thorin strikes Goblin A for 6 damage (HP: 12 → 6)"`
-- Miss: `"Thorin swings at Goblin A and misses"`
+- Miss (melee): `"Thorin swings at Goblin A and misses"`
+- Miss (ranged): `"Elena shoots at Goblin B and misses"`
 - Wasted (melee out of range): `"Thorin's melee attack on Goblin A fails — target out of reach"`
 - Kill: `"Thorin strikes Goblin A for 8 damage — defeated!"`
 - Mutual kill: both combatants get their own feed entries, both show as defeated
