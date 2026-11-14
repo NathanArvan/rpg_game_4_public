@@ -2,7 +2,7 @@
 
 > **Status:** Core model locked. This document is the authoritative reference for how multiple actions per round resolve in the simultaneous turn system. It supersedes the single-pass phase model described in `DESIGN_SPIKE.md` Decision 1 — the phase ordering (Movement → Attacks → Effects) is preserved, but is now applied *per tick* rather than once per round.
 >
-> **Depends on:** `DESIGN_SPIKE.md` (damage pipeline, hit checks, HP netting), `ROADMAP_SIMULTANEOUS.md` (slice sequencing), `GAME_DESIGN.md` (design philosophy).
+> **Depends on:** `DESIGN_SPIKE.md` (damage pipeline, hit checks, HP netting), `ROADMAP_STRATEGIC.md` (slice sequencing), `GAME_DESIGN.md` (design philosophy).
 >
 > **Core principle:** Each round, players queue an ordered sequence of actions funded by an AP budget. Resolution processes one tick at a time. Within each tick, all actions at that queue position resolve simultaneously using the existing phase ordering. This preserves the simultaneous feel while giving AP real meaning as a budget for action sequencing.
 

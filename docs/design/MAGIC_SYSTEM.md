@@ -2,7 +2,7 @@
 
 > **Status:** Draft. This document defines the environmental magic layer — how magic exists in the world, how the battlefield expresses it, and how it interacts with the ability system. The question of *internal* magic sources (how individual characters connect to environmental magic) is explicitly deferred to post-playtesting.
 >
-> **Depends on:** `GAME_DESIGN.md` (design philosophy), `ROADMAP_SIMULTANEOUS.md` (slices 3B.3 Abilities, 3B.4 Conditions, 3D.4 Dynamic Environments), `DESIGN_SPIKE.md` (resolution pipeline, damage pipeline).
+> **Depends on:** `GAME_DESIGN.md` (design philosophy), `ROADMAP_STRATEGIC.md` (slices 3B.3 Abilities, 3B.4 Conditions, 3D.4 Dynamic Environments), `DESIGN_SPIKE.md` (resolution pipeline, damage pipeline).
 >
 > **Core principle:** Magic is an external force that exists in the world. The battlefield is a magical landscape. Characters have abilities that interact with that landscape. The environment amplifies, restricts, enables, or transforms what those abilities can do.
 

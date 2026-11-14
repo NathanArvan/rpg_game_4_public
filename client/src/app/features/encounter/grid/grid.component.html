@@ -8,6 +8,8 @@
       <div
         *ngFor="let cell of cells$ | async"
         class="cell"
+        [attr.data-x]="cell.x"
+        [attr.data-y]="cell.y"
         [class.in-range]="isInRange(cell)"
         [class.ghost]="isGhostTarget(cell)"
         [class.enemy-ghost]="isEnemyGhostTarget(cell)"

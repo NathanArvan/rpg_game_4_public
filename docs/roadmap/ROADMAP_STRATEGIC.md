@@ -17,6 +17,8 @@ Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
 **Phase 1 & 2** — Auth, campaigns, sessions, character CRUD, a sequential encounter loop (initiative → move → attack → end turn), a 20×20 grid, and a combat feed. All works end-to-end across multiple browser tabs. The sequential turn system will be replaced, but the infrastructure beneath it — Redis state, SignalR broadcasting, NGXS slices, the service layer pattern — carries forward.
 
+**Phase 3A** (merged April–May 2026, PRs #62–#69) — Simultaneous planning, tick-based resolution with playback, GM enemy planning, and a combat UI pass. The sequential turn system has been removed. Known gaps carried forward: no end-of-encounter detection (`EncounterEnded` is never broadcast), and the planning timer is 300s rather than the 30s default below.
+
 ---
 
 ## Phase 3A — Simultaneous Turn Foundation
@@ -25,15 +27,15 @@ Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
 *Architecture note:* The resolution engine is built as a **tick loop** from day one. In 3A, every combatant queues exactly one action, so the loop runs exactly one tick per round. When AP lands in 3B.2, the constraint lifts and queue length becomes variable with zero structural changes. See `TICK_RESOLUTION.md`.
 
-### ⬜ Slice 3A.1 — Planning Phase & Lock-In
+### ✅ Slice 3A.1 — Planning Phase & Lock-In
 
 Delivers: All players enter a planning phase simultaneously. Each player plans one action (move, melee attack, ranged attack, or defend) submitted as an action array of length 1. Players lock in when ready. A countdown timer enforces a deadline. The GM can force-start resolution. No actions resolve yet.
 
-### ⬜ Slice 3A.2 — Resolution Engine & Playback
+### ✅ Slice 3A.2 — Resolution Engine & Playback
 
 Delivers: After all players lock in (or timer expires), the server resolves all planned actions simultaneously via the tick loop (Movement → Attacks → Effects) and broadcasts results. All clients play back the resolution sequence. A new round begins automatically. This is the most complex new server component in the project.
 
-### ⬜ Slice 3A.3 — GM Enemy Planning
+### ✅ Slice 3A.3 — GM Enemy Planning
 
 Delivers: During the planning phase, the GM plans actions for all enemy combatants. Enemies participate in the same resolution cycle as players. The GM counts as one lock-in covering all enemies.
 
