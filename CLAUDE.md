@@ -60,7 +60,8 @@ npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C#
 cd server
 dotnet build
 dotnet watch --project src/RpgGame.Api   # Host API on http://localhost:5291 with hot reload
-dotnet test                              # xUnit tests in server/tests/RpgGame.Api.Tests
+dotnet test                              # xUnit tests: RpgGame.Api.Tests + RpgGame.Rules.Tests
+dotnet test tests/RpgGame.Rules.Tests    # rules engine + scenarios only (no DB/Redis, ~1s)
 
 # EF migrations (from server/src/RpgGame.Infrastructure/)
 dotnet ef migrations add <Name> --startup-project ../RpgGame.Api
@@ -70,6 +71,13 @@ dotnet ef database update --startup-project ../RpgGame.Api
 dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net10.0/RpgGame.Api.dll v1
 ```
 Note: `dotnet build` of the API also rewrites `contracts/openapi.json` via a post-build step.
+
+### Design Loop (game-rule changes)
+Combat rules live in the pure `RpgGame.Rules` library, so a rule change doesn't need the server, a browser or containers:
+1. Change the rule in `server/src/RpgGame.Rules/` (usually `RoundResolver` or `RulesConfig`).
+2. Add or adjust a scenario JSON in `server/tests/RpgGame.Rules.Tests/Scenarios/` (format: that folder's `README.md`) and/or a `RoundResolverTests` case.
+3. `dotnet test server/tests/RpgGame.Rules.Tests` — runs in about a second.
+4. Then the full `dotnet test` (the `ResolutionServiceTests` characterization tests pin exact feed text and persistence) and E2E if the change reaches the client.
 
 ### End-to-End Tests (Playwright)
 ```bash
@@ -84,10 +92,11 @@ The E2E suite drives two isolated browser contexts (GM + player) through the ful
 ## Architecture
 
 ### Layers (Server)
-Clean Architecture with three projects:
+Clean Architecture with four projects:
 - **RpgGame.Domain** — Entities only (no EF, no Identity). All game entities live here.
 - **RpgGame.Infrastructure** — EF `AppDbContext` (IdentityDbContext<AppUser>), `AppUser`, migrations. Depends on Domain.
-- **RpgGame.Api** — Controllers, SignalR Hubs, services, `Program.cs`. Depends on both layers.
+- **RpgGame.Rules** — Pure combat rules engine. **No dependencies at all** (no packages, no EF/Redis/SignalR/ASP.NET/logging, no Domain). Own immutable types (`EncounterState`, `CombatantState`, `PlannedAction`, `RoundOutcome`, …), `RulesConfig` (3A constants), `CombatMath`, `IDiceRoller` (`RandomDice`, `SeededDice`, `ScriptedDice`), and `RoundResolver.Resolve(state, plans, dice, config)` — the tick loop. Never mutates inputs; plan (dictionary) order is meaningful (roll order, result order, contested-cell winner).
+- **RpgGame.Api** — Controllers, SignalR Hubs, services, `Program.cs`. Depends on Domain, Infrastructure and Rules (never the reverse).
 
 `AppUser` intentionally lives in Infrastructure (not Domain) because it extends `IdentityUser`.
 
@@ -129,7 +138,7 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 1. **Lobby** — GM creates campaign → starts session → connects; GM can `AddMonster` (staged in Redis until the encounter starts). Players join with a character.
 2. **StartEncounter** — creates Encounter + Combatants, places players on row 0 and monsters on row 19, broadcasts `EncounterStarted` + `PlanningPhaseStarted`, starts the planning timer (`GameConstants.PlanningTimerSeconds`, currently 300s).
 3. **Planning** — each player plans one action (`move` | `melee_attack` | `ranged_attack` | `defend`) as a `PlannedActionArray` of length 1 and locks in. GM plans each monster (`PlanEnemyAction`) and locks in all enemies at once (`LockInEnemies`; unplanned monsters defend).
-4. **Resolution** — when every living combatant is locked in (or GM `ForceResolve`, or timer expiry), `ResolutionService` runs the tick loop (Movement → Attacks → Effects), writes Redis + `GameEvent`s, broadcasts `ResolutionCompleted` (which carries `defeatedCombatantIds`), then the next `PlanningPhaseStarted`.
+4. **Resolution** — when every living combatant is locked in (or GM `ForceResolve`, or timer expiry), `ResolutionService` hands state to `RoundResolver`, which runs the tick loop (Movement → Attacks → Effects); `ResolutionService` then writes Redis + `GameEvent`s, broadcasts `ResolutionCompleted` (which carries `defeatedCombatantIds`), then the next `PlanningPhaseStarted`.
 
 **Known gap:** there is no end-of-encounter yet. `EncounterEnded` and `CombatantDefeated` exist as contracts and client handlers, but the server never broadcasts them — rounds keep cycling after one side is wiped out.
 
@@ -207,9 +216,11 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **ISessionService / SessionService** — Scoped; `JoinSession` (DB lookup, character validation, campaign member auto-join, Redis player upsert)
 - **IEncounterService / EncounterService** — Scoped; `StartEncounterAsync` (DB persist, map/HP seed, round 1 planning) and `AddMonsterAsync`
 - **IPlanningService / PlanningService** — Scoped; `PlanAction`, `LockIn`, `ForceResolve`, `PlanEnemyAction`, `LockInEnemies`; decides when all living combatants are locked in
-- **IResolutionService / ResolutionService** — Scoped; `ResolveRoundAsync` — the tick loop. Loads state from DB/Redis, runs pure static phase methods (`ResolveMovementPhase`, `ResolveAttackPhase`, `ResolveEffectsPhase`), writes results back, returns `ResolutionPayload`
+- **IResolutionService / ResolutionService** — Scoped; `ResolveRoundAsync` is an **adapter** around `RpgGame.Rules.RoundResolver`: loads state from DB/Redis, maps it to `EncounterState` + plans (data-seeding defaults such as monster MaxHp 20 / fighter live here, not in Rules), calls the resolver with the injected `IDiceRoller`, maps the `RoundOutcome` to `ResolutionPayload`, then persists (GameEvents to DB before Redis mutations)
+- **ResolutionFeedFormatter** — `internal static`; feed text for attack/effect results (presentation stays in Api). Strings are pinned byte-for-byte by tests
+- **RulesWireMapping** — `internal static`; hub wire strings (`"melee_attack"`, …) ⇄ Rules enums
+- **IDiceRoller** (from Rules) — registered as a `RandomDice` singleton; tests inject `ScriptedDice`
 - **PlanningTimerService** — Singleton; per-encounter countdown (`Task.Delay` + CTS); on expiry resolves via `IHubContext<GameHub>` and starts the next round
-- **CombatDice** — `internal static` helper; `DexModifier`, `RollD20`, `RollDamage`, `DamageDiceString`
 - **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
 
 `GameHub` is a thin orchestrator — business logic lives in the scoped services above.
@@ -292,6 +303,7 @@ All branches target `master`. Branch protection requires CI to pass and a PR bef
 **Required GitHub Secrets:** `DROPLET_HOST`, `DROPLET_SSH_KEY`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `GHCR_PAT`
 
 ### Tests
-- **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `CombatDiceTests`, `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests`. Redis is mocked via `IRedisGameState`.
+- **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests` (+ `ResolutionServiceCharacterizationTests`, which pin exact feed text, roll order, persistence and known quirks using `ScriptedDice`). Redis is mocked via `IRedisGameState`.
+- **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `DiceTests`, `CombatMathTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable round scenarios; see `Scenarios/README.md`).
 - **Client (Karma/Jasmine)** — specs for all NGXS state slices (`state/*/*.state.spec.ts`) plus component smoke specs.
 - **E2E (Playwright)** — `e2e/tests/`; see the command section above.
