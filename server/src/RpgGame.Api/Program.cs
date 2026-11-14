@@ -8,6 +8,7 @@ using RpgGame.Api.Services;
 using RpgGame.Api.Swagger;
 using RpgGame.Infrastructure.Data;
 using RpgGame.Infrastructure.Identity;
+using RpgGame.Rules;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);

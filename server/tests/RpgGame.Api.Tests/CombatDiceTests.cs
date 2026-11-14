@@ -1,4 +1,5 @@
 using RpgGame.Api.Services;
+using RpgGame.Rules;
 
 namespace RpgGame.Api.Tests;
 

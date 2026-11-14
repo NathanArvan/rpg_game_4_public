@@ -6,6 +6,7 @@ using RpgGame.Api.Models;
 using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
+using RpgGame.Rules;
 
 namespace RpgGame.Api.Tests;
 

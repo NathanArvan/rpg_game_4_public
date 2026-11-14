@@ -7,7 +7,9 @@ COPY RpgGame.sln global.json ./
 COPY src/RpgGame.Api/RpgGame.Api.csproj             src/RpgGame.Api/
 COPY src/RpgGame.Domain/RpgGame.Domain.csproj        src/RpgGame.Domain/
 COPY src/RpgGame.Infrastructure/RpgGame.Infrastructure.csproj src/RpgGame.Infrastructure/
+COPY src/RpgGame.Rules/RpgGame.Rules.csproj          src/RpgGame.Rules/
 COPY tests/RpgGame.Api.Tests/RpgGame.Api.Tests.csproj tests/RpgGame.Api.Tests/
+COPY tests/RpgGame.Rules.Tests/RpgGame.Rules.Tests.csproj tests/RpgGame.Rules.Tests/
 
 RUN dotnet restore
 
