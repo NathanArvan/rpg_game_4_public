@@ -93,16 +93,39 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void Quirk7_ContestedCell_FirstPlannedWins_EvenWhenSlower()
+    public void ContestedCell_FasterWins_EvenWhenPlannedSecond()
     {
         var o = Resolve(State(C("Fast", 0, 0, speed: 14), C("Slow", 2, 0, speed: 10)),
             new Plans().Add("Slow", PlannedAction.Move(1, 0)).Add("Fast", PlannedAction.Move(1, 0)),
             new ScriptedDice());
 
-        var fast = Assert.Single(o.Ticks).Movements.Single(m => m.CombatantId == "Fast");
-        Assert.True(fast.WasBlocked);
-        Assert.Equal("Fast", fast.BlockedById); // blocked by itself
-        Assert.Equal(P(1, 0), Final(o, "Slow").Position);
+        var mvs = Assert.Single(o.Ticks).Movements;
+        Assert.False(mvs.Single(m => m.CombatantId == "Fast").WasBlocked);
+        var slow = mvs.Single(m => m.CombatantId == "Slow");
+        Assert.True(slow.WasBlocked);
+        Assert.Equal("Fast", slow.BlockedById);
+        Assert.Equal(P(1, 0), Final(o, "Fast").Position);
+        Assert.Equal(P(2, 0), Final(o, "Slow").Position);
+    }
+
+    [Fact]
+    public void ContestedCell_ThreeClaimants_FastestWins_OthersBlockedByIt()
+    {
+        var o = Resolve(State(C("Slow", 0, 0, speed: 8), C("Mid", 2, 0, speed: 10), C("Fast", 1, 1, speed: 14)),
+            new Plans().Add("Slow", PlannedAction.Move(1, 0)).Add("Mid", PlannedAction.Move(1, 0)).Add("Fast", PlannedAction.Move(1, 0)),
+            new ScriptedDice());
+
+        var mvs = Assert.Single(o.Ticks).Movements;
+        Assert.False(mvs.Single(m => m.CombatantId == "Fast").WasBlocked);
+        foreach (var id in new[] { "Slow", "Mid" })
+        {
+            var m = mvs.Single(x => x.CombatantId == id);
+            Assert.True(m.WasBlocked);
+            Assert.Equal("Fast", m.BlockedById);
+        }
+        Assert.Equal(P(1, 0), Final(o, "Fast").Position);
+        Assert.Equal(P(0, 0), Final(o, "Slow").Position);
+        Assert.Equal(P(2, 0), Final(o, "Mid").Position);
     }
 
     [Fact]

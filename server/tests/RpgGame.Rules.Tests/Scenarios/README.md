@@ -71,9 +71,9 @@ within a tick is simultaneous, so two combatants can kill each other. Anyone def
 a tick loses the rest of their queue.
 
 **Plan order matters.** The order of keys in `plans` decides the order dice are consumed.
-It also decides who wins a contested cell. Because of a known quirk, when the two
-claimants have different speeds, the **first-listed** claimant gets the cell, even if it
-is slower. List the faster one first if you want the design-doc behavior.
+It does **not** decide who wins a contested cell: the fastest claimant always gets it,
+and the others are blocked by it. If the top two claimants tie on speed, every claimant
+stops; plan order then only decides who each one reports as its blocker.
 
 ### `dice`
 
