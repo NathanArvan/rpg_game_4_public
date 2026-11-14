@@ -1,0 +1,108 @@
+# Combat scenarios
+
+Each `*.json` file in this folder describes one round of combat. The file lists who is
+where, what each combatant plans to do, and which numbers the dice roll. It also says
+what the result should be. `ScenarioTests` runs every file through `RoundResolver` (the
+pure rules engine in `server/src/RpgGame.Rules`).
+
+```bash
+dotnet test server/tests/RpgGame.Rules.Tests                     # all rules tests, about a second
+dotnet test server/tests/RpgGame.Rules.Tests --filter Scenario   # just the scenarios
+```
+
+To add a scenario, drop a new `.json` file here. You don't need to touch any C#.
+
+## Example
+
+```jsonc
+{
+  "description": "Chase: fighter starting 2 cells away catches the retreating mage",
+  "grid": [20, 20],                       // optional, default 20x20
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "speed": 10, "damage": "d8", "at": [3, 5] },
+    { "id": "Mage",    "hp": 20, "damage": "d4", "at": [5, 5] }
+  ],
+  "plans": {
+    "Fighter": ["move 4,5", "move 5,5", "melee Mage"],
+    "Mage":    ["move 6,5", "ranged Fighter", "defend"]
+  },
+  "dice": [14, 3, 11, 6],
+  "expect": {
+    "positions": { "Fighter": [5, 5], "Mage": [6, 5] },
+    "hp": { "Fighter": 17, "Mage": 14 },
+    "hits": [ { "tick": 2, "attacker": "Mage" }, { "tick": 3, "attacker": "Fighter" } ]
+  }
+}
+```
+
+Comments (`//`, `/* */`) and trailing commas are allowed.
+
+## Fields
+
+### `combatants`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `id` | required | The name used in `plans` and `expect` |
+| `name` | `id` | Display name (not used in checks) |
+| `hp` | 20 | HP at the start of the round |
+| `maxHp` | `hp` | Max HP |
+| `speed` | 10 | Movement tiebreaker when two movers claim the same cell. The server currently feeds this from Dex |
+| `damage` | `"d8"` | Damage die, written as `"d4"`, `"d6"`, `"d8"`, or `"1d8"` |
+| `at` | none | `[x, y]` start cell. If you leave it out, the combatant is treated as standing at (0, 0) |
+| `defeated` | false | Already defeated before this round |
+
+### `plans`
+
+Each combatant has an ordered **queue** of actions. Tick 1 runs everyone's first action,
+tick 2 runs everyone's second action, and so on. The number of ticks equals the longest
+queue. A combatant with a shorter queue idles once it runs out. Combatants you don't list
+do nothing.
+
+| Action | Meaning |
+|---|---|
+| `"move X,Y"` | Walk to cell (X, Y) along the shortest path, one cell per step |
+| `"melee ID"` | Melee attack. Requires the target to be adjacent (diagonals count) **after** this tick's movement |
+| `"ranged ID"` | Ranged attack, unlimited range |
+| `"defend"` | No mechanical effect yet |
+
+Within each tick, all movement happens first, then all attacks, then effects. Damage
+within a tick is simultaneous, so two combatants can kill each other. Anyone defeated in
+a tick loses the rest of their queue.
+
+**Plan order matters.** The order of keys in `plans` decides the order dice are consumed.
+It also decides who wins a contested cell. Because of a known quirk, when the two
+claimants have different speeds, the **first-listed** claimant gets the cell, even if it
+is slower. List the faster one first if you want the design-doc behavior.
+
+### `dice`
+
+These are the exact rolls, used in order. Every attack that isn't wasted rolls a d20 to
+hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die. Within a
+tick, attackers roll in plan order. Wasted attacks don't roll at all. A wasted attack is
+one where the target was already defeated, or a melee target is out of reach.
+
+The test fails if the resolver asks for more rolls than you listed. It also fails if a
+roll is impossible for the die (for example, 7 on a d6), or if any rolls are left over.
+
+### `config` (optional)
+
+These override rule constants for this scenario only: `hitThreshold` (default 10),
+`accuracyBonus` (default 0), and `meleeReach` (default 1).
+
+### `expect`
+
+Every key is optional, and only what you list gets checked. **Ticks are numbered from 1.**
+
+| Key | Checks |
+|---|---|
+| `ticks` | Number of ticks resolved |
+| `positions` | `{ "id": [x, y] }`, the final cell |
+| `hp` | `{ "id": hp }`, the final HP. HP can go negative |
+| `defeated` | The **exact** set of combatants defeated at the end of the round, including ones already defeated before it |
+| `blocked` | The exact set of `{ "tick", "id" }` movers that were stopped short |
+| `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
+| `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
+
+When a check fails, the test lists every mismatch, for example
+`hp of B: expected 12, got 13`.

@@ -1,0 +1,225 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using RpgGame.Rules;
+
+namespace RpgGame.Rules.Tests;
+
+/// <summary>
+/// Runs every <c>Scenarios/*.json</c> file through <see cref="RoundResolver"/>.
+/// The file format is documented in <c>Scenarios/README.md</c>.
+/// </summary>
+public partial class ScenarioTests
+{
+    private static readonly string ScenarioDir = Path.Combine(AppContext.BaseDirectory, "Scenarios");
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    public static TheoryData<string> Files()
+    {
+        var data = new TheoryData<string>();
+        foreach (var path in Directory.EnumerateFiles(ScenarioDir, "*.json").Order(StringComparer.Ordinal))
+            data.Add(Path.GetFileName(path));
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Files))]
+    public void Scenario(string file)
+    {
+        var scenario = Load(file);
+        var (state, plans, dice, config) = Build(scenario, file);
+
+        var outcome = RoundResolver.Resolve(state, plans, dice, config);
+
+        var failures = Check(scenario.Expect ?? new ExpectDto(), outcome);
+        if (dice.Remaining != 0)
+            failures.Add($"dice: {dice.Remaining} scripted roll(s) were never used");
+
+        Assert.True(failures.Count == 0,
+            $"{file}: {scenario.Description}\n  - " + string.Join("\n  - ", failures));
+    }
+
+    [Fact]
+    public void ScenarioFolder_IsNotEmpty() => Assert.NotEmpty(Files());
+
+    // ----- Loading -----
+
+    private static ScenarioDto Load(string file)
+    {
+        var json = File.ReadAllText(Path.Combine(ScenarioDir, file));
+        return JsonSerializer.Deserialize<ScenarioDto>(json, JsonOptions)
+            ?? throw new InvalidDataException($"{file}: empty scenario");
+    }
+
+    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, ScriptedDice, RulesConfig) Build(
+        ScenarioDto s, string file)
+    {
+        if (s.Combatants is not { Count: > 0 })
+            throw new InvalidDataException($"{file}: 'combatants' must list at least one combatant");
+
+        var grid = s.Grid ?? [20, 20];
+        var combatants = s.Combatants.Select(c =>
+        {
+            if (string.IsNullOrWhiteSpace(c.Id)) throw new InvalidDataException($"{file}: every combatant needs an 'id'");
+            var hp = c.Hp ?? 20;
+            return new CombatantState(
+                c.Id,
+                c.Name ?? c.Id,
+                hp,
+                c.MaxHp ?? Math.Max(hp, 1),
+                c.Speed ?? 10,
+                DamageDie.Parse(c.Damage ?? "d8"),
+                c.At is { } at ? Cell(at, $"{file}: combatant {c.Id} 'at'") : null,
+                c.Defeated ?? false);
+        }).ToList();
+
+        // JSON object key order is preserved: plan order is meaningful to the resolver.
+        var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
+        foreach (var (id, queue) in s.Plans ?? [])
+            plans[id] = queue.Select(text => ParseAction(text, $"{file}: plan for {id}")).ToList();
+
+        var config = s.Config is null
+            ? RulesConfig.Default
+            : RulesConfig.Default with
+            {
+                HitThreshold = s.Config.HitThreshold ?? RulesConfig.Default.HitThreshold,
+                AccuracyBonus = s.Config.AccuracyBonus ?? RulesConfig.Default.AccuracyBonus,
+                MeleeReach = s.Config.MeleeReach ?? RulesConfig.Default.MeleeReach,
+            };
+
+        return (new EncounterState(grid[0], grid[1], combatants), plans, new ScriptedDice(s.Dice ?? []), config);
+    }
+
+    [GeneratedRegex(@"^\s*move\s+(-?\d+)\s*,\s*(-?\d+)\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex MoveRegex();
+
+    [GeneratedRegex(@"^\s*(melee|ranged)\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex AttackRegex();
+
+    internal static PlannedAction ParseAction(string text, string where)
+    {
+        if (MoveRegex().Match(text) is { Success: true } m)
+            return PlannedAction.Move(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+        if (AttackRegex().Match(text) is { Success: true } a)
+            return a.Groups[1].Value.Equals("melee", StringComparison.OrdinalIgnoreCase)
+                ? PlannedAction.Melee(a.Groups[2].Value)
+                : PlannedAction.Ranged(a.Groups[2].Value);
+        if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
+            return PlannedAction.Defend();
+        throw new FormatException(
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\" or \"defend\".");
+    }
+
+    private static GridPosition Cell(int[] xy, string where) => xy.Length == 2
+        ? new GridPosition(xy[0], xy[1])
+        : throw new InvalidDataException($"{where}: expected [x, y]");
+
+    // ----- Checking -----
+
+    private static List<string> Check(ExpectDto e, RoundOutcome o)
+    {
+        var failures = new List<string>();
+        var final = o.Next.Combatants.ToDictionary(c => c.Id);
+
+        if (e.Ticks is { } ticks && ticks != o.Ticks.Count)
+            failures.Add($"ticks: expected {ticks}, got {o.Ticks.Count}");
+
+        foreach (var (id, xy) in e.Positions ?? [])
+        {
+            var expected = Cell(xy, $"expect.positions.{id}");
+            var actual = final.TryGetValue(id, out var c) ? c.Position : null;
+            if (actual != expected)
+                failures.Add($"position of {id}: expected {expected}, got {actual?.ToString() ?? "none"}");
+        }
+
+        foreach (var (id, hp) in e.Hp ?? [])
+        {
+            var actual = final.TryGetValue(id, out var c) ? c.Hp : (int?)null;
+            if (actual != hp)
+                failures.Add($"hp of {id}: expected {hp}, got {actual?.ToString() ?? "unknown combatant"}");
+        }
+
+        if (e.Defeated is { } defeated)
+            CompareSets("defeated (at end of round)", defeated, final.Values.Where(c => c.IsDefeated).Select(c => c.Id), failures);
+
+        if (e.Blocked is { } blocked)
+            CompareSets("blocked movers", blocked.Select(Key),
+                o.Ticks.SelectMany(t => t.Movements.Where(m => m.WasBlocked).Select(m => Key(t.Index + 1, m.CombatantId))), failures);
+
+        if (e.Hits is { } hits)
+            CompareSets("hits", hits.Select(Key),
+                o.Ticks.SelectMany(t => t.Attacks.Where(a => a.Hit).Select(a => Key(t.Index + 1, a.AttackerId))), failures);
+
+        if (e.Wasted is { } wasted)
+            CompareSets("wasted attacks", wasted.Select(Key),
+                o.Ticks.SelectMany(t => t.Attacks.Where(a => a.Wasted).Select(a => Key(t.Index + 1, a.AttackerId))), failures);
+
+        return failures;
+    }
+
+    private static string Key(TickRefDto r) => Key(r.Tick, r.Id ?? r.Attacker ?? "?");
+    private static string Key(int tick, string id) => $"{id}@tick{tick}";
+
+    private static void CompareSets(string what, IEnumerable<string> expected, IEnumerable<string> actual, List<string> failures)
+    {
+        var exp = expected.Order(StringComparer.Ordinal).ToList();
+        var act = actual.Order(StringComparer.Ordinal).ToList();
+        if (!exp.SequenceEqual(act))
+            failures.Add($"{what}: expected [{string.Join(", ", exp)}], got [{string.Join(", ", act)}]");
+    }
+
+    // ----- File format -----
+
+    private sealed class ScenarioDto
+    {
+        public string? Description { get; set; }
+        public int[]? Grid { get; set; }
+        public List<CombatantDto>? Combatants { get; set; }
+        public Dictionary<string, List<string>>? Plans { get; set; }
+        public int[]? Dice { get; set; }
+        public ConfigDto? Config { get; set; }
+        public ExpectDto? Expect { get; set; }
+    }
+
+    private sealed class CombatantDto
+    {
+        public string Id { get; set; } = "";
+        public string? Name { get; set; }
+        public int? Hp { get; set; }
+        public int? MaxHp { get; set; }
+        public int? Speed { get; set; }
+        public string? Damage { get; set; }
+        public int[]? At { get; set; }
+        public bool? Defeated { get; set; }
+    }
+
+    private sealed class ConfigDto
+    {
+        public int? HitThreshold { get; set; }
+        public int? AccuracyBonus { get; set; }
+        public int? MeleeReach { get; set; }
+    }
+
+    private sealed class ExpectDto
+    {
+        public int? Ticks { get; set; }
+        public Dictionary<string, int[]>? Positions { get; set; }
+        public Dictionary<string, int>? Hp { get; set; }
+        public List<string>? Defeated { get; set; }
+        public List<TickRefDto>? Blocked { get; set; }
+        public List<TickRefDto>? Hits { get; set; }
+        public List<TickRefDto>? Wasted { get; set; }
+    }
+
+    private sealed class TickRefDto
+    {
+        public int Tick { get; set; }
+        public string? Id { get; set; }
+        public string? Attacker { get; set; }
+    }
+}

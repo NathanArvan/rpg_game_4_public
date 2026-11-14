@@ -1,0 +1,20 @@
+{
+  // Two movers claim (1,0) on the same step; the faster one gets it, the other stops.
+  // NOTE: the faster combatant is deliberately planned first. Today the resolver actually
+  // gives the cell to the FIRST-PLANNED claimant whenever speeds differ (known quirk,
+  // pinned in RoundResolverTests.Quirk7_*), so swapping the plan order would flip the result.
+  "description": "Contested cell: higher speed claims it, the slower mover is blocked",
+  "combatants": [
+    { "id": "Fast", "speed": 14, "at": [0, 0] },
+    { "id": "Slow", "speed": 10, "at": [2, 0] }
+  ],
+  "plans": {
+    "Fast": ["move 1,0"],
+    "Slow": ["move 1,0"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Fast": [1, 0], "Slow": [2, 0] },
+    "blocked": [ { "tick": 1, "id": "Slow" } ]
+  }
+}
