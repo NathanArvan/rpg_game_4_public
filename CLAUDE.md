@@ -55,7 +55,7 @@ npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C#
 
 **Component files:** All components must use separate template and style files (`templateUrl` + `styleUrl`). Never use inline `template:` or `styles:` in the `@Component` decorator.
 
-### Server (.NET 8)
+### Server (.NET 10)
 ```bash
 cd server
 dotnet build
@@ -67,7 +67,7 @@ dotnet ef migrations add <Name> --startup-project ../RpgGame.Api
 dotnet ef database update --startup-project ../RpgGame.Api
 
 # Regenerate OpenAPI spec (requires swashbuckle CLI, installed as dotnet tool)
-dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net8.0/RpgGame.Api.dll v1
+dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net10.0/RpgGame.Api.dll v1
 ```
 Note: `dotnet build` of the API also rewrites `contracts/openapi.json` via a post-build step.
 

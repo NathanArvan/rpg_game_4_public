@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace RpgGame.Api.Swagger;
@@ -20,15 +20,19 @@ public class ResponseTypeOperationFilter : IOperationFilter
 
         foreach (var attr in attrs)
         {
+            operation.Responses ??= new OpenApiResponses();
+
             var statusCode = attr.StatusCode.ToString();
             var schema = context.SchemaGenerator.GenerateSchema(attr.Type!, context.SchemaRepository);
 
-            if (!operation.Responses.TryGetValue(statusCode, out var response))
+            if (!operation.Responses.TryGetValue(statusCode, out var existing)
+                || existing is not OpenApiResponse response)
             {
-                response = new OpenApiResponse { Description = "Success" };
+                response = new OpenApiResponse { Description = existing?.Description ?? "Success" };
                 operation.Responses[statusCode] = response;
             }
 
+            response.Content ??= new Dictionary<string, OpenApiMediaType>();
             response.Content["application/json"] = new OpenApiMediaType { Schema = schema };
         }
     }

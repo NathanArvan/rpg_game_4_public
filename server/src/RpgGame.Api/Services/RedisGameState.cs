@@ -44,7 +44,7 @@ public class RedisGameState : IRedisGameState
         var db = _redis.GetDatabase();
         var json = await db.StringGetAsync($"session:{sessionId}:active_encounter");
         if (!json.HasValue) return null;
-        return JsonSerializer.Deserialize<ActiveEncounterEntry>(json!, _jsonOptions);
+        return JsonSerializer.Deserialize<ActiveEncounterEntry>(json.ToString(), _jsonOptions);
     }
 
     public async Task SetActiveEncounterAsync(string sessionId, ActiveEncounterEntry entry)
@@ -64,7 +64,7 @@ public class RedisGameState : IRedisGameState
         var db = _redis.GetDatabase();
         var json = await db.StringGetAsync($"encounter:map:{encounterId}");
         if (!json.HasValue) return null;
-        return JsonSerializer.Deserialize<MapEntry>(json!, _jsonOptions);
+        return JsonSerializer.Deserialize<MapEntry>(json.ToString(), _jsonOptions);
     }
 
     public async Task SetMapAsync(string encounterId, MapEntry map)
@@ -203,7 +203,7 @@ public class RedisGameState : IRedisGameState
         var db = _redis.GetDatabase();
         var json = await db.StringGetAsync($"session:{sessionId}:active_encounter");
         if (!json.HasValue) return;
-        var entry = JsonSerializer.Deserialize<ActiveEncounterEntry>(json!, _jsonOptions);
+        var entry = JsonSerializer.Deserialize<ActiveEncounterEntry>(json.ToString(), _jsonOptions);
         if (entry is null) return;
         var updated = entry with
         {

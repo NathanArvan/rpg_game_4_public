@@ -10,26 +10,26 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.*" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="8.*" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.*">
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.*" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.*" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.*" />
   </ItemGroup>
 
   <Target Name="GenerateOpenApiSpec" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'"
           Inputs="$(OutputPath)$(AssemblyName).dll"
-          Outputs="$(MSBuildProjectDirectory)\..\..\..\..\contracts\openapi.json">
-    <Exec Command="dotnet tool run swagger tofile --output &quot;$(MSBuildProjectDirectory)\..\..\..\..\contracts\openapi.json&quot; $(OutputPath)$(AssemblyName).dll v1"
+          Outputs="$(MSBuildProjectDirectory)\..\..\..\contracts\openapi.json">
+    <Exec Command="dotnet tool run swagger tofile --output &quot;$(MSBuildProjectDirectory)\..\..\..\contracts\openapi.json&quot; $(OutputPath)$(AssemblyName).dll v1"
           WorkingDirectory="$(MSBuildProjectDirectory)"
           EnvironmentVariables="ASPNETCORE_ENVIRONMENT=Development" />
   </Target>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

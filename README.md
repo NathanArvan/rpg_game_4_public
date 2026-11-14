@@ -6,7 +6,7 @@ Built for the browser. Real-time sync across all connected players via WebSocket
 
 ## Tech Stack
 
-- **Server:** .NET 8, SignalR, PostgreSQL, Redis
+- **Server:** .NET 10, SignalR, PostgreSQL, Redis
 - **Client:** Angular 19, NGXS state management
 - **Infra:** Docker Compose, deployed to DigitalOcean via GitHub Actions
 
@@ -47,7 +47,7 @@ To stop: `docker-compose down`
 
 If you'd rather run the pieces individually:
 
-**Server** (.NET 8 SDK required):
+**Server** (.NET 10 SDK required):
 ```bash
 cd server
 dotnet build
@@ -81,7 +81,7 @@ TypeScript types for both the REST API and SignalR hub payloads are auto-generat
 # 1. Rebuild the server and regenerate the OpenAPI spec
 cd server
 dotnet build
-dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net8.0/RpgGame.Api.dll v1
+dotnet swagger tofile --output ../contracts/openapi.json src/RpgGame.Api/bin/Debug/net10.0/RpgGame.Api.dll v1
 
 # 2. Regenerate the TypeScript types
 cd ../client

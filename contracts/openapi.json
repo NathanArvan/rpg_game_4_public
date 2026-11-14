@@ -1,11 +1,11 @@
 {
-  "openapi": "3.0.1",
+  "openapi": "3.0.4",
   "info": {
     "title": "RpgGame.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
     "version": "1.0"
   },
   "paths": {
-    "/auth/register": {
+    "/api/auth/register": {
       "post": {
         "tags": [
           "Auth"
@@ -40,11 +40,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/auth/token": {
+    "/api/auth/token": {
       "post": {
         "tags": [
           "Auth"
@@ -79,11 +78,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/campaigns": {
+    "/api/campaigns": {
       "post": {
         "tags": [
           "Campaigns"
@@ -118,11 +116,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/campaigns/{campaignId}/sessions": {
+    "/api/campaigns/{campaignId}/sessions": {
       "post": {
         "tags": [
           "Campaigns"
@@ -149,11 +146,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/characters": {
+    "/api/characters": {
       "post": {
         "tags": [
           "Characters"
@@ -188,11 +184,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/characters/mine": {
+    "/api/characters/mine": {
       "get": {
         "tags": [
           "Characters"
@@ -211,11 +206,10 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       }
     },
-    "/characters/{id}": {
+    "/api/characters/{id}": {
       "get": {
         "tags": [
           "Characters"
@@ -242,8 +236,7 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       },
       "put": {
         "tags": [
@@ -290,8 +283,7 @@
               }
             }
           }
-        },
-        "x-filter-applied": true
+        }
       },
       "delete": {
         "tags": [
@@ -312,8 +304,7 @@
           "200": {
             "description": "OK"
           }
-        },
-        "x-filter-applied": true
+        }
       }
     }
   },
@@ -529,5 +520,16 @@
         "additionalProperties": false
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Campaigns"
+    },
+    {
+      "name": "Characters"
+    }
+  ]
 }
