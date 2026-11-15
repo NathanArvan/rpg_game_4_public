@@ -16,6 +16,23 @@ public class EnemyAiTests
         return EnemyAi.PlanRound(state, teams, ai);
     }
 
+    private static CombatantState OffMap(string id) => new(id, id, 20, 20, 10, DamageDie.D8, null, false);
+
+    [Fact]
+    public void AiWithNoMapPosition_Defends()
+    {
+        var plans = Plan(C("hero", 0, 1), OffMap("g1"));
+        Assert.Equal(PlannedAction.Defend(), plans["g1"]);
+    }
+
+    [Fact]
+    public void EnemyWithNoMapPosition_IsNotTargeted()
+    {
+        // The off-map hero would be "at (0,0)", adjacent, under the old rule; the AI goes for the real one.
+        var plans = Plan(OffMap("ghost"), C("hero", 5, 1), C("g1", 1, 1));
+        Assert.Equal(PlannedAction.Move(4, 1), plans["g1"]);
+    }
+
     [Fact]
     public void AdjacentEnemy_IsAttackedInMelee()
     {

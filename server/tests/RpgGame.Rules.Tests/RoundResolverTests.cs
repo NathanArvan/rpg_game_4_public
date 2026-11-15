@@ -190,32 +190,87 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void Quirk3_NoRangeOrBoundsCheck()
+    public void Move_BeyondMovementRange_StopsAfterRangeSteps()
     {
-        var o = Resolve(State(C("A", 0, 0)), new Plans().Add("A", PlannedAction.Move(30, -4)), new ScriptedDice());
-        Assert.Equal(P(30, -4), Final(o, "A").Position);
+        var o = Resolve(State(C("A", 0, 0)), new Plans().Add("A", PlannedAction.Move(10, 0)), new ScriptedDice());
+
+        var mv = Assert.Single(Assert.Single(o.Ticks).Movements);
+        Assert.Equal(7, mv.Path.Count); // start + 6 steps
+        Assert.Equal(P(6, 0), mv.FinalPosition);
+        Assert.False(mv.WasBlocked);
+        Assert.Equal(P(6, 0), Final(o, "A").Position);
     }
 
     [Fact]
-    public void Quirk5_NullPositionTreatedAsOrigin_AndStaysNullIfUnmoved()
+    public void Move_RespectsConfiguredMovementRange()
+    {
+        var o = Resolve(State(C("A", 0, 0)), new Plans().Add("A", PlannedAction.Move(5, 5)), new ScriptedDice(),
+            RulesConfig.Default with { MovementRange = 2 });
+        Assert.Equal(P(2, 2), Final(o, "A").Position);
+    }
+
+    [Fact]
+    public void Move_OffGrid_StopsAtGridEdge()
+    {
+        var o = Resolve(State(C("A", 17, 1)), new Plans().Add("A", PlannedAction.Move(22, -4)), new ScriptedDice());
+
+        // Diagonal-first path (18,0) → (19,-1) leaves the grid at the second step.
+        var mv = Assert.Single(Assert.Single(o.Ticks).Movements);
+        Assert.Equal([P(17, 1), P(18, 0)], mv.Path);
+        Assert.Equal(P(18, 0), Final(o, "A").Position);
+    }
+
+    [Fact]
+    public void NullPosition_CannotMove_OrMeleeOrBeMeleed_AndStaysNull()
     {
         var a = new CombatantState("A", "A", 20, 20, 10, DamageDie.D8, null, false);
         var b = new CombatantState("B", "B", 20, 20, 10, DamageDie.D8, null, false);
-        var o = Resolve(new EncounterState(20, 20, [a, b, C("T", 1, 1)]),
-            new Plans().Add("A", PlannedAction.Move(2, 0)).Add("B", PlannedAction.Melee("T")),
-            new ScriptedDice(10, 1));
+        var o = Resolve(new EncounterState(20, 20, [a, b, C("T", 1, 1), C("U", 0, 1)]),
+            new Plans()
+                .Add("A", PlannedAction.Move(2, 0))
+                .Add("B", PlannedAction.Melee("T"))
+                .Add("U", PlannedAction.Melee("A")),
+            new ScriptedDice());
 
-        Assert.Equal(P(0, 0), Assert.Single(o.Ticks[0].Movements).Path[0]);
-        Assert.Equal(P(2, 0), Final(o, "A").Position);
+        Assert.Empty(o.Ticks[0].Movements);
+        Assert.Null(Final(o, "A").Position);
         Assert.Null(Final(o, "B").Position);
-        Assert.False(Assert.Single(o.Ticks[0].Attacks).Wasted); // (0,0) is adjacent to (1,1)
+        Assert.All(o.Ticks[0].Attacks, atk => Assert.Equal(WastedReason.OutOfMeleeReach, atk.WastedReason));
+        Assert.Equal(2, o.Ticks[0].Attacks.Count);
     }
 
     [Fact]
-    public void Quirk11_MoveToOwnCell_NoOutcome()
+    public void NullPosition_DoesNotBlockOrigin()
+    {
+        var ghost = new CombatantState("G", "G", 20, 20, 10, DamageDie.D8, null, false);
+        var o = Resolve(new EncounterState(20, 20, [ghost, C("A", 1, 0)]),
+            new Plans().Add("A", PlannedAction.Move(0, 0)), new ScriptedDice());
+        Assert.Equal(P(0, 0), Final(o, "A").Position);
+    }
+
+    [Fact]
+    public void MoveToOwnCell_ReportsStayPut()
     {
         var o = Resolve(State(C("A", 4, 4)), new Plans().Add("A", PlannedAction.Move(4, 4)), new ScriptedDice());
-        Assert.Empty(Assert.Single(o.Ticks).Movements);
+
+        var mv = Assert.Single(Assert.Single(o.Ticks).Movements);
+        Assert.Equal([P(4, 4)], mv.Path);
+        Assert.Equal(P(4, 4), mv.FinalPosition);
+        Assert.False(mv.WasBlocked);
+        Assert.Null(mv.BlockedById);
+    }
+
+    [Fact]
+    public void MoveToOwnCell_StillBlocksOtherMovers()
+    {
+        var o = Resolve(State(C("A", 4, 4), C("B", 2, 4)),
+            new Plans().Add("A", PlannedAction.Move(4, 4)).Add("B", PlannedAction.Move(5, 4)),
+            new ScriptedDice());
+
+        var b = o.Ticks[0].Movements.Single(m => m.CombatantId == "B");
+        Assert.True(b.WasBlocked);
+        Assert.Equal("A", b.BlockedById);
+        Assert.Equal(P(3, 4), b.FinalPosition);
     }
 
     // ----- Attacks -----
@@ -292,11 +347,11 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void Attack_OnUnknownTarget_IsWastedAsDefeated()
+    public void Attack_OnUnknownTarget_IsWastedAsInvalidTarget()
     {
         var o = Resolve(State(C("A", 0, 0)), new Plans().Add("A", PlannedAction.Melee("nobody")), new ScriptedDice());
         var atk = Assert.Single(o.Ticks[0].Attacks);
-        Assert.Equal(WastedReason.TargetDefeated, atk.WastedReason);
+        Assert.Equal(WastedReason.InvalidTarget, atk.WastedReason);
         Assert.Equal((0, 0), (atk.TargetHpBefore, atk.TargetHpAfter));
     }
 
@@ -346,7 +401,7 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void Quirk10_ZeroHpUnflagged_IsDefeatedWithoutAttack()
+    public void ZeroHpUnflagged_IsDefeatedWithoutAttack()
     {
         var o = Resolve(State(C("A", 0, 0, hp: 0)), new Plans(), new ScriptedDice());
         Assert.Equal(["A"], o.DefeatedThisRound);

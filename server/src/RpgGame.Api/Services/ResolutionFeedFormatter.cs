@@ -5,7 +5,7 @@ namespace RpgGame.Api.Services;
 /// <summary>
 /// Feed text for resolution results. Presentation, so it lives in the Api layer rather than
 /// in RpgGame.Rules. These strings reach players verbatim; the client adds its own
-/// "X moves to (x, y)" line for movements.
+/// "X moves to (x, y)" / "X stays put" line for movements.
 /// </summary>
 internal static class ResolutionFeedFormatter
 {
@@ -34,6 +34,7 @@ internal static class ResolutionFeedFormatter
     {
         WastedReason.TargetDefeated => "target already defeated",
         WastedReason.OutOfMeleeReach => "target out of melee range",
+        WastedReason.InvalidTarget => "invalid target",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 }

@@ -25,6 +25,7 @@ import {
   EncounterStartedPayload,
   HubEvents,
   MonsterAddedPayload,
+  MovementResult,
   PlannedActionArray,
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
@@ -33,6 +34,15 @@ import {
   QuickBattleStartedResult,
   ResolutionPayload,
 } from '../../contracts/hub-contracts.generated';
+
+/** Feed line for one movement result. A one-cell path that wasn't blocked means the combatant chose to stay put. */
+export function movementFeedText(movement: MovementResult): string {
+  const { x, y } = movement.finalPosition;
+  if (movement.path.length <= 1 && !movement.wasBlocked) {
+    return `${movement.combatantName} stays put at (${x}, ${y})`;
+  }
+  return `${movement.combatantName} moves to (${x}, ${y})${movement.wasBlocked ? ' (blocked)' : ''}`;
+}
 
 @Injectable({ providedIn: 'root' })
 export class GameHubService {
@@ -109,7 +119,7 @@ export class GameHubService {
         const feedTexts: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
         for (const tick of payload.ticks) {
           for (const movement of tick.movements) {
-            feedTexts.push(`${movement.combatantName} moves to (${movement.finalPosition.x}, ${movement.finalPosition.y})${movement.wasBlocked ? ' (blocked)' : ''}`);
+            feedTexts.push(movementFeedText(movement));
           }
           for (const attack of tick.attacks) {
             feedTexts.push(attack.feedText);

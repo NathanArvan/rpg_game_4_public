@@ -12,8 +12,8 @@ public sealed record RulesConfig
     public int AccuracyBonus { get; init; } = 0;
 
     /// <summary>
-    /// Max cells per move. Enforced at planning time by PlanningService, NOT re-checked by the
-    /// resolver (quirk 3). Here so all rule constants live in one place.
+    /// Max cells per move. PlanningService rejects longer moves at planning time; the resolver
+    /// also stops any move after this many steps (and at the grid edge).
     /// </summary>
     public int MovementRange { get; init; } = 6;
 

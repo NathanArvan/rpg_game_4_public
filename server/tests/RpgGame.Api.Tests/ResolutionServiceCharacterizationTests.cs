@@ -240,7 +240,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk12_AttackOnUnknownTarget_IsWastedAsAlreadyDefeated()
+    public async Task Char_AttackOnUnknownTarget_IsWastedAsInvalidTarget()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin A", (0, 0));
@@ -250,7 +250,7 @@ public partial class ResolutionServiceTests
         var r = await s.Run(new ScriptedDice());
 
         var atk = SingleAttack(r);
-        Assert.Equal("Goblin A's attack on Unknown fails — target already defeated", atk.FeedText);
+        Assert.Equal("Goblin A's attack on Unknown fails — invalid target", atk.FeedText);
         Assert.Equal("Unknown", atk.TargetName);
         Assert.Equal(ghost, atk.TargetId);
         Assert.Equal(0, atk.TargetNewHp);
@@ -504,46 +504,51 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk3_ResolverDoesNotCheckRangeOrBounds()
+    public async Task Char_ResolverStopsMovesAtRangeAndGridEdge()
     {
         await using var s = new Scene();
-        var a = s.Monster("Goblin", (0, 0));
-        s.Move(a, 25, 0);
+        var a = s.Monster("Goblin A", (0, 0));
+        var b = s.Monster("Goblin B", (17, 5));
+        s.Move(a, 25, 0); // 25 cells: stops after 6
+        s.Move(b, 25, 5); // off the grid: stops at x = 19
 
         var r = await s.Run(new ScriptedDice());
 
-        var mv = Assert.Single(Assert.Single(r.Ticks).Movements);
-        Assert.Equal(new PositionDto(25, 0), mv.FinalPosition);
-        Assert.Equal(26, mv.Path.Count);
+        var mvs = Assert.Single(r.Ticks).Movements;
+        var mvA = mvs.Single(m => m.CombatantId == a);
+        Assert.Equal(new PositionDto(6, 0), mvA.FinalPosition);
+        Assert.Equal(7, mvA.Path.Count);
+        Assert.False(mvA.WasBlocked);
+        Assert.Equal(new PositionDto(19, 5), mvs.Single(m => m.CombatantId == b).FinalPosition);
     }
 
     [Fact]
-    public async Task Char_Quirk5_MissingPositionDefaultsToOrigin()
+    public async Task Char_MissingPosition_CannotMove()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin", at: null);
         s.Move(a, 2, 2);
 
         var r = await s.Run(new ScriptedDice());
-        s.Redis.Verify(x => x.SetMapAsync(s.EncounterId.ToString(), It.IsAny<MapEntry>()), Times.Once);
-        var saved = (MapEntry)s.Redis.Invocations.Single(i => i.Method.Name == nameof(IRedisGameState.SetMapAsync)).Arguments[1];
 
-        var mv = Assert.Single(Assert.Single(r.Ticks).Movements);
-        Assert.Equal(new PositionDto(0, 0), mv.Path[0]);
-        Assert.Equal(new Position(2, 2), saved.Positions[a]);
+        Assert.Empty(Assert.Single(r.Ticks).Movements);
+        var saved = (MapEntry)s.Redis.Invocations.Single(i => i.Method.Name == nameof(IRedisGameState.SetMapAsync)).Arguments[1];
+        Assert.False(saved.Positions.ContainsKey(a)); // still off the map
     }
 
     [Fact]
-    public async Task Char_Quirk5_MissingPositionDefaultsToOrigin_ForMeleeReach()
+    public async Task Char_MissingPosition_CannotMelee()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin A", at: null);
         var b = s.Monster("Goblin B", (1, 1));
         s.Melee(a, b);
 
-        var r = await s.Run(new ScriptedDice(10, 1));
+        var r = await s.Run(new ScriptedDice());
 
-        Assert.False(SingleAttack(r).Wasted);
+        var atk = SingleAttack(r);
+        Assert.True(atk.Wasted);
+        Assert.Equal("Goblin A's attack on Goblin B fails — target out of melee range", atk.FeedText);
     }
 
     [Fact]
@@ -618,7 +623,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk11_MoveToOwnCell_ProducesNoMovementResult()
+    public async Task Char_MoveToOwnCell_ReportsStayPut()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin", (4, 4));
@@ -627,13 +632,17 @@ public partial class ResolutionServiceTests
         var r = await s.Run(new ScriptedDice());
 
         var tick = Assert.Single(r.Ticks);
-        Assert.Empty(tick.Movements);
+        var mv = Assert.Single(tick.Movements);
+        Assert.Equal(a, mv.CombatantId);
+        Assert.Equal([new PositionDto(4, 4)], mv.Path);
+        Assert.Equal(new PositionDto(4, 4), mv.FinalPosition);
+        Assert.False(mv.WasBlocked);
         Assert.Empty(tick.Attacks);
         Assert.Empty(tick.Effects);
     }
 
     [Fact]
-    public async Task Char_Quirk11_NoPlans_StillOneEmptyTick()
+    public async Task Char_NoPlans_StillOneEmptyTick()
     {
         await using var s = new Scene();
         s.Monster("Goblin", (4, 4));
@@ -694,7 +703,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_Quirk10_ZeroHpUnattacked_IsMarkedDefeated()
+    public async Task Char_ZeroHpUnattacked_IsMarkedDefeated()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin", (0, 0), hp: 0); // HP 0 but not in the defeated set

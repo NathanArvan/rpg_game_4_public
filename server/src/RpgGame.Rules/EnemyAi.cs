@@ -37,10 +37,13 @@ public static class EnemyAi
         // (AI combatants are added back below if they end up not moving.) Defeated bodies block too,
         // as in the resolver. Players might move away, but the AI doesn't try to predict that.
         var blockers = state.Combatants
-            .Where(c => !aiSet.Contains(c.Id) || c.IsDefeated)
-            .Select(PositionOf)
+            .Where(c => c.Position.HasValue && (!aiSet.Contains(c.Id) || c.IsDefeated))
+            .Select(c => c.Position!.Value)
             .ToHashSet();
-        var occupied = state.Combatants.Select(PositionOf).ToHashSet();
+        var occupied = state.Combatants
+            .Where(c => c.Position.HasValue)
+            .Select(c => c.Position!.Value)
+            .ToHashSet();
         var reservedPaths = new List<List<GridPosition>>();
         var plans = new Dictionary<string, PlannedAction>();
 
@@ -49,8 +52,14 @@ public static class EnemyAi
             if (!byId.TryGetValue(id, out var self) || self.IsDefeated) continue;
             if (!teamById.TryGetValue(id, out var myTeam)) continue;
 
-            var from = PositionOf(self);
-            var target = FindTarget(state, self, myTeam, teamById);
+            // Not on the map (no position): it can't move or melee, so it just defends.
+            if (self.Position is not { } from)
+            {
+                plans[id] = PlannedAction.Defend();
+                continue;
+            }
+
+            var target = FindTarget(state, self, from, myTeam, teamById);
             if (target is null)
             {
                 plans[id] = PlannedAction.Defend();
@@ -58,7 +67,7 @@ public static class EnemyAi
                 continue;
             }
 
-            var targetPos = PositionOf(target);
+            var targetPos = target.Position!.Value;
             if (from.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
             {
                 plans[id] = PlannedAction.Melee(target.Id);
@@ -84,18 +93,18 @@ public static class EnemyAi
         return plans;
     }
 
-    /// <summary>Nearest living enemy; ties go to the lowest HP, then to state order.</summary>
+    /// <summary>Nearest living enemy on the map; ties go to the lowest HP, then to state order.</summary>
     private static CombatantState? FindTarget(
-        EncounterState state, CombatantState self, string myTeam, IReadOnlyDictionary<string, string> teamById)
+        EncounterState state, CombatantState self, GridPosition from, string myTeam, IReadOnlyDictionary<string, string> teamById)
     {
-        var from = PositionOf(self);
         return state.Combatants
             .Select((c, index) => (c, index))
             .Where(x => !x.c.IsDefeated
                         && x.c.Id != self.Id
+                        && x.c.Position.HasValue
                         && teamById.TryGetValue(x.c.Id, out var team)
                         && team != myTeam)
-            .OrderBy(x => from.ChebyshevDistanceTo(PositionOf(x.c)))
+            .OrderBy(x => from.ChebyshevDistanceTo(x.c.Position!.Value))
             .ThenBy(x => x.c.Hp)
             .ThenBy(x => x.index)
             .Select(x => x.c)
@@ -164,7 +173,4 @@ public static class EnemyAi
         }
         return true;
     }
-
-    /// <summary>Same as the resolver: a combatant with no map position stands at (0, 0) (quirk 5).</summary>
-    private static GridPosition PositionOf(CombatantState c) => c.Position ?? GridPosition.Origin;
 }
