@@ -7,7 +7,14 @@ public record JoinSessionResult(
 
 public record EncounterStartedResult(Guid SessionId, EncounterStartedPayload Payload, PlanningPhaseStartedPayload PlanningPayload);
 
-public record LockInResult(Guid SessionId, string CombatantId, string CharacterName, bool AllLockedIn, string EncounterId);
+/// <param name="LockedInNames">Everyone this call locked in (several when one user controls a party).</param>
+public record LockInResult(
+    Guid SessionId,
+    string CombatantId,
+    string CharacterName,
+    bool AllLockedIn,
+    string EncounterId,
+    IReadOnlyList<string>? LockedInNames = null);
 
 public record PlanActionResult(bool Success);
 

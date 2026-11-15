@@ -2,6 +2,11 @@
   <div class="result-card" [ngClass]="tone(outcome)" role="dialog" aria-labelledby="result-headline">
     <h2 id="result-headline" class="headline">{{ headline(outcome) }}</h2>
     <p class="detail">Encounter over after round {{ outcome.finalRoundNumber }}</p>
-    <button class="return-btn" (click)="returnToLobby()">Return to lobby</button>
+    <div class="buttons">
+      <button class="play-again-btn" *ngIf="quickBattlePresetId$ | async as presetId" (click)="playAgain(presetId)">
+        Play again
+      </button>
+      <button class="return-btn" (click)="returnToLobby()">Return to lobby</button>
+    </div>
   </div>
 </div>

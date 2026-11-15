@@ -66,11 +66,7 @@ public class CampaignsController : ControllerBase
         if (member is null || member.Role != CampaignRole.Gm)
             return Forbid();
 
-        string joinCode;
-        do
-        {
-            joinCode = GenerateJoinCode();
-        } while (await _db.GameSessions.AnyAsync(s => s.JoinCode == joinCode));
+        var joinCode = await JoinCodes.NewUniqueAsync(_db);
 
         var session = new GameSession
         {
@@ -85,16 +81,4 @@ public class CampaignsController : ControllerBase
 
         return Ok(new StartSessionResponse(session.JoinCode, session.Id));
     }
-
-    private static string GenerateJoinCode()
-    {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        return string.Create(6, chars, (span, alphabet) =>
-        {
-            var bytes = RandomNumberGenerator.GetBytes(6);
-            for (int i = 0; i < span.Length; i++)
-                span[i] = alphabet[bytes[i] % alphabet.Length];
-        });
-    }
 }
-

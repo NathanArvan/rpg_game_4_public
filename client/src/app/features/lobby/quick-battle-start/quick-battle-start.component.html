@@ -1,0 +1,14 @@
+<div class="quick-battle-start">
+  <h2>⚡ Quick Battle</h2>
+  <p class="intro">Command a whole party against AI enemies. No session or characters needed.</p>
+  <div class="row">
+    <select [(ngModel)]="presetId" aria-label="Battle preset" [disabled]="!presets.length">
+      <option *ngFor="let p of presets" [value]="p.id">{{ p.name }}</option>
+    </select>
+    <button class="start-btn" (click)="start()" [disabled]="!presetId || starting">
+      {{ starting ? 'Starting…' : 'Start Quick Battle' }}
+    </button>
+  </div>
+  <p class="description" *ngIf="selectedPreset as preset">{{ preset.description }}</p>
+  <p class="error" *ngIf="error">{{ error }}</p>
+</div>

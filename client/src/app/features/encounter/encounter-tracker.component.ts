@@ -3,7 +3,9 @@ import { Component } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
 import { EncounterState } from '../../state/encounter/encounter.state';
-import { Combatant } from '../../state/encounter/encounter.model';
+import { Combatant, isControlledBy } from '../../state/encounter/encounter.model';
+import { SelectMyCombatant } from '../../state/encounter/encounter.actions';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-encounter-tracker',
@@ -20,14 +22,30 @@ export class EncounterTrackerComponent {
   lockedIn$: Observable<string[]>;
 
   private _lockedInNames: string[] = [];
+  private _selectedId: string | null = null;
 
-  constructor(private store: Store) {
+  constructor(private store: Store, private auth: AuthService) {
     this.combatants$ = store.select(EncounterState.combatants);
     this.isPlanning$ = store.select(EncounterState.isPlanning);
     this.isResolving$ = store.select(EncounterState.isResolving);
     this.roundNumber$ = store.select(EncounterState.roundNumber);
     this.lockedIn$ = store.select(EncounterState.lockedInCombatantNames);
     this.lockedIn$.subscribe(names => this._lockedInNames = names);
+    store.select(EncounterState.selectedCombatantId).subscribe(id => this._selectedId = id);
+  }
+
+  isMine(combatant: Combatant): boolean {
+    return isControlledBy(combatant, this.auth.getUserId());
+  }
+
+  isSelected(combatant: Combatant): boolean {
+    return this._selectedId === combatant.id;
+  }
+
+  /** In a Quick Battle, clicking one of your characters' rows picks who you're planning for. */
+  select(combatant: Combatant): void {
+    if (this.isMine(combatant) && !combatant.isDefeated)
+      this.store.dispatch(new SelectMyCombatant(combatant.id));
   }
 
   isLockedIn(combatant: Combatant): boolean {

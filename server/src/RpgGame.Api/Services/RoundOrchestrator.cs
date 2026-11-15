@@ -47,12 +47,16 @@ public class RoundOrchestrator(
             return;
         }
 
-        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
+        // Quick Battle turns the planning timer off; 0 seconds tells clients there's no countdown.
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId.ToString());
+        var timerSeconds = activeEncounter?.PlanningTimerEnabled == false ? 0 : GameConstants.PlanningTimerSeconds;
+
+        var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(timerSeconds);
         await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
 
         await StartPlanningPhaseAsync(encounterId, sessionId, new PlanningPhaseStartedPayload(
             resolution.NewRoundNumber,
-            GameConstants.PlanningTimerSeconds,
+            timerSeconds,
             resolution.UpdatedCombatants));
     }
 
@@ -63,7 +67,8 @@ public class RoundOrchestrator(
         await group.SendAsync(HubEvents.Events.PlanningPhaseStarted, payload);
         logger.LogInformation("RoundOrchestrator: PlanningPhaseStarted sent for round {Round}", payload.RoundNumber);
 
-        timer.Start(encounterId, sessionId, payload.PlanningTimerDurationSeconds);
+        if (payload.PlanningTimerDurationSeconds > 0)
+            timer.Start(encounterId, sessionId, payload.PlanningTimerDurationSeconds);
 
         // After PlanningPhaseStarted, which resets each client's lock-in list.
         var aiLockIns = await aiPlanningSvc.PlanAndLockInAsync(encounterId);

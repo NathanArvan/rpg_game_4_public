@@ -32,6 +32,20 @@
   color: #555;
 }
 
+.buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.play-again-btn {
+  padding: 8px 20px;
+  font-size: 1em;
+  cursor: pointer;
+  background: #1a237e;
+  color: white;
+}
+
 .return-btn {
   padding: 8px 20px;
   font-size: 1em;

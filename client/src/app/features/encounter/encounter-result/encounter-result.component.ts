@@ -2,10 +2,10 @@ import { CommonModule } from '@angular/common';
 import { Component, Input } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
-import { ClearEncounter } from '../../../state/encounter/encounter.actions';
 import { EncounterOutcome } from '../../../state/encounter/encounter.model';
 import { EncounterState } from '../../../state/encounter/encounter.state';
-import { ClearFeed } from '../../../state/feed/feed.actions';
+import { QuickBattleService } from '../../../core/services/quick-battle.service';
+import { SessionState } from '../../../state/session/session.state';
 
 /** Overlay shown over the battlefield once the server broadcasts EncounterEnded. */
 @Component({
@@ -19,9 +19,11 @@ export class EncounterResultComponent {
   @Input() isGm = false;
 
   outcome$: Observable<EncounterOutcome | null>;
+  quickBattlePresetId$: Observable<string | null>;
 
-  constructor(private store: Store) {
+  constructor(private store: Store, private quickBattle: QuickBattleService) {
     this.outcome$ = store.select(EncounterState.outcome);
+    this.quickBattlePresetId$ = store.select(SessionState.quickBattlePresetId);
   }
 
   /** GM sees the result from above; players see it from the party's side. */
@@ -37,6 +39,10 @@ export class EncounterResultComponent {
   }
 
   returnToLobby(): void {
-    this.store.dispatch([new ClearEncounter(), new ClearFeed()]);
+    this.quickBattle.leave();
+  }
+
+  playAgain(presetId: string): void {
+    this.quickBattle.start(presetId);
   }
 }

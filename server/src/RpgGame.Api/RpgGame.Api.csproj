@@ -29,6 +29,11 @@
           EnvironmentVariables="ASPNETCORE_ENVIRONMENT=Development" />
   </Target>
 
+  <ItemGroup>
+    <!-- Quick Battle presets are read at startup from the output folder -->
+    <Content Update="QuickBattle/Presets/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

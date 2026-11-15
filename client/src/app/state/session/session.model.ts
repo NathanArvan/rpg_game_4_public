@@ -10,4 +10,6 @@ export interface SessionStateModel {
   isGm: boolean;
   status: 'disconnected' | 'connecting' | 'connected';
   connectedPlayers: ConnectedPlayer[];
+  /** Set while in a Quick Battle: the preset it was started from (for Restart / Play again). */
+  quickBattlePresetId: string | null;
 }

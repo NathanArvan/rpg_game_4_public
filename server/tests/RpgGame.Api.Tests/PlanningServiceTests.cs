@@ -396,4 +396,134 @@ public class PlanningServiceTests
         Assert.True(ex.IsActionRejected);
         Assert.Contains("plan an action", ex.Message);
     }
+
+    // ----- Several characters per user (Quick Battle) -----
+
+    private sealed class PartyFixture
+    {
+        public const string UserId = "qb-user";
+        public const string JoinCode = "PARTY1";
+        public readonly AppDbContext Db;
+        public readonly Guid SessionId = Guid.NewGuid();
+        public readonly string EncounterId = Guid.NewGuid().ToString();
+        public readonly string Bruiser = Guid.NewGuid().ToString();
+        public readonly string Scout = Guid.NewGuid().ToString();
+        public readonly string Goblin = Guid.NewGuid().ToString();
+        public readonly Mock<IRedisGameState> Redis = new();
+        public readonly Dictionary<string, string> Plans = [];
+        public readonly HashSet<string> Locked = [];
+        public readonly HashSet<string> Defeated = [];
+
+        public PartyFixture()
+        {
+            Db = CreateDb();
+            Db.GameSessions.Add(new GameSession { Id = SessionId, CampaignId = Guid.NewGuid(), JoinCode = JoinCode, StartedAt = DateTimeOffset.UtcNow });
+            var encounterGuid = Guid.Parse(EncounterId);
+            foreach (var (id, name, type) in new[] { (Bruiser, "Bruiser", "player"), (Scout, "Scout", "player"), (Goblin, "Goblin", "monster") })
+                Db.EncounterCombatants.Add(new EncounterCombatant { Id = Guid.Parse(id), EncounterId = encounterGuid, UserId = UserId, CharacterName = name, CombatantType = type });
+            Db.SaveChanges();
+
+            // The user owns the goblin's row too (Quick Battle), but it's a monster: not theirs to plan.
+            var active = new ActiveEncounterEntry(EncounterId, "planning", 1, DateTimeOffset.UtcNow, new List<CombatantRef>
+            {
+                new(Bruiser, UserId, "player"),
+                new(Scout, UserId, "player"),
+                new(Goblin, UserId, "monster", IsAiControlled: true),
+            }, PlanningTimerEnabled: false);
+            Redis.Setup(r => r.GetActiveEncounterAsync(SessionId.ToString())).ReturnsAsync(active);
+            Redis.Setup(r => r.GetMapAsync(EncounterId)).ReturnsAsync(new MapEntry(20, 20, new Dictionary<string, Position>
+            {
+                [Bruiser] = new(8, 2), [Scout] = new(12, 2), [Goblin] = new(8, 14),
+            }, []));
+            Redis.Setup(r => r.IsDefeatedAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Defeated.Contains(id));
+            Redis.Setup(r => r.HasPlannedActionAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Plans.ContainsKey(id));
+            Redis.Setup(r => r.SetPlannedActionAsync(EncounterId, It.IsAny<string>(), It.IsAny<string>()))
+                .Callback<string, string, string>((_, id, json) => Plans[id] = json).Returns(Task.CompletedTask);
+            Redis.Setup(r => r.IsLockedInAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Locked.Contains(id));
+            Redis.Setup(r => r.AddLockedInAsync(EncounterId, It.IsAny<string>()))
+                .Callback<string, string>((_, id) => Locked.Add(id)).Returns(Task.CompletedTask);
+            Redis.Setup(r => r.AddLockedInBatchAsync(EncounterId, It.IsAny<IEnumerable<string>>()))
+                .Callback<string, IEnumerable<string>>((_, ids) => Locked.UnionWith(ids)).Returns(Task.CompletedTask);
+        }
+
+        public PlanningService Service() => new(Db, Redis.Object, NullLogger<PlanningService>.Instance);
+    }
+
+    private static PlannedActionArray Move(int x, int y) => new([new PlannedActionEntry("move", new PositionDto(x, y), null)]);
+
+    [Fact]
+    public async Task PlanAction_ForOneOfSeveralOwnedCharacters_StoresItUnderThatCharacter()
+    {
+        var f = new PartyFixture();
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(12, 5), f.Scout);
+        Assert.Equal([f.Scout], f.Plans.Keys);
+    }
+
+    [Fact]
+    public async Task PlanAction_WithSeveralCharactersButNoCombatantId_IsRejected()
+    {
+        var f = new PartyFixture();
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 5)));
+        Assert.Contains("several characters", ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanAction_ForAMonsterTheUserOwnsTheRowOf_IsRejected()
+    {
+        var f = new PartyFixture();
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 12), f.Goblin));
+        Assert.Contains("don't control", ex.Message);
+        Assert.Empty(f.Plans);
+    }
+
+    [Fact]
+    public async Task PlanAction_ForSomeoneElsesCharacter_IsRejected()
+    {
+        var f = new PartyFixture();
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, "another-user", Move(8, 5), f.Bruiser));
+        Assert.Contains("not in this encounter", ex.Message);
+    }
+
+    [Fact]
+    public async Task LockIn_LocksEveryLivingCharacter_UnplannedOnesDefend()
+    {
+        var f = new PartyFixture();
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 5), f.Bruiser);
+        f.Locked.Add(f.Goblin); // AI already locked in
+
+        var result = await f.Service().LockInAsync(PartyFixture.JoinCode, PartyFixture.UserId);
+
+        Assert.True(result.AllLockedIn);
+        Assert.Equal(["Bruiser", "Scout"], result.LockedInNames);
+        Assert.Contains("defend", f.Plans[f.Scout]);
+        Assert.Contains(f.Bruiser, f.Locked);
+        Assert.Contains(f.Scout, f.Locked);
+    }
+
+    [Fact]
+    public async Task LockIn_SkipsDefeatedCharacters()
+    {
+        var f = new PartyFixture();
+        f.Defeated.Add(f.Scout);
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 5), f.Bruiser);
+
+        var result = await f.Service().LockInAsync(PartyFixture.JoinCode, PartyFixture.UserId);
+
+        Assert.Equal(["Bruiser"], result.LockedInNames);
+        Assert.DoesNotContain(f.Scout, f.Locked);
+        Assert.False(f.Plans.ContainsKey(f.Scout));
+    }
+
+    [Fact]
+    public async Task LockIn_WithNothingPlanned_IsRejected()
+    {
+        var f = new PartyFixture();
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().LockInAsync(PartyFixture.JoinCode, PartyFixture.UserId));
+        Assert.Contains("plan an action", ex.Message);
+        Assert.Empty(f.Locked);
+    }
 }

@@ -10,6 +10,7 @@ public record ActiveEncounterEntry(
     string RoundPhase,
     int RoundNumber,
     DateTimeOffset PlanningTimerExpiresAt,
-    List<CombatantRef> Combatants);
+    List<CombatantRef> Combatants,
+    bool PlanningTimerEnabled = true);
 public record Position(int X, int Y);
 public record MapEntry(int GridWidth, int GridHeight, Dictionary<string, Position> Positions, List<string> FogOfWar);

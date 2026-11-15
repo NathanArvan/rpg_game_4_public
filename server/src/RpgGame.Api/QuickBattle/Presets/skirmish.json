@@ -1,0 +1,15 @@
+{
+  // Default preset: three heroes with different strengths against three goblins.
+  "id": "skirmish",
+  "name": "Skirmish",
+  "description": "Three heroes against three goblins across an open field.",
+  "order": 1,
+  "combatants": [
+    { "name": "Bruiser",    "side": "party", "hp": 24, "damage": "d8", "speed": 8,  "at": [8, 2] },
+    { "name": "Skirmisher", "side": "party", "hp": 16, "damage": "d6", "speed": 14, "at": [10, 2] },
+    { "name": "Scout",      "side": "party", "hp": 12, "damage": "d4", "speed": 12, "at": [12, 2] },
+    { "name": "Goblin 1",   "side": "enemy", "hp": 10, "damage": "d4", "speed": 10, "at": [8, 14] },
+    { "name": "Goblin 2",   "side": "enemy", "hp": 10, "damage": "d4", "speed": 10, "at": [10, 14] },
+    { "name": "Goblin 3",   "side": "enemy", "hp": 10, "damage": "d4", "speed": 10, "at": [12, 14] }
+  ]
+}

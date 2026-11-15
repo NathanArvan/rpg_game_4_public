@@ -12,6 +12,7 @@ import {
   ResolutionCompleted,
   SetMyPlannedAction,
   ClearMyPlannedAction,
+  SelectMyCombatant,
 } from './encounter.actions';
 import { ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
@@ -102,13 +103,24 @@ describe('EncounterState', () => {
     });
 
     it('clears myPlannedActions and lockedInCombatantNames', () => {
-      store.dispatch(new SetMyPlannedAction([{ type: 'defend', targetCell: null, targetCombatantId: null }]));
+      store.dispatch(new SetMyPlannedAction('c1', [{ type: 'defend', targetCell: null, targetCombatantId: null }]));
       store.dispatch(new PlayerLockedIn('Frodo'));
       store.dispatch(new PlanningPhaseStarted(2, 30, []));
 
       const state = store.snapshot().encounter;
-      expect(state.myPlannedActions).toEqual([]);
+      expect(state.myPlannedActions).toEqual({});
       expect(state.lockedInCombatantNames).toEqual([]);
+    });
+
+    it('has no timer when the duration is 0 (Quick Battle)', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, []));
+      expect(store.snapshot().encounter.planningTimerExpiresAt).toBeNull();
+    });
+
+    it('keeps which character is selected across rounds', () => {
+      store.dispatch(new SelectMyCombatant('c2'));
+      store.dispatch(new PlanningPhaseStarted(2, 0, []));
+      expect(store.snapshot().encounter.selectedCombatantId).toBe('c2');
     });
   });
 
@@ -131,20 +143,24 @@ describe('EncounterState', () => {
   });
 
   describe('SetMyPlannedAction', () => {
-    it('stores planned actions', () => {
-      const action = { type: 'move', targetCell: { x: 3, y: 4 }, targetCombatantId: null };
-      store.dispatch(new SetMyPlannedAction([action]));
+    it('stores planned actions per character', () => {
+      const move = { type: 'move', targetCell: { x: 3, y: 4 }, targetCombatantId: null };
+      const defend = { type: 'defend', targetCell: null, targetCombatantId: null };
+      store.dispatch(new SetMyPlannedAction('c1', [move]));
+      store.dispatch(new SetMyPlannedAction('c2', [defend]));
 
-      expect(store.snapshot().encounter.myPlannedActions).toEqual([action]);
+      expect(store.snapshot().encounter.myPlannedActions).toEqual({ c1: [move], c2: [defend] });
     });
   });
 
   describe('ClearMyPlannedAction', () => {
-    it('clears planned actions', () => {
-      store.dispatch(new SetMyPlannedAction([{ type: 'defend', targetCell: null, targetCombatantId: null }]));
-      store.dispatch(new ClearMyPlannedAction());
+    it("clears only that character's plan", () => {
+      const defend = { type: 'defend', targetCell: null, targetCombatantId: null };
+      store.dispatch(new SetMyPlannedAction('c1', [defend]));
+      store.dispatch(new SetMyPlannedAction('c2', [defend]));
+      store.dispatch(new ClearMyPlannedAction('c1'));
 
-      expect(store.snapshot().encounter.myPlannedActions).toEqual([]);
+      expect(store.snapshot().encounter.myPlannedActions).toEqual({ c2: [defend] });
     });
   });
 

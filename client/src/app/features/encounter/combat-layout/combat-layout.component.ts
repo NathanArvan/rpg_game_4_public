@@ -5,11 +5,12 @@ import { RoundBannerComponent } from '../round-banner/round-banner.component';
 import { GridComponent } from '../grid/grid.component';
 import { FeedComponent } from '../feed/feed.component';
 import { EncounterResultComponent } from '../encounter-result/encounter-result.component';
+import { QuickBattlePanelComponent } from '../quick-battle-panel/quick-battle-panel.component';
 
 @Component({
   selector: 'app-combat-layout',
   standalone: true,
-  imports: [CommonModule, CombatSidebarComponent, RoundBannerComponent, GridComponent, FeedComponent, EncounterResultComponent],
+  imports: [CommonModule, CombatSidebarComponent, RoundBannerComponent, GridComponent, FeedComponent, EncounterResultComponent, QuickBattlePanelComponent],
   templateUrl: './combat-layout.component.html',
   styleUrl: './combat-layout.component.scss',
 })

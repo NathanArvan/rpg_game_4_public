@@ -15,7 +15,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         PropertyNameCaseInsensitive = true,
     };
 
-    public async Task<PlanActionResult> PlanActionAsync(string joinCode, string userId, PlannedActionArray action)
+    public async Task<PlanActionResult> PlanActionAsync(string joinCode, string userId, PlannedActionArray action, string? combatantId = null)
     {
         var gameSession = await db.GameSessions.FirstOrDefaultAsync(s => s.JoinCode == joinCode)
             ?? throw new GameActionException("Invalid join code.", isActionRejected: true);
@@ -27,8 +27,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         if (activeEncounter.RoundPhase != "planning")
             throw new GameActionException("Not in planning phase.", isActionRejected: true);
 
-        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.UserId == userId)
-            ?? throw new GameActionException("You are not in this encounter.", isActionRejected: true);
+        var combatantRef = ResolveOwnedCombatant(activeEncounter, userId, combatantId);
 
         if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, combatantRef.Id))
             throw new GameActionException("You are defeated.", isActionRejected: true);
@@ -59,21 +58,62 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         if (activeEncounter.RoundPhase != "planning")
             throw new GameActionException("Not in planning phase.", isActionRejected: true);
 
-        var combatantRef = activeEncounter.Combatants.FirstOrDefault(c => c.UserId == userId)
-            ?? throw new GameActionException("You are not in this encounter.", isActionRejected: true);
+        var encounterId = activeEncounter.EncounterId;
+        var owned = OwnedCombatants(activeEncounter, userId);
+        if (owned.Count == 0)
+            throw new GameActionException("You are not in this encounter.", isActionRejected: true);
 
-        if (!await redisState.HasPlannedActionAsync(activeEncounter.EncounterId, combatantRef.Id))
+        // Lock in every living character you control. At least one must have a plan; the rest defend.
+        var living = new List<CombatantRef>();
+        foreach (var c in owned)
+            if (!await redisState.IsDefeatedAsync(encounterId, c.Id)) living.Add(c);
+
+        var unplanned = new List<CombatantRef>();
+        foreach (var c in living)
+            if (!await redisState.HasPlannedActionAsync(encounterId, c.Id)) unplanned.Add(c);
+
+        if (living.Count == 0 || unplanned.Count == living.Count)
             throw new GameActionException("You must plan an action before locking in.", isActionRejected: true);
 
-        await redisState.AddLockedInAsync(activeEncounter.EncounterId, combatantRef.Id);
+        var defendJson = JsonSerializer.Serialize(
+            new PlannedActionArray(new List<PlannedActionEntry> { new("defend", null, null) }), _jsonOptions);
+        foreach (var c in unplanned)
+            await redisState.SetPlannedActionAsync(encounterId, c.Id, defendJson);
 
-        var encounterId = activeEncounter.EncounterId;
+        if (living.Count == 1)
+            await redisState.AddLockedInAsync(encounterId, living[0].Id);
+        else
+            await redisState.AddLockedInBatchAsync(encounterId, living.Select(c => c.Id));
+
         var allLockedIn = await AreAllLivingCombatantsLockedIn(activeEncounter);
-        var combatantName = await GetCombatantCharacterName(encounterId, combatantRef.Id);
+        var names = new List<string>();
+        foreach (var c in living)
+            names.Add(await GetCombatantCharacterName(encounterId, c.Id));
 
-        logger.LogInformation("LockIn: user={UserId} combatant={CombatantId} ({CharacterName}) allLockedIn={AllLockedIn} totalCombatants={Total}",
-            userId, combatantRef.Id, combatantName, allLockedIn, activeEncounter.Combatants.Count);
-        return new LockInResult(gameSession.Id, combatantRef.Id, combatantName, allLockedIn, encounterId);
+        logger.LogInformation("LockIn: user={UserId} combatants={Names} allLockedIn={AllLockedIn} totalCombatants={Total}",
+            userId, string.Join(", ", names), allLockedIn, activeEncounter.Combatants.Count);
+        return new LockInResult(gameSession.Id, living[0].Id, names[0], allLockedIn, encounterId, names);
+    }
+
+    /// <summary>The player characters this user controls (several in Quick Battle, one otherwise).</summary>
+    private static List<CombatantRef> OwnedCombatants(ActiveEncounterEntry encounter, string userId) =>
+        encounter.Combatants.Where(c => c.UserId == userId && c.CombatantType == "player").ToList();
+
+    private static CombatantRef ResolveOwnedCombatant(ActiveEncounterEntry encounter, string userId, string? combatantId)
+    {
+        var owned = OwnedCombatants(encounter, userId);
+        if (owned.Count == 0)
+            throw new GameActionException("You are not in this encounter.", isActionRejected: true);
+
+        if (combatantId is null)
+        {
+            if (owned.Count > 1)
+                throw new GameActionException("You control several characters; say which one this action is for.", isActionRejected: true);
+            return owned[0];
+        }
+
+        return owned.FirstOrDefault(c => c.Id == combatantId)
+            ?? throw new GameActionException("You don't control that combatant.", isActionRejected: true);
     }
 
     public async Task<ForceResolveResult> ForceResolveAsync(string joinCode, string gmUserId)

@@ -29,6 +29,8 @@ import {
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
   PlanningPhaseStartedPayload,
+  QuickBattlePresetDto,
+  QuickBattleStartedResult,
   ResolutionPayload,
 } from '../../contracts/hub-contracts.generated';
 
@@ -167,8 +169,17 @@ export class GameHubService {
     await this.connection.invoke(HubEvents.Methods.StartEncounter, joinCode);
   }
 
-  async planAction(joinCode: string, action: PlannedActionArray): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.PlanAction, joinCode, action);
+  /** @param combatantId which of your characters this is for (null if you control only one) */
+  async planAction(joinCode: string, action: PlannedActionArray, combatantId: string | null): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.PlanAction, joinCode, action, combatantId);
+  }
+
+  async getQuickBattlePresets(): Promise<QuickBattlePresetDto[]> {
+    return await this.connection.invoke<QuickBattlePresetDto[]>(HubEvents.Methods.GetQuickBattlePresets);
+  }
+
+  async startQuickBattle(presetId: string): Promise<QuickBattleStartedResult> {
+    return await this.connection.invoke<QuickBattleStartedResult>(HubEvents.Methods.StartQuickBattle, presetId);
   }
 
   async lockIn(joinCode: string): Promise<void> {

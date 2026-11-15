@@ -17,7 +17,9 @@
         <div
           *ngIf="tokenAt(cell) as combatant"
           class="token"
-          [class.my-token]="combatant.userId === myUserId"
+          [class.my-token]="isMine(combatant)"
+          [class.selected-token]="isSelected(combatant)"
+          [class.planned-token]="controlsSeveral && hasPlan(combatant)"
           [class.defeated-token]="combatant.isDefeated"
           [class.defeating-token]="isDefeating(combatant)"
           [class.targeted-token]="isTargeted(combatant)"
@@ -38,6 +40,10 @@
 
   <!-- Planning phase action bar (players only) -->
   <div class="action-bar" *ngIf="(isPlanning$ | async) && !isGm">
+    <div class="planning-for" *ngIf="controlsSeveral && selected as current">
+      Planning for <strong>{{ current.characterName }}</strong>
+      <span class="hint">(click one of your tokens to switch)</span>
+    </div>
     <div class="action-buttons">
       <button
         class="action-btn"
@@ -47,12 +53,12 @@
       </button>
       <button
         class="lock-in-btn"
-        [disabled]="!myPlannedActions.length || lockedIn"
+        [disabled]="plannedCount === 0 || lockedIn"
         (click)="onLockIn()">
-        {{ lockedIn ? 'Locked in ✓' : 'Lock In' }}
+        {{ lockInLabel }}
       </button>
     </div>
-    <div class="planned-action-display" *ngIf="myPlannedActions.length">
+    <div class="planned-action-display" *ngIf="selectedPlan.length">
       Planned: <strong>{{ plannedActionSummary }}</strong>
       <span *ngIf="!lockedIn" class="cancel-link" (click)="cancelPlan()">(cancel)</span>
     </div>

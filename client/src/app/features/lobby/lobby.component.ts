@@ -11,6 +11,7 @@ import { AuthPanelComponent } from './auth-panel/auth-panel.component';
 import { PlayerJoinComponent } from './player-join/player-join.component';
 import { GmFlowComponent } from './gm-flow/gm-flow.component';
 import { CombatLayoutComponent } from '../encounter/combat-layout/combat-layout.component';
+import { QuickBattleStartComponent } from './quick-battle-start/quick-battle-start.component';
 
 @Component({
   selector: 'app-lobby',
@@ -22,6 +23,7 @@ import { CombatLayoutComponent } from '../encounter/combat-layout/combat-layout.
     PlayerJoinComponent,
     GmFlowComponent,
     CombatLayoutComponent,
+    QuickBattleStartComponent,
   ],
   templateUrl: './lobby.component.html',
   styleUrl: './lobby.component.css',

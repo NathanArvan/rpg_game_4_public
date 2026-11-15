@@ -2,9 +2,13 @@
 
 How to check that the client ↔ SignalR ↔ API ↔ Redis/Postgres loop still works after a change.
 
+## Fastest manual check — Quick Battle
+
+Log in (⚡ Quick Register), pick a preset in the **⚡ Quick Battle** box and press **Start Quick Battle**. You control the whole party against AI enemies; no session, join code or characters needed. Click one of your tokens (or its tracker row) to choose who you're planning for, then **Lock In All**. The Quick Battle panel has Force Resolve, Restart and Leave. **Training Dummy** ends on the first hit, which makes it the quickest way to see a full battle through to the result screen. Presets live in `server/src/RpgGame.Api/QuickBattle/Presets/`.
+
 ## Automated (preferred) — Playwright E2E
 
-`e2e/tests/combat-loop.spec.ts` plays a real session with two isolated browser contexts (GM + player). It runs in CI on every PR (`e2e` job in `.github/workflows/ci.yml`) and takes ~10 seconds locally.
+`e2e/tests/quick-battle.spec.ts` is the quickest end-to-end check (one browser, a whole battle to victory, plus three-character planning). `e2e/tests/enemy-ai.spec.ts` covers an AI monster. `e2e/tests/combat-loop.spec.ts` plays a real session with two isolated browser contexts (GM + player). It runs in CI on every PR (`e2e` job in `.github/workflows/ci.yml`) and takes ~10 seconds locally.
 
 ```bash
 docker compose up -d --build          # anything serving the app on :4200 works

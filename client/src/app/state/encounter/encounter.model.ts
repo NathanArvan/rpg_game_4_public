@@ -13,6 +13,14 @@ export interface Combatant {
   isAiControlled: boolean;
 }
 
+/**
+ * Whether this user plans for the combatant. Checking the type matters in Quick Battle, where the
+ * user's ID is also on the enemy rows (the AI plans those).
+ */
+export function isControlledBy(c: Combatant, userId: string): boolean {
+  return c.userId === userId && c.combatantType === 'player';
+}
+
 export interface EncounterOutcome {
   /** 'party' | 'enemy' | 'draw' */
   winningSide: string;
@@ -25,7 +33,10 @@ export interface EncounterStateModel {
   roundPhase: 'planning' | 'resolving' | 'between_rounds' | 'ended' | null;
   roundNumber: number;
   combatants: Combatant[];
-  myPlannedActions: PlannedActionEntry[];
+  /** This user's plans for the current round, per combatant they control. */
+  myPlannedActions: Record<string, PlannedActionEntry[]>;
+  /** Which of this user's combatants they're planning for (several in Quick Battle). */
+  selectedCombatantId: string | null;
   lockedInCombatantNames: string[];
   planningTimerExpiresAt: string | null;
   resolutionTicks: TickResult[];

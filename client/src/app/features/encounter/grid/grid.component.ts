@@ -5,10 +5,10 @@ import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { ClearMyPlannedAction, GmSelectEnemy, GmSetEnemyPlan, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
+import { ClearMyPlannedAction, GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
-import { Combatant } from '../../../state/encounter/encounter.model';
+import { Combatant, isControlledBy } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
 import { PlannedActionEntry, TickResult } from '../../../contracts/hub-contracts.generated';
 
@@ -52,7 +52,9 @@ export class GridComponent implements OnInit, OnDestroy {
   private defeatingNow = new Set<string>();
   damageNumbers: DamageNumber[] = [];
 
-  myPlannedActions: PlannedActionEntry[] = [];
+  /** This user's plans this round, per character they control. */
+  myPlans: Record<string, PlannedActionEntry[]> = {};
+  private selectedCombatantId: string | null = null;
   lockedIn = false;
   gmSelectedEnemyId: string | null = null;
   enemyPlannedActions: Record<string, PlannedActionEntry> = {};
@@ -96,11 +98,10 @@ export class GridComponent implements OnInit, OnDestroy {
       this.positions = p;
     });
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
-    this.store.select(EncounterState.myPlannedActions).subscribe(a => {
-      this.myPlannedActions = a;
-      // Reset lock-in state when a new planning phase clears plans
-      if (a.length === 0) this.lockedIn = false;
-    });
+    this.store.select(EncounterState.myPlannedActions).subscribe(plans => this.myPlans = plans);
+    this.store.select(EncounterState.selectedCombatantId).subscribe(id => this.selectedCombatantId = id);
+    // A new round means nobody is locked in yet.
+    this.store.select(EncounterState.roundNumber).subscribe(() => this.lockedIn = false);
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
 
@@ -114,6 +115,49 @@ export class GridComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+  }
+
+  // ----- Who am I planning for -----
+
+  /** Living characters this user controls (one normally, several in Quick Battle). */
+  get myCombatants(): Combatant[] {
+    return this.combatants.filter(c => isControlledBy(c, this.myUserId) && !c.isDefeated);
+  }
+
+  /** The character being planned for: the one picked, or else the first living one. */
+  get selected(): Combatant | null {
+    const mine = this.myCombatants;
+    return mine.find(c => c.id === this.selectedCombatantId) ?? mine[0] ?? null;
+  }
+
+  get selectedPlan(): PlannedActionEntry[] {
+    const selected = this.selected;
+    return selected ? this.myPlans[selected.id] ?? [] : [];
+  }
+
+  get controlsSeveral(): boolean {
+    return this.myCombatants.length > 1;
+  }
+
+  get plannedCount(): number {
+    return this.myCombatants.filter(c => (this.myPlans[c.id]?.length ?? 0) > 0).length;
+  }
+
+  get lockInLabel(): string {
+    if (this.lockedIn) return 'Locked in ✓';
+    return this.controlsSeveral ? `Lock In All (${this.plannedCount}/${this.myCombatants.length} planned)` : 'Lock In';
+  }
+
+  isMine(combatant: Combatant): boolean {
+    return isControlledBy(combatant, this.myUserId);
+  }
+
+  isSelected(combatant: Combatant): boolean {
+    return this.controlsSeveral && this.selected?.id === combatant.id;
+  }
+
+  hasPlan(combatant: Combatant): boolean {
+    return (this.myPlans[combatant.id]?.length ?? 0) > 0;
   }
 
   // ----- Rendering helpers -----
@@ -148,7 +192,7 @@ export class GridComponent implements OnInit, OnDestroy {
       return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
     }
     if (this.lockedIn) return false;
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
+    const myCombatant = this.selected;
     if (!myCombatant) return false;
     const myPos = this.positions[myCombatant.id];
     if (!myPos) return false;
@@ -165,17 +209,19 @@ export class GridComponent implements OnInit, OnDestroy {
     return false;
   }
 
+  /** A cell one of your characters plans to move to. */
   isGhostTarget(cell: Cell): boolean {
-    const moveAction = this.myPlannedActions.find(a => a.type === 'move');
-    if (!moveAction?.targetCell) return false;
-    return moveAction.targetCell.x === cell.x && moveAction.targetCell.y === cell.y;
+    return Object.values(this.myPlans).some(plan => plan.some(a =>
+      a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
+  }
+
+  private isSelectedGhostTarget(cell: Cell): boolean {
+    return this.selectedPlan.some(a => a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y);
   }
 
   isTargeted(combatant: Combatant): boolean {
-    return this.myPlannedActions.some(a =>
-      (a.type === 'melee_attack' || a.type === 'ranged_attack') &&
-      a.targetCombatantId === combatant.id
-    );
+    return Object.values(this.myPlans).some(plan => plan.some(a =>
+      (a.type === 'melee_attack' || a.type === 'ranged_attack') && a.targetCombatantId === combatant.id));
   }
 
   isDefeating(combatant: Combatant): boolean {
@@ -183,16 +229,17 @@ export class GridComponent implements OnInit, OnDestroy {
   }
 
   get plannedActionType(): string | null {
-    return this.myPlannedActions[0]?.type ?? null;
+    return this.selectedPlan[0]?.type ?? null;
   }
 
   get plannedActionSummary(): string {
-    const action = this.myPlannedActions[0];
+    const action = this.selectedPlan[0];
     if (!action) return '';
     if (action.type === 'move' && action.targetCell)
       return `Move to (${action.targetCell.x}, ${action.targetCell.y})`;
-    if (action.type === 'melee_attack') return 'Melee Attack';
-    if (action.type === 'ranged_attack') return 'Ranged Attack';
+    const target = this.combatants.find(c => c.id === action.targetCombatantId)?.characterName;
+    if (action.type === 'melee_attack') return target ? `Melee Attack on ${target}` : 'Melee Attack';
+    if (action.type === 'ranged_attack') return target ? `Ranged Attack on ${target}` : 'Ranged Attack';
     if (action.type === 'defend') return 'Defend';
     return action.type;
   }
@@ -230,12 +277,18 @@ export class GridComponent implements OnInit, OnDestroy {
     // Normal player mode
     if (this.lockedIn) return;
 
-    const myCombatant = this.combatants.find(c => c.userId === this.myUserId);
-    if (!myCombatant || myCombatant.isDefeated) return;
-
     const targetCombatant = this.tokenAt(cell);
 
-    if (targetCombatant && targetCombatant.userId !== this.myUserId && !targetCombatant.isDefeated) {
+    // Clicking one of your own characters picks who you're planning for.
+    if (targetCombatant && this.isMine(targetCombatant)) {
+      if (!targetCombatant.isDefeated) this.store.dispatch(new SelectMyCombatant(targetCombatant.id));
+      return;
+    }
+
+    const myCombatant = this.selected;
+    if (!myCombatant) return;
+
+    if (targetCombatant && !targetCombatant.isDefeated) {
       const myPos = this.positions[myCombatant.id];
       const targetPos = this.positions[targetCombatant.id];
       const chebyshev = myPos && targetPos
@@ -244,32 +297,33 @@ export class GridComponent implements OnInit, OnDestroy {
       const attackType = chebyshev <= 1 ? 'melee_attack' : 'ranged_attack';
 
       const action: PlannedActionEntry = { type: attackType, targetCell: null, targetCombatantId: targetCombatant.id };
-      this.store.dispatch(new SetMyPlannedAction([action]));
-      this.hub.planAction(this.joinCode, { actions: [action] });
+      this.plan(myCombatant, action);
+    } else if (!targetCombatant && this.isSelectedGhostTarget(cell)) {
+      this.cancelPlan();
     } else if (!targetCombatant && this.isInRange(cell)) {
-      if (this.isGhostTarget(cell)) {
-        this.cancelPlan();
-        return;
-      }
       const action: PlannedActionEntry = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
-      this.store.dispatch(new SetMyPlannedAction([action]));
-      this.hub.planAction(this.joinCode, { actions: [action] });
+      this.plan(myCombatant, action);
     }
   }
 
+  private plan(combatant: Combatant, action: PlannedActionEntry): void {
+    this.store.dispatch(new SetMyPlannedAction(combatant.id, [action]));
+    this.hub.planAction(this.joinCode, { actions: [action] }, combatant.id);
+  }
+
   planDefend(): void {
-    if (this.lockedIn) return;
-    const action: PlannedActionEntry = { type: 'defend', targetCell: null, targetCombatantId: null };
-    this.store.dispatch(new SetMyPlannedAction([action]));
-    this.hub.planAction(this.joinCode, { actions: [action] });
+    const selected = this.selected;
+    if (this.lockedIn || !selected) return;
+    this.plan(selected, { type: 'defend', targetCell: null, targetCombatantId: null });
   }
 
   cancelPlan(): void {
-    this.store.dispatch(new ClearMyPlannedAction());
+    const selected = this.selected;
+    if (selected) this.store.dispatch(new ClearMyPlannedAction(selected.id));
   }
 
   onLockIn(): void {
-    if (this.lockedIn || !this.myPlannedActions.length) return;
+    if (this.lockedIn || this.plannedCount === 0) return;
     this.lockedIn = true;
     this.hub.lockIn(this.joinCode);
   }
