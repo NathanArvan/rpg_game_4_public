@@ -6,6 +6,7 @@ import { Observable } from 'rxjs';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { CampaignService } from '../../../core/services/campaign.service';
 import { SetGmSession } from '../../../state/session/session.actions';
+import { SessionState } from '../../../state/session/session.state';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { Combatant } from '../../../state/encounter/encounter.model';
 
@@ -35,6 +36,16 @@ export class GmFlowComponent {
     private store: Store
   ) {
     this.monsters$ = store.select(EncounterState.monsterCombatants);
+
+    // This component is destroyed while an encounter is on screen. When the GM returns to the
+    // lobby afterwards, pick the session back up instead of starting over at "Create Campaign".
+    const joinCode = store.selectSnapshot(SessionState.joinCode);
+    if (store.selectSnapshot(SessionState.isGm) && joinCode) {
+      this.gmCampaignId = store.selectSnapshot(SessionState.campaignId);
+      this.gmGameSessionId = store.selectSnapshot(SessionState.gameSessionId);
+      this.gmJoinCode = joinCode;
+      this.gmConnected = hub.isConnected();
+    }
   }
 
   createCampaign(): void {

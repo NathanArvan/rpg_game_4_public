@@ -4,6 +4,7 @@ import { Store } from '@ngxs/store';
 import { Observable, interval, of } from 'rxjs';
 import { map, startWith, switchMap } from 'rxjs/operators';
 import { EncounterState } from '../../../state/encounter/encounter.state';
+import { EncounterOutcome } from '../../../state/encounter/encounter.model';
 
 @Component({
   selector: 'app-round-banner',
@@ -18,12 +19,14 @@ export class RoundBannerComponent {
   roundNumber$: Observable<number>;
   lockedIn$: Observable<string[]>;
   timerSeconds$: Observable<number | null>;
+  outcome$: Observable<EncounterOutcome | null>;
 
   constructor(private store: Store) {
     this.isPlanning$ = store.select(EncounterState.isPlanning);
     this.isResolving$ = store.select(EncounterState.isResolving);
     this.roundNumber$ = store.select(EncounterState.roundNumber);
     this.lockedIn$ = store.select(EncounterState.lockedInCombatantNames);
+    this.outcome$ = store.select(EncounterState.outcome);
 
     this.timerSeconds$ = store.select(EncounterState.planningTimerExpiresAt).pipe(
       switchMap(expiresAt => {

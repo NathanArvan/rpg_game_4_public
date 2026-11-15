@@ -1,16 +1,13 @@
-using Microsoft.AspNetCore.SignalR;
 using RpgGame.Api.Contracts.Hub;
-using RpgGame.Api.Hubs;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
 public class PlanningTimerService(
-    IHubContext<GameHub> hubContext,
     IRedisGameState redisState,
     IServiceScopeFactory scopeFactory,
-    ILogger<PlanningTimerService> logger)
+    ILogger<PlanningTimerService> logger) : IPlanningTimer
 {
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _timers = new();
 
@@ -80,40 +77,13 @@ public class PlanningTimerService(
         if (missingCombatantIds.Count > 0)
             await redisState.AddLockedInBatchAsync(encounterIdStr, missingCombatantIds);
 
-        var groupName = $"session:{sessionId}";
-        await hubContext.Clients.Group(groupName)
-            .SendAsync(HubEvents.Events.AllLockedIn, new AllLockedInPayload());
-
-        logger.LogInformation("Planning timer: AllLockedIn broadcast sent for encounter {EncounterId}", encounterId);
-
-        await RunResolutionAsync(encounterId, sessionId, groupName);
-    }
-
-    private async Task RunResolutionAsync(Guid encounterId, Guid sessionId, string groupName)
-    {
-
         try
         {
+            // RoundOrchestrator is scoped; resolve it per expiry rather than injecting it into this
+            // singleton (it also depends on this timer, so constructor injection would be a cycle).
             using var scope = scopeFactory.CreateScope();
-            var resolutionSvc = scope.ServiceProvider.GetRequiredService<IResolutionService>();
-
-            var resolution = await resolutionSvc.ResolveRoundAsync(encounterId);
-            await hubContext.Clients.Group(groupName)
-                .SendAsync(HubEvents.Events.ResolutionCompleted, resolution);
-
-            await Task.Delay(3000);
-
-            var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
-            await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
-
-            var planningPayload = new PlanningPhaseStartedPayload(
-                resolution.NewRoundNumber,
-                GameConstants.PlanningTimerSeconds,
-                resolution.UpdatedCombatants);
-            await hubContext.Clients.Group(groupName)
-                .SendAsync(HubEvents.Events.PlanningPhaseStarted, planningPayload);
-
-            Start(encounterId, sessionId, GameConstants.PlanningTimerSeconds);
+            var orchestrator = scope.ServiceProvider.GetRequiredService<IRoundOrchestrator>();
+            await orchestrator.ResolveAndAdvanceAsync(encounterId, sessionId);
         }
         catch (Exception ex)
         {

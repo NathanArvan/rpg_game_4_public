@@ -184,4 +184,40 @@ public class EncounterServiceTests
 
         Assert.Equal("Monster", result.MonsterDto.CharacterName);
     }
+
+    [Fact]
+    public async Task EndEncounter_MarksEndedLogsEventAndClearsLiveState()
+    {
+        await using var db = CreateDb();
+        var (sessionId, _) = await SetupGmSession(db, "END123", "gm-user");
+        var encounterId = Guid.NewGuid();
+        db.Encounters.Add(new Encounter
+        {
+            Id = encounterId,
+            GameSessionId = sessionId,
+            Status = EncounterStatus.Active,
+            RoundNumber = 1,
+            StartedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var mockRedis = new Mock<IRedisGameState>();
+        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+
+        await service.EndEncounterAsync(encounterId, "party", 4);
+
+        var encounter = await db.Encounters.SingleAsync(e => e.Id == encounterId);
+        Assert.Equal(EncounterStatus.Ended, encounter.Status);
+        Assert.NotNull(encounter.EndedAt);
+        Assert.Equal(4, encounter.RoundNumber);
+
+        var evt = await db.GameEvents.SingleAsync(e => e.EncounterId == encounterId);
+        Assert.Equal("encounter_ended", evt.EventType);
+        Assert.Contains("\"winningSide\":\"party\"", evt.Payload);
+        Assert.Contains("\"roundNumber\":4", evt.Payload);
+
+        mockRedis.Verify(r => r.ClearPlannedActionsAsync(encounterId.ToString()), Times.Once);
+        mockRedis.Verify(r => r.ClearLockedInAsync(encounterId.ToString()), Times.Once);
+        mockRedis.Verify(r => r.DeleteActiveEncounterAsync(sessionId.ToString()), Times.Once);
+    }
 }

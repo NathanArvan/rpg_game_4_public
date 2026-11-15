@@ -5,6 +5,7 @@ import {
   ClearEncounter,
   ClearMyPlannedAction,
   CombatantDefeated,
+  EncounterEnded,
   EncounterStarted,
   GmClearEnemyPlan,
   GmSelectEnemy,
@@ -15,7 +16,7 @@ import {
   ResolutionCompleted,
   SetMyPlannedAction,
 } from './encounter.actions';
-import { Combatant, EncounterStateModel } from './encounter.model';
+import { Combatant, EncounterOutcome, EncounterStateModel } from './encounter.model';
 import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
 import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
 
@@ -33,6 +34,7 @@ import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
     resolutionTicks: [],
     gmSelectedEnemyId: null,
     enemyPlannedActions: {},
+    outcome: null,
   },
 })
 @Injectable()
@@ -95,6 +97,11 @@ export class EncounterState {
   @Selector()
   static enemyPlannedActions(state: EncounterStateModel): Record<string, PlannedActionEntry> {
     return state.enemyPlannedActions;
+  }
+
+  @Selector()
+  static outcome(state: EncounterStateModel): EncounterOutcome | null {
+    return state.outcome;
   }
 
   @Selector()
@@ -233,6 +240,19 @@ export class EncounterState {
     ctx.patchState({ enemyPlannedActions: updated });
   }
 
+  @Action(EncounterEnded)
+  encounterEnded(ctx: StateContext<EncounterStateModel>, { winningSide, finalRoundNumber }: EncounterEnded) {
+    console.log('[encounter] EncounterEnded: winner=', winningSide, 'round=', finalRoundNumber);
+    ctx.patchState({
+      roundPhase: 'ended',
+      outcome: { winningSide, finalRoundNumber },
+      planningTimerExpiresAt: null,
+      myPlannedActions: [],
+      gmSelectedEnemyId: null,
+      enemyPlannedActions: {},
+    });
+  }
+
   @Action(ClearEncounter)
   clearEncounter(ctx: StateContext<EncounterStateModel>) {
     ctx.patchState({
@@ -247,6 +267,7 @@ export class EncounterState {
       resolutionTicks: [],
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
+      outcome: null,
     });
   }
 }

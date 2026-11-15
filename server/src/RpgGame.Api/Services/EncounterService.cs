@@ -3,6 +3,7 @@ using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
+using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
@@ -243,5 +244,38 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
 
         logger.LogInformation("AddMonster: complete, returning MonsterAdded result");
         return new AddMonsterResult(gameSession.Id, activeEncounter.EncounterId, monsterDto, spawnDto);
+    }
+
+    public async Task EndEncounterAsync(Guid encounterId, string winningSide, int finalRoundNumber)
+    {
+        var encounter = await db.Encounters.FirstOrDefaultAsync(e => e.Id == encounterId)
+            ?? throw new InvalidOperationException($"Encounter {encounterId} not found.");
+
+        var now = DateTimeOffset.UtcNow;
+        encounter.Status = EncounterStatus.Ended;
+        encounter.EndedAt = now;
+        encounter.RoundNumber = finalRoundNumber;
+
+        db.GameEvents.Add(new GameEvent
+        {
+            Id = Guid.NewGuid(),
+            EncounterId = encounterId,
+            OccurredAt = now,
+            EventType = "encounter_ended",
+            Payload = JsonSerializer.Serialize(
+                new { winningSide, roundNumber = finalRoundNumber },
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }),
+        });
+
+        // DB before Redis, same as resolution persistence.
+        await db.SaveChangesAsync();
+
+        var encounterIdStr = encounterId.ToString();
+        await redisState.ClearPlannedActionsAsync(encounterIdStr);
+        await redisState.ClearLockedInAsync(encounterIdStr);
+        await redisState.DeleteActiveEncounterAsync(encounter.GameSessionId.ToString());
+
+        logger.LogInformation("EndEncounter: encounter={EncounterId} ended after round {Round}, winner={WinningSide}",
+            encounterId, finalRoundNumber, winningSide);
     }
 }

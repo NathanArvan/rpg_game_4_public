@@ -21,6 +21,8 @@ export interface CombatantDto {
 
 export interface EncounterEndedPayload {
   encounterId: string;
+  winningSide: string;
+  finalRoundNumber: number;
 }
 
 export interface EncounterStartedPayload {

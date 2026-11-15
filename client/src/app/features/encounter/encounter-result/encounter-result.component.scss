@@ -1,0 +1,39 @@
+.result-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 10;
+  border-radius: .5rem;
+}
+
+.result-card {
+  min-width: 260px;
+  padding: 24px 32px;
+  text-align: center;
+  background: white;
+  border-radius: .5rem;
+  border-top: 6px solid #1a237e;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.result-card.win { border-top-color: #2e7d32; }
+.result-card.loss { border-top-color: #c62828; }
+
+.headline {
+  margin: 0 0 8px;
+  font-size: 2em;
+}
+
+.detail {
+  margin: 0 0 20px;
+  color: #555;
+}
+
+.return-btn {
+  padding: 8px 20px;
+  font-size: 1em;
+  cursor: pointer;
+}
