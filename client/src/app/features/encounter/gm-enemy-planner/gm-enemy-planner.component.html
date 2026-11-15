@@ -24,7 +24,11 @@
         <div class="enemy-plan-badge" *ngIf="getPlan(enemy.id) as plan">
           {{ planSummary(plan) }}
         </div>
-        <div class="enemy-plan-badge empty" *ngIf="!getPlan(enemy.id)">
+        <div class="enemy-plan-badge ai" *ngIf="!getPlan(enemy.id) && enemy.isAiControlled"
+             title="The enemy AI has planned and locked in this monster. Plan it yourself to override this round.">
+          🤖 AI
+        </div>
+        <div class="enemy-plan-badge empty" *ngIf="!getPlan(enemy.id) && !enemy.isAiControlled">
           (will defend)
         </div>
 

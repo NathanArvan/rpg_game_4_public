@@ -7,4 +7,5 @@ public record CombatantDto(
     string CharacterName,
     int CurrentHp,
     int MaxHp,
-    string CombatantType = "player");
+    string CombatantType = "player",
+    bool IsAiControlled = false);

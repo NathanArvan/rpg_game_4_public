@@ -32,11 +32,16 @@
       <button (click)="addMonster()" [disabled]="!newMonsterName.trim()">
         + Add Monster
       </button>
+      <label class="ai-toggle">
+        <input type="checkbox" [(ngModel)]="newMonsterAi" />
+        🤖 AI controls this monster
+      </label>
     </div>
 
     <div class="monster-list" *ngIf="(monsters$ | async)?.length">
       <div class="monster-item" *ngFor="let m of monsters$ | async">
         <span class="monster-name">{{ m.characterName }}</span>
+        <span class="ai-badge" *ngIf="m.isAiControlled" title="Planned by the enemy AI">🤖 AI</span>
         <span class="monster-hp">{{ m.currentHp }}/{{ m.maxHp }} HP</span>
       </div>
     </div>

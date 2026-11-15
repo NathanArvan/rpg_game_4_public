@@ -26,60 +26,29 @@ public class ResolutionService(
         PropertyNameCaseInsensitive = true,
     };
 
-    // Persistence-side facts about a combatant that the rules engine doesn't need.
-    private record CombatantRecord(
-        string HpKey,           // combatant ID for monsters, character ID for players
-        int StartingHp,
-        int MaxHp,
-        CombatantState State);
-
     public async Task<ResolutionPayload> ResolveRoundAsync(Guid encounterId)
     {
         logger.LogInformation("ResolveRound: START for encounter={EncounterId}", encounterId);
 
         // ----- Load -----
 
-        var encounter = await db.Encounters
-            .Include(e => e.Combatants)
-            .FirstOrDefaultAsync(e => e.Id == encounterId)
-            ?? throw new InvalidOperationException($"Encounter {encounterId} not found.");
-
-        logger.LogInformation("ResolveRound: loaded {CombatantCount} combatants from DB", encounter.Combatants.Count);
+        var loaded = await EncounterStateLoader.LoadAsync(db, redisState, encounterId);
+        var encounter = loaded.Encounter;
+        var mapEntry = loaded.Map;
+        var records = loaded.Records;
+        logger.LogInformation("ResolveRound: loaded {CombatantCount} combatants", records.Count);
 
         var sessionIdStr = encounter.GameSessionId.ToString();
         var encounterIdStr = encounterId.ToString();
 
-        // Character stats (class, dex, maxHp) — monsters have null CharacterId, skip them
-        var charIds = encounter.Combatants
-            .Where(c => c.CharacterId.HasValue)
-            .Select(c => c.CharacterId!.Value)
-            .ToList();
-        var characterMap = await db.Characters
-            .Where(c => charIds.Contains(c.Id))
-            .ToDictionaryAsync(c => c.Id);
-
         var plannedActionsJson = await redisState.GetAllPlannedActionsAsync(encounterIdStr);
         logger.LogInformation("ResolveRound: loaded {ActionCount} planned actions from Redis", plannedActionsJson.Count);
-
-        var mapEntry = await redisState.GetMapAsync(encounterIdStr)
-            ?? throw new InvalidOperationException($"Map for encounter {encounterId} not found.");
-
-        var records = new Dictionary<string, CombatantRecord>();
-        foreach (var c in encounter.Combatants)
-        {
-            var combatantId = c.Id.ToString();
-            var hpKey = c.CombatantType == "monster" ? combatantId : c.CharacterId!.Value.ToString();
-            var currentHp = await redisState.GetCharacterHpAsync(hpKey);
-            var isDefeated = await redisState.IsDefeatedAsync(encounterIdStr, combatantId);
-            characterMap.TryGetValue(c.CharacterId ?? Guid.Empty, out var character);
-            records[combatantId] = ToRecord(c, hpKey, currentHp, isDefeated, character, mapEntry);
-        }
 
         var plans = MapPlans(plannedActionsJson, records);
 
         // ----- Resolve (pure) -----
 
-        var state = new EncounterState(mapEntry.GridWidth, mapEntry.GridHeight, records.Values.Select(r => r.State).ToList());
+        var state = loaded.ToRulesState();
         var outcome = RoundResolver.Resolve(state, plans, dice);
         logger.LogInformation("ResolveRound: {TickCount} tick(s) resolved, {DefeatedCount} defeated this round",
             outcome.Ticks.Count, outcome.DefeatedThisRound.Count);
@@ -103,7 +72,8 @@ public class ResolutionService(
                 final.Hp,
                 records[id].MaxHp,
                 final.IsDefeated,
-                c.CombatantType);
+                c.CombatantType,
+                c.IsAiControlled);
         }).ToList();
 
         // ----- Persist -----
@@ -154,35 +124,6 @@ public class ResolutionService(
     }
 
     // ----- Inbound mapping -----
-
-    /// <summary>
-    /// Data-seeding defaults (not rules): monsters have no Character row, so they get MaxHp 20 and
-    /// the fighter damage die; a player whose Character is missing gets MaxHp = current HP and the
-    /// wizard die. Dex (default 10) feeds Speed until 3B.1 adds a real Speed stat.
-    /// </summary>
-    private static CombatantRecord ToRecord(
-        EncounterCombatant c, string hpKey, int currentHp, bool isDefeated, Character? character, MapEntry map)
-    {
-        var isMonster = c.CombatantType == "monster";
-        var maxHp = character?.MaxHp ?? (isMonster ? 20 : currentHp);
-        var charClass = character?.Class ?? (isMonster ? "fighter" : "wizard");
-        var dex = character?.BaseStats.Dex ?? 10;
-        GridPosition? position = map.Positions.TryGetValue(c.Id.ToString(), out var pos)
-            ? new GridPosition(pos.X, pos.Y)
-            : null; // the engine treats a missing position as (0, 0)
-
-        var state = new CombatantState(
-            Id: c.Id.ToString(),
-            Name: c.CharacterName,
-            Hp: currentHp,
-            MaxHp: maxHp,
-            Speed: dex,
-            Damage: CombatMath.DamageDieForClass(charClass),
-            Position: position,
-            IsDefeated: isDefeated);
-
-        return new CombatantRecord(hpKey, currentHp, maxHp, state);
-    }
 
     /// <summary>
     /// Deserializes Redis plans, preserving Redis order (the engine treats plan order as meaningful).

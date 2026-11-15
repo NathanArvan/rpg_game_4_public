@@ -13,6 +13,7 @@ public class RoundOrchestratorTests
     private readonly Guid _sessionId = Guid.NewGuid();
     private readonly Mock<IResolutionService> _resolution = new();
     private readonly Mock<IEncounterService> _encounters = new();
+    private readonly Mock<IAiPlanningService> _ai = new();
     private readonly Mock<IRedisGameState> _redis = new();
     private readonly Mock<IPlanningTimer> _timer = new();
     private readonly Mock<IClientProxy> _group = new();
@@ -34,7 +35,10 @@ public class RoundOrchestratorTests
         var hub = new Mock<IHubContext<GameHub>>();
         hub.Setup(h => h.Clients).Returns(clients.Object);
 
-        return new RoundOrchestrator(_resolution.Object, _encounters.Object, _redis.Object, _timer.Object,
+        _ai.Setup(a => a.PlanAndLockInAsync(It.IsAny<Guid>(), It.IsAny<string?>()))
+            .ReturnsAsync(Array.Empty<AiLockIn>());
+
+        return new RoundOrchestrator(_resolution.Object, _encounters.Object, _ai.Object, _redis.Object, _timer.Object,
             hub.Object, NullLogger<RoundOrchestrator>.Instance)
         {
             PlaybackDelay = TimeSpan.Zero,
@@ -61,6 +65,7 @@ public class RoundOrchestratorTests
         _redis.Verify(r => r.StartNextPlanningPhaseAsync(_sessionId.ToString(), 3, It.IsAny<DateTimeOffset>()), Times.Once);
         _timer.Verify(t => t.Start(_encounterId, _sessionId, It.IsAny<int>()), Times.Once);
         _encounters.Verify(e => e.EndEncounterAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+        _ai.Verify(a => a.PlanAndLockInAsync(_encounterId, null), Times.Once);
     }
 
     [Fact]
@@ -86,6 +91,24 @@ public class RoundOrchestratorTests
         _encounters.Verify(e => e.EndEncounterAsync(_encounterId, "party", 2), Times.Once);
         _redis.Verify(r => r.StartNextPlanningPhaseAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>()), Times.Never);
         _timer.Verify(t => t.Start(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>()), Times.Never);
+        _ai.Verify(a => a.PlanAndLockInAsync(It.IsAny<Guid>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartPlanningPhase_AiLocksInAfterPlanningPhaseStarted()
+    {
+        var orchestrator = CreateOrchestrator();
+        _ai.Setup(a => a.PlanAndLockInAsync(_encounterId, null))
+            .ReturnsAsync([new AiLockIn("m1", "Goblin"), new AiLockIn("m2", "Orc")]);
+
+        await orchestrator.StartPlanningPhaseAsync(_encounterId, _sessionId, new PlanningPhaseStartedPayload(1, 300, []));
+
+        Assert.Equal(
+            [HubEvents.Events.PlanningPhaseStarted, HubEvents.Events.PlayerLockedIn, HubEvents.Events.PlayerLockedIn],
+            _sent);
+        Assert.Equal("Goblin", Assert.IsType<PlayerLockedInPayload>(_sentPayloads[1]).CharacterName);
+        Assert.Equal("Orc", Assert.IsType<PlayerLockedInPayload>(_sentPayloads[2]).CharacterName);
+        _timer.Verify(t => t.Start(_encounterId, _sessionId, 300), Times.Once);
     }
 
     [Fact]

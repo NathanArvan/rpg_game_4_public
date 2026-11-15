@@ -49,6 +49,7 @@ h3 { margin: 0 0 10px; font-size: 1em; color: #ff8a65; }
   white-space: nowrap;
 }
 .enemy-plan-badge.empty { color: #666; }
+.enemy-plan-badge.ai { color: #90caf9; }
 
 .enemy-actions { display: flex; gap: 4px; }
 .defend-btn, .clear-btn {

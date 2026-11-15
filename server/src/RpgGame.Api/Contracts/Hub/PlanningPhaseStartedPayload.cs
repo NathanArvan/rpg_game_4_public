@@ -12,4 +12,5 @@ public record PlanningCombatantDto(
     int CurrentHp,
     int MaxHp,
     bool IsDefeated,
-    string CombatantType = "player");
+    string CombatantType = "player",
+    bool IsAiControlled = false);

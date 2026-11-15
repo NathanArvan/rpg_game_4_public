@@ -31,8 +31,8 @@ public interface IRedisGameState
     Task ClearLockedInAsync(string encounterId);
 
     // Pending monsters (pre-encounter staging)
-    Task<List<string>> GetPendingMonstersAsync(string sessionId);
-    Task AddPendingMonsterAsync(string sessionId, string name);
+    Task<List<PendingMonster>> GetPendingMonstersAsync(string sessionId);
+    Task AddPendingMonsterAsync(string sessionId, PendingMonster monster);
     Task ClearPendingMonstersAsync(string sessionId);
 
     // Resolution support

@@ -1,0 +1,21 @@
+{
+  // The goblin's target is chosen from the start-of-round state. The wounded mage is just as
+  // close as the fighter, so the goblin goes for the lower HP.
+  "description": "AI: a goblin next to two heroes attacks the wounded one",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [4, 5] },
+    { "id": "Mage",    "hp": 5,  "damage": "d4", "at": [6, 5] },
+    { "id": "Goblin",  "hp": 20, "damage": "d8", "at": [5, 5], "side": "enemy" }
+  ],
+  "plans": {
+    "Fighter": ["defend"],
+    "Mage":    ["defend"],
+    "Goblin":  ["ai"]
+  },
+  "dice": [15, 5],
+  "expect": {
+    "plans":    { "Goblin": "melee Mage" },
+    "hp":       { "Mage": 0, "Fighter": 20 },
+    "defeated": ["Mage"]
+  }
+}

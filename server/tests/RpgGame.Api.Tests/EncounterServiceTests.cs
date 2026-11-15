@@ -88,7 +88,7 @@ public class EncounterServiceTests
         var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
-            () => service.AddMonsterAsync(joinCode, "player-1", "Goblin"));
+            () => service.AddMonsterAsync(joinCode, "player-1", "Goblin", isAiControlled: false));
 
         Assert.True(ex.IsActionRejected);
         Assert.Contains("Only the GM", ex.Message);
@@ -112,7 +112,7 @@ public class EncounterServiceTests
         var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
-            () => service.AddMonsterAsync(joinCode, gmUserId, "Goblin"));
+            () => service.AddMonsterAsync(joinCode, gmUserId, "Goblin", isAiControlled: false));
 
         Assert.True(ex.IsActionRejected);
         Assert.Contains("planning phase", ex.Message);
@@ -148,7 +148,7 @@ public class EncounterServiceTests
 
         var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
 
-        var result = await service.AddMonsterAsync(joinCode, gmUserId, "Goblin");
+        var result = await service.AddMonsterAsync(joinCode, gmUserId, "Goblin", isAiControlled: false);
 
         Assert.Equal(2, result.SpawnPosition.X);
         Assert.Equal(19, result.SpawnPosition.Y);
@@ -180,7 +180,7 @@ public class EncounterServiceTests
 
         var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
 
-        var result = await service.AddMonsterAsync(joinCode, gmUserId, "   ");
+        var result = await service.AddMonsterAsync(joinCode, gmUserId, "   ", isAiControlled: false);
 
         Assert.Equal("Monster", result.MonsterDto.CharacterName);
     }
@@ -220,4 +220,52 @@ public class EncounterServiceTests
         mockRedis.Verify(r => r.ClearLockedInAsync(encounterId.ToString()), Times.Once);
         mockRedis.Verify(r => r.DeleteActiveEncounterAsync(sessionId.ToString()), Times.Once);
     }
+
+    [Fact]
+    public async Task StartEncounter_CarriesAiFlagFromPendingMonsterToCombatantRedisAndDtos()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-ai";
+        var (sessionId, _) = await SetupGmSession(db, "AIFLAG", gmUserId);
+        var character = new Character { Id = Guid.NewGuid(), UserId = "player-1", Name = "Hero", MaxHp = 12, CurrentHp = 12 };
+        db.Characters.Add(character);
+        await db.SaveChangesAsync();
+
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetPlayersAsync(sessionId.ToString())).ReturnsAsync(new Dictionary<string, PlayerEntry>
+        {
+            ["player-1"] = new PlayerEntry("Hero", character.Id.ToString()),
+        });
+        mockRedis.Setup(r => r.GetPendingMonstersAsync(sessionId.ToString())).ReturnsAsync(
+        [
+            new PendingMonster("Goblin", IsAiControlled: true),
+            new PendingMonster("Puppet", IsAiControlled: false),
+        ]);
+        ActiveEncounterEntry? stored = null;
+        mockRedis.Setup(r => r.SetActiveEncounterAsync(sessionId.ToString(), It.IsAny<ActiveEncounterEntry>()))
+            .Callback<string, ActiveEncounterEntry>((_, e) => stored = e)
+            .Returns(Task.CompletedTask);
+
+        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var result = await service.StartEncounterAsync("AIFLAG", gmUserId);
+
+        var goblin = await db.EncounterCombatants.SingleAsync(c => c.CharacterName == "Goblin");
+        var puppet = await db.EncounterCombatants.SingleAsync(c => c.CharacterName == "Puppet");
+        Assert.True(goblin.IsAiControlled);
+        Assert.False(puppet.IsAiControlled);
+
+        Assert.True(stored!.Combatants.Single(c => c.Id == goblin.Id.ToString()).IsAiControlled);
+        Assert.False(stored.Combatants.Single(c => c.Id == puppet.Id.ToString()).IsAiControlled);
+
+        Assert.True(result.Payload.Combatants.Single(c => c.CharacterName == "Goblin").IsAiControlled);
+        Assert.True(result.PlanningPayload.Combatants.Single(c => c.CharacterName == "Goblin").IsAiControlled);
+        Assert.False(result.PlanningPayload.Combatants.Single(c => c.CharacterName == "Hero").IsAiControlled);
+    }
+
+    [Theory]
+    [InlineData("{\"name\":\"Goblin\",\"isAiControlled\":true}", "Goblin", true)]
+    [InlineData("Old Goblin", "Old Goblin", false)]       // entries written before the AI flag existed
+    [InlineData("{not json", "{not json", false)]
+    public void PendingMonster_ParsesJsonAndPlainNames(string stored, string name, bool ai) =>
+        Assert.Equal(new PendingMonster(name, ai), RedisGameState.ParsePendingMonster(stored));
 }

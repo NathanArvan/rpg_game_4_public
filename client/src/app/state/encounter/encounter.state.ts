@@ -111,7 +111,7 @@ export class EncounterState {
 
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
-    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false, combatantType: c.combatantType as 'player' | 'monster' }));
+    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false, combatantType: c.combatantType as 'player' | 'monster', isAiControlled: c.isAiControlled ?? false }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
 
@@ -128,6 +128,7 @@ export class EncounterState {
       maxHp: c.maxHp,
       isDefeated: c.isDefeated,
       combatantType: c.combatantType as 'player' | 'monster',
+      isAiControlled: c.isAiControlled ?? false,
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -215,6 +216,7 @@ export class EncounterState {
       maxHp: payload.monster.maxHp,
       isDefeated: payload.monster.isDefeated,
       combatantType: 'monster',
+      isAiControlled: payload.monster.isAiControlled ?? false,
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }

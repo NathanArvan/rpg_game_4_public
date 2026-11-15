@@ -32,11 +32,12 @@ public partial class ScenarioTests
     public void Scenario(string file)
     {
         var scenario = Load(file);
-        var (state, plans, dice, config) = Build(scenario, file);
+        var (state, plans, aiPlans, dice, config) = Build(scenario, file);
 
         var outcome = RoundResolver.Resolve(state, plans, dice, config);
 
         var failures = Check(scenario.Expect ?? new ExpectDto(), outcome);
+        CheckAiPlans(scenario.Expect?.Plans, aiPlans, failures);
         if (dice.Remaining != 0)
             failures.Add($"dice: {dice.Remaining} scripted roll(s) were never used");
 
@@ -56,7 +57,7 @@ public partial class ScenarioTests
             ?? throw new InvalidDataException($"{file}: empty scenario");
     }
 
-    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, ScriptedDice, RulesConfig) Build(
+    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, Dictionary<string, PlannedAction>, ScriptedDice, RulesConfig) Build(
         ScenarioDto s, string file)
     {
         if (s.Combatants is not { Count: > 0 })
@@ -80,8 +81,19 @@ public partial class ScenarioTests
 
         // JSON object key order is preserved: plan order is meaningful to the resolver.
         var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
+        var aiIds = new List<string>();
         foreach (var (id, queue) in s.Plans ?? [])
+        {
+            if (queue.Any(IsAi))
+            {
+                if (queue.Count != 1)
+                    throw new InvalidDataException($"{file}: plan for {id}: \"ai\" must be the only entry");
+                aiIds.Add(id);
+                plans[id] = []; // placeholder keeps the combatant's place in plan order
+                continue;
+            }
             plans[id] = queue.Select(text => ParseAction(text, $"{file}: plan for {id}")).ToList();
+        }
 
         var config = s.Config is null
             ? RulesConfig.Default
@@ -92,8 +104,42 @@ public partial class ScenarioTests
                 MeleeReach = s.Config.MeleeReach ?? RulesConfig.Default.MeleeReach,
             };
 
-        return (new EncounterState(grid[0], grid[1], combatants), plans, new ScriptedDice(s.Dice ?? []), config);
+        var state = new EncounterState(grid[0], grid[1], combatants);
+
+        // "ai" plans are filled in by EnemyAi from the starting state, before the round resolves.
+        var aiPlans = new Dictionary<string, PlannedAction>();
+        if (aiIds.Count > 0)
+        {
+            var teams = s.Combatants.ToDictionary(c => c.Id, c => c.Side ?? "party");
+            aiPlans = EnemyAi.PlanRound(state, teams, aiIds, config);
+            foreach (var id in aiIds)
+                plans[id] = aiPlans.TryGetValue(id, out var action) ? [action] : [];
+        }
+
+        return (state, plans, aiPlans, new ScriptedDice(s.Dice ?? []), config);
     }
+
+    private static bool IsAi(string text) => text.Trim().Equals("ai", StringComparison.OrdinalIgnoreCase);
+
+    private static void CheckAiPlans(Dictionary<string, string>? expected, Dictionary<string, PlannedAction> actual, List<string> failures)
+    {
+        foreach (var (id, text) in expected ?? [])
+        {
+            var want = ParseAction(text, $"expect.plans.{id}");
+            if (!actual.TryGetValue(id, out var got))
+                failures.Add($"AI plan for {id}: expected \"{text}\", but {id} had no AI plan");
+            else if (got != want)
+                failures.Add($"AI plan for {id}: expected \"{text}\", got {Describe(got)}");
+        }
+    }
+
+    private static string Describe(PlannedAction a) => a.Type switch
+    {
+        ActionType.Move => $"\"move {a.TargetCell!.Value.X},{a.TargetCell.Value.Y}\"",
+        ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
+        ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
+        _ => "\"defend\"",
+    };
 
     [GeneratedRegex(@"^\s*move\s+(-?\d+)\s*,\s*(-?\d+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex MoveRegex();
@@ -196,6 +242,7 @@ public partial class ScenarioTests
         public string? Damage { get; set; }
         public int[]? At { get; set; }
         public bool? Defeated { get; set; }
+        public string? Side { get; set; }
     }
 
     private sealed class ConfigDto
@@ -214,6 +261,7 @@ public partial class ScenarioTests
         public List<TickRefDto>? Blocked { get; set; }
         public List<TickRefDto>? Hits { get; set; }
         public List<TickRefDto>? Wasted { get; set; }
+        public Dictionary<string, string>? Plans { get; set; }
     }
 
     private sealed class TickRefDto

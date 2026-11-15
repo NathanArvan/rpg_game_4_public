@@ -1,0 +1,17 @@
+{
+  "description": "AI: a goblin out of reach walks the full 6 cells toward the party, then the hero's arrow misses",
+  "combatants": [
+    { "id": "Hero",   "hp": 12, "damage": "d6", "at": [0, 0] },
+    { "id": "Goblin", "hp": 20, "damage": "d8", "at": [0, 19], "side": "enemy" }
+  ],
+  "plans": {
+    "Hero":   ["ranged Goblin"],
+    "Goblin": ["ai"]
+  },
+  "dice": [4],
+  "expect": {
+    "plans":     { "Goblin": "move 0,13" },
+    "positions": { "Goblin": [0, 13], "Hero": [0, 0] },
+    "hp":        { "Hero": 12, "Goblin": 20 }
+  }
+}

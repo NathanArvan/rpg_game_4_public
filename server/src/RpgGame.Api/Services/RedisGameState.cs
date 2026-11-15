@@ -170,17 +170,32 @@ public class RedisGameState : IRedisGameState
 
     // --- Pending monsters (pre-encounter staging) ---
 
-    public async Task<List<string>> GetPendingMonstersAsync(string sessionId)
+    public async Task<List<PendingMonster>> GetPendingMonstersAsync(string sessionId)
     {
         var db = _redis.GetDatabase();
         var values = await db.ListRangeAsync($"session:{sessionId}:pending_monsters");
-        return values.Select(v => v.ToString()).ToList();
+        return values.Select(v => ParsePendingMonster(v.ToString())).ToList();
     }
 
-    public async Task AddPendingMonsterAsync(string sessionId, string name)
+    public async Task AddPendingMonsterAsync(string sessionId, PendingMonster monster)
     {
         var db = _redis.GetDatabase();
-        await db.ListRightPushAsync($"session:{sessionId}:pending_monsters", name);
+        await db.ListRightPushAsync($"session:{sessionId}:pending_monsters", JsonSerializer.Serialize(monster, _jsonOptions));
+    }
+
+    /// <summary>Entries are JSON; a plain name (written before monsters could be AI-controlled) is a manual monster.</summary>
+    internal static PendingMonster ParsePendingMonster(string value)
+    {
+        if (value.StartsWith('{'))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<PendingMonster>(value, _jsonOptions);
+                if (parsed is not null) return parsed;
+            }
+            catch (JsonException) { /* fall through: treat as a name */ }
+        }
+        return new PendingMonster(value, false);
     }
 
     public async Task ClearPendingMonstersAsync(string sessionId)

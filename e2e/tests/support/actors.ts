@@ -36,8 +36,10 @@ export async function gmOpenSession(page: Page, campaignName: string): Promise<s
   return joinCode;
 }
 
-export async function gmAddMonster(page: Page, name: string): Promise<void> {
+/** GM: stage a monster in the lobby. AI-controlled by default, like the checkbox. */
+export async function gmAddMonster(page: Page, name: string, { ai = true }: { ai?: boolean } = {}): Promise<void> {
   await page.getByPlaceholder('Monster name').fill(name);
+  await page.getByLabel(/AI controls this monster/).setChecked(ai);
   await page.getByRole('button', { name: /Add Monster/ }).click();
   await expect(page.locator('.monster-list .monster-name', { hasText: name })).toBeVisible();
 }

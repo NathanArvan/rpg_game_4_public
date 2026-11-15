@@ -1,3 +1,5 @@
+using RpgGame.Api.Contracts.Hub;
+
 namespace RpgGame.Api.Services;
 
 public interface IRoundOrchestrator
@@ -8,4 +10,10 @@ public interface IRoundOrchestrator
     /// Called from the hub (lock-in / force resolve) and from the planning timer.
     /// </summary>
     Task ResolveAndAdvanceAsync(Guid encounterId, Guid sessionId);
+
+    /// <summary>
+    /// Opens a planning phase: broadcasts PlanningPhaseStarted, starts the timer, then lets the AI
+    /// plan and lock in its combatants (broadcasting a PlayerLockedIn for each).
+    /// </summary>
+    Task StartPlanningPhaseAsync(Guid encounterId, Guid sessionId, PlanningPhaseStartedPayload payload);
 }
