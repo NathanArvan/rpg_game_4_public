@@ -13,7 +13,7 @@ public sealed record TickOutcome(
     IReadOnlyList<AttackOutcome> Attacks,
     IReadOnlyList<EffectOutcome> Effects);
 
-/// <param name="Path">Cells actually traversed, starting with the origin cell.</param>
+/// <param name="Path">Cells actually traversed, starting with the origin cell. A single cell means the combatant stayed put.</param>
 /// <param name="BlockedById">Who stopped this mover.</param>
 public sealed record MovementOutcome(
     string CombatantId,
@@ -25,10 +25,12 @@ public sealed record MovementOutcome(
 public enum WastedReason
 {
     None,
-    /// <summary>The target was defeated in an earlier round or tick, or does not exist.</summary>
+    /// <summary>The target was defeated in an earlier round or tick.</summary>
     TargetDefeated,
-    /// <summary>Melee target was beyond reach after this tick's movement.</summary>
+    /// <summary>Melee target was beyond reach after this tick's movement, or attacker or target has no map position.</summary>
     OutOfMeleeReach,
+    /// <summary>The target id is not a combatant in this encounter.</summary>
+    InvalidTarget,
 }
 
 /// <param name="TargetHpBefore">Target HP at the start of this tick's attack phase.</param>

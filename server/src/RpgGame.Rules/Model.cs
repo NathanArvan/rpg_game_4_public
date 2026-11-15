@@ -43,7 +43,8 @@ public enum ActionType
 /// Movement-conflict tiebreaker. Fed from Dex until 3B.1 introduces the real Speed stat.
 /// </param>
 /// <param name="Position">
-/// Current cell, or null if the combatant has no map position (treated as (0, 0) — see quirk 5).
+/// Current cell, or null if the combatant has no map position. Such a combatant isn't on the map:
+/// it can't move, can't make or receive melee attacks, and doesn't block anyone.
 /// </param>
 public sealed record CombatantState(
     string Id,

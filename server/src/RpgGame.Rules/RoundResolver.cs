@@ -30,7 +30,7 @@ public static class RoundResolver
         var round = new RoundContext(state, plans, dice, config);
 
         // Ticks = longest queue. Always at least one tick, so a round with no plans still
-        // produces one (empty) tick — quirk 11.
+        // produces one (empty) tick.
         int tickCount = Math.Max(1, plans.Count == 0 ? 0 : plans.Values.Max(q => q.Count));
 
         var ticks = new List<TickOutcome>(tickCount);
@@ -68,10 +68,15 @@ public static class RoundResolver
             var action = ActionAt(queue, tick);
             if (action?.Type != ActionType.Move || action.TargetCell is not { } target) continue;
 
-            var start = round.PositionOf(combatantId);
-            var path = ComputeChebyshevPath(start, target);
-            if (path.Count <= 1) continue; // Already at target — no movement result (quirk 11)
+            // A combatant with no map position isn't on the map, so it can't move.
+            if (!round.Positions.TryGetValue(combatantId, out var start)) continue;
 
+            // Re-check the move against the rules (PlanningService also validates it): the path
+            // stops after MovementRange steps or at the grid edge, whichever comes first.
+            var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, round.Config);
+
+            // A move to the combatant's own cell is a mover with a one-cell path: it never steps,
+            // blocks like any stationary occupant, and still reports a (stay-put) result.
             movers.Add(new Mover(combatantId, path, round.Combatants[combatantId].Speed));
         }
 
@@ -182,15 +187,18 @@ public static class RoundResolver
             var targetId = action.TargetCombatantId ?? "";
 
             // Validate against post-movement positions. Only targets defeated in an EARLIER
-            // round or tick (or unknown ids — quirk 12) are wasted: damage within a tick is
-            // simultaneous, so nobody is "already dead" mid-phase (quirk 6).
+            // round or tick are wasted as defeated: damage within a tick is simultaneous, so
+            // nobody is "already dead" mid-phase (quirk 6).
             var wasted = WastedReason.None;
-            if (!round.Combatants.ContainsKey(targetId) || round.IsOut(targetId))
+            if (!round.Combatants.ContainsKey(targetId))
+            {
+                wasted = WastedReason.InvalidTarget;
+            }
+            else if (round.IsOut(targetId))
             {
                 wasted = WastedReason.TargetDefeated;
             }
-            else if (action.Type == ActionType.MeleeAttack
-                     && round.PositionOf(attackerId).ChebyshevDistanceTo(round.PositionOf(targetId)) > round.Config.MeleeReach)
+            else if (action.Type == ActionType.MeleeAttack && !round.InMeleeReach(attackerId, targetId))
             {
                 wasted = WastedReason.OutOfMeleeReach;
             }
@@ -214,8 +222,9 @@ public static class RoundResolver
             round.Hp[targetId] += delta;
 
         // Defeat check runs once, after ALL damage is applied — enables mutual kills
-        // (DESIGN_SPIKE Decision 2). It covers every combatant, so one already at HP ≤ 0
-        // but not yet flagged is defeated here even if unattacked (quirk 10).
+        // (DESIGN_SPIKE Decision 2). It deliberately covers every combatant, not just this
+        // tick's targets: anyone at HP ≤ 0 is defeated however they got there (e.g. future
+        // damage-over-time statuses), even if nobody attacked them.
         var defeatedThisTick = new HashSet<string>();
         foreach (var c in round.State.Combatants)
         {
@@ -278,6 +287,25 @@ public static class RoundResolver
     }
 
     // ----- Helpers -----
+
+    /// <summary>
+    /// The part of <paramref name="path"/> a move may legally walk: at most
+    /// <see cref="RulesConfig.MovementRange"/> steps, and never off the grid.
+    /// </summary>
+    private static List<GridPosition> LegalPrefix(List<GridPosition> path, EncounterState state, RulesConfig config)
+    {
+        int length = 1; // the start cell
+        while (length < path.Count
+               && length <= config.MovementRange
+               && IsOnGrid(path[length], state))
+        {
+            length++;
+        }
+        return length == path.Count ? path : path.GetRange(0, length);
+    }
+
+    private static bool IsOnGrid(GridPosition p, EncounterState state) =>
+        p.X >= 0 && p.Y >= 0 && p.X < state.GridWidth && p.Y < state.GridHeight;
 
     private static PlannedAction? ActionAt(IReadOnlyList<PlannedAction> queue, int tick) =>
         tick < queue.Count ? queue[tick] : null; // exhausted queue → idle
@@ -358,7 +386,13 @@ public static class RoundResolver
                 DefeatedThisRound.Add(id);
         }
 
-        /// <summary>Quirk 5: a combatant with no map position is treated as standing at (0, 0).</summary>
-        public GridPosition PositionOf(string id) => Positions.GetValueOrDefault(id, GridPosition.Origin);
+        /// <summary>
+        /// Both combatants are on the map and within melee reach. A combatant with no map
+        /// position isn't on the map, so it can't make or receive melee attacks.
+        /// </summary>
+        public bool InMeleeReach(string attackerId, string targetId) =>
+            Positions.TryGetValue(attackerId, out var a)
+            && Positions.TryGetValue(targetId, out var t)
+            && a.ChebyshevDistanceTo(t) <= Config.MeleeReach;
     }
 }
