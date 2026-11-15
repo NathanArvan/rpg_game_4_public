@@ -445,4 +445,49 @@ public partial class ResolutionServiceTests
         var movement = Assert.Single(result.Ticks[0].Movements);
         Assert.Equal(monsterId.ToString(), movement.CombatantId);
     }
+
+    [Fact]
+    public async Task ResolveRound_UsesPresetStatOverrides_ForCombatantsWithoutACharacter()
+    {
+        // Quick Battle: a "player" combatant with no Character row, stats stored on the combatant.
+        await using var db = CreateDb();
+        var sessionId = Guid.NewGuid();
+        var encounterId = Guid.NewGuid();
+        var scoutId = Guid.NewGuid();
+        var goblinId = Guid.NewGuid();
+        db.Encounters.Add(new Encounter
+        {
+            Id = encounterId, GameSessionId = sessionId, Status = EncounterStatus.Active, RoundNumber = 1, StartedAt = DateTimeOffset.UtcNow,
+            Combatants =
+            [
+                new EncounterCombatant { Id = scoutId, EncounterId = encounterId, UserId = "u", CharacterName = "Scout",
+                    CombatantType = "player", MaxHp = 12, Speed = 12, DamageDie = "d12" },
+                new EncounterCombatant { Id = goblinId, EncounterId = encounterId, UserId = "u", CharacterName = "Goblin",
+                    CombatantType = "monster", IsAiControlled = true, MaxHp = 10, Speed = 10, DamageDie = "d4" },
+            ],
+        });
+        await db.SaveChangesAsync();
+
+        var map = new MapEntry(20, 20, new Dictionary<string, Position>
+        {
+            [scoutId.ToString()] = new(5, 5), [goblinId.ToString()] = new(5, 6),
+        }, []);
+        var plans = new Dictionary<string, string> { [scoutId.ToString()] = ActionJson("melee_attack", targetId: goblinId.ToString()) };
+        // HP lives under the combatant ID (no character); the scout is hurt, the goblin is at full HP.
+        var redis = BuildMockRedis(encounterId.ToString(), sessionId.ToString(), plans, map,
+            hpByKey: new() { [scoutId.ToString()] = 7, [goblinId.ToString()] = 10 });
+
+        // d20 = 15 hits, then 11 damage: only possible on the preset's d12 (ScriptedDice rejects 11 on
+        // the d4 a character-less player would otherwise get).
+        var service = new ResolutionService(db, redis.Object, new ScriptedDice(15, 11), NullLogger<ResolutionService>.Instance);
+        var payload = await service.ResolveRoundAsync(encounterId);
+
+        var attack = Assert.Single(payload.Ticks[0].Attacks);
+        Assert.Equal((true, 11, -1), (attack.Hit, attack.Damage, attack.TargetNewHp));
+        var scout = payload.UpdatedCombatants.Single(c => c.Id == scoutId.ToString());
+        Assert.Equal((7, 12), (scout.CurrentHp, scout.MaxHp)); // MaxHp from the override, not the current HP
+        Assert.True(payload.UpdatedCombatants.Single(c => c.Id == goblinId.ToString()).IsAiControlled);
+        redis.Verify(r => r.SetHpAsync(goblinId.ToString(), -1), Times.Once);
+        Assert.Equal([goblinId.ToString()], payload.DefeatedCombatantIds);
+    }
 }

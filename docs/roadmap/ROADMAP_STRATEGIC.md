@@ -49,7 +49,9 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 *Execution order:* 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4. Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
 
-### ⬜ Slice 3B.0 — Manual Testing Spike
+### ✅ Slice 3B.0 — Manual Testing Spike
+
+*Status: done (PRs #90 encounter end, #91 enemy AI, and Quick Battle). What shipped differs slightly from the plan below: no `Side` column (`CombatantType` already does the job), and party stats for Quick Battle live in nullable `MaxHp` / `Speed` / `DamageDie` overrides on `EncounterCombatant`, which 3B.1 combat profiles extend.*
 
 *Goal: one person can start a battle in one click, command a party of several characters against preset AI enemies, and play it to a win or a loss. This is the harness for trying out every later 3B/3C feature by hand.*
 
@@ -184,8 +186,8 @@ Covers: whether characters have core stats at all, and if so which ones and how 
 
 ```
 Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
-Next        3B.0 Manual Testing Spike (encounter end → enemy AI → Quick Battle)
-Then        3B.1 Combat Profiles → 3B.5 Defeat & Incapacitation → 3B.2 Action Points
+Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Quick Battle)
+Next        3B.1 Combat Profiles → 3B.5 Defeat & Incapacitation → 3B.2 Action Points
 Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -232,7 +234,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 
-**3B.0** — `Encounter.Status` transitions to `Ended` (and an `EndedAt` timestamp) when one side is defeated. `EncounterCombatant` gets `Side` (`party` | `enemy`) and `IsAiControlled`; a nullable `CharacterId` on party combatants is allowed (Quick Battle combatants have no `Character` row). Battle presets live as JSON files in the server, not in the database.
+**3B.0** (done) — `Encounter.EndedAt`; `Encounter.Status` becomes `Ended` when one side is defeated. `EncounterCombatant` gets `IsAiControlled` and nullable preset stat overrides `MaxHp`, `Speed`, `DamageDie` (what 3B.1 combat profiles grow into). Party combatants may have no `Character` row. A separate `Side` column turned out not to be needed: `CombatantType` (`player` / `monster`) already separates party and enemies. Battle presets live as JSON files in the server, not in the database.
 
 **Deferred (Stats & Progression)** — Rework or remove `Character.BaseStats`, `Race`, `Class`, `Level`; persistent inventory and ability acquisition.
 
@@ -260,7 +262,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3A.1** — Rework `session:{sessionId}:active_encounter`: remove `activeTurnCombatantId`, `initiativeOrder`. Add `roundPhase` (`planning` | `resolving` | `between_rounds`), `roundNumber`, `planningTimerExpiresAt`. New key `encounter:{encounterId}:planned_actions` (Hash): one field per combatant ID, value is JSON action array. New key `encounter:{encounterId}:locked_in` (Set): combatant IDs that have locked in.
 
-**3B.0** — `CombatantRef` entries in `session:{sessionId}:active_encounter` gain `side` and `isAiControlled`. `active_encounter` gains `planningTimerEnabled` (false for Quick Battle) and `endedAt`/`winningSide` once ended. `character:live` is keyed by combatant ID for party combatants without a `Character` row (as monsters already are).
+**3B.0** (done) — `CombatantRef` entries in `session:{sessionId}:active_encounter` gain `isAiControlled`; `active_encounter` gains `planningTimerEnabled` (false for Quick Battle) and is deleted when the encounter ends (the winner goes out in `EncounterEnded`). `character:live` is keyed by combatant ID when there's no `Character` row (as for monsters). Pending monsters are stored as JSON `{ name, isAiControlled }`.
 
 **3B.1** — Update `character:live` hash: replace `class` field with the combatant's combat profile values (or the preset key, resolved on load) — `maxHp`, `movementRange`, `speed`, `accuracy`, `dodge`, `baseDamage`.
 

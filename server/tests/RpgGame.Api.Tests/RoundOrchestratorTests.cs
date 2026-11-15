@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Hubs;
+using RpgGame.Api.Models;
 using RpgGame.Api.Services;
 
 namespace RpgGame.Api.Tests;
@@ -109,6 +110,22 @@ public class RoundOrchestratorTests
         Assert.Equal("Goblin", Assert.IsType<PlayerLockedInPayload>(_sentPayloads[1]).CharacterName);
         Assert.Equal("Orc", Assert.IsType<PlayerLockedInPayload>(_sentPayloads[2]).CharacterName);
         _timer.Verify(t => t.Start(_encounterId, _sessionId, 300), Times.Once);
+    }
+
+    [Fact]
+    public async Task TimerOff_NextRoundHasNoCountdownAndNoTimer()
+    {
+        ResolutionReturns(3, [],
+            new PlanningCombatantDto("p1", "u1", "Hero", 10, 10, false, "player"),
+            new PlanningCombatantDto("m1", "u1", "Goblin", 5, 20, false, "monster"));
+        _redis.Setup(r => r.GetActiveEncounterAsync(_sessionId.ToString())).ReturnsAsync(
+            new ActiveEncounterEntry(_encounterId.ToString(), "between_rounds", 3, DateTimeOffset.UtcNow, [], PlanningTimerEnabled: false));
+
+        await CreateOrchestrator().ResolveAndAdvanceAsync(_encounterId, _sessionId);
+
+        var payload = Assert.IsType<PlanningPhaseStartedPayload>(_sentPayloads[_sent.IndexOf(HubEvents.Events.PlanningPhaseStarted)]);
+        Assert.Equal(0, payload.PlanningTimerDurationSeconds);
+        _timer.Verify(t => t.Start(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>()), Times.Never);
     }
 
     [Fact]

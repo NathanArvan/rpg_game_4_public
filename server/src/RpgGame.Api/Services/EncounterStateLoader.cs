@@ -55,7 +55,7 @@ internal static class EncounterStateLoader
         foreach (var c in encounter.Combatants)
         {
             var combatantId = c.Id.ToString();
-            var hpKey = c.CombatantType == "monster" ? combatantId : c.CharacterId!.Value.ToString();
+            var hpKey = HpKeyFor(c);
             var currentHp = await redisState.GetCharacterHpAsync(hpKey);
             var isDefeated = await redisState.IsDefeatedAsync(encounterIdStr, combatantId);
             characterMap.TryGetValue(c.CharacterId ?? Guid.Empty, out var character);
@@ -65,8 +65,12 @@ internal static class EncounterStateLoader
         return new LoadedEncounter(encounter, mapEntry, records);
     }
 
+    /// <summary>Redis live-state key: the character ID when there is one, otherwise the combatant ID.</summary>
+    public static string HpKeyFor(EncounterCombatant c) => c.CharacterId?.ToString() ?? c.Id.ToString();
+
     /// <summary>
-    /// Data-seeding defaults (not rules): monsters have no Character row, so they get MaxHp 20 and
+    /// Stat overrides on the combatant (Quick Battle presets) win over everything else. Otherwise,
+    /// data-seeding defaults (not rules): monsters have no Character row, so they get MaxHp 20 and
     /// the fighter damage die; a player whose Character is missing gets MaxHp = current HP and the
     /// wizard die. Dex (default 10) feeds Speed until 3B.1 adds combat profiles.
     /// </summary>
@@ -74,9 +78,10 @@ internal static class EncounterStateLoader
         EncounterCombatant c, string hpKey, int currentHp, bool isDefeated, Character? character, MapEntry map)
     {
         var isMonster = c.CombatantType == "monster";
-        var maxHp = character?.MaxHp ?? (isMonster ? 20 : currentHp);
+        var maxHp = c.MaxHp ?? character?.MaxHp ?? (isMonster ? 20 : currentHp);
         var charClass = character?.Class ?? (isMonster ? "fighter" : "wizard");
-        var dex = character?.BaseStats.Dex ?? 10;
+        var speed = c.Speed ?? character?.BaseStats.Dex ?? 10;
+        var damage = c.DamageDie is { } die ? Rules.DamageDie.Parse(die) : CombatMath.DamageDieForClass(charClass);
         GridPosition? position = map.Positions.TryGetValue(c.Id.ToString(), out var pos)
             ? new GridPosition(pos.X, pos.Y)
             : null; // the engine treats a missing position as (0, 0)
@@ -86,8 +91,8 @@ internal static class EncounterStateLoader
             Name: c.CharacterName,
             Hp: currentHp,
             MaxHp: maxHp,
-            Speed: dex,
-            Damage: CombatMath.DamageDieForClass(charClass),
+            Speed: speed,
+            Damage: damage,
             Position: position,
             IsDefeated: isDefeated);
 

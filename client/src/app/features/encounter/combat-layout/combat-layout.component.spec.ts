@@ -4,6 +4,9 @@ import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { FeedState } from '../../../state/feed/feed.state';
 import { GameHubService } from '../../../core/services/game-hub.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { QuickBattleService } from '../../../core/services/quick-battle.service';
+import { SessionState } from '../../../state/session/session.state';
 import { CombatLayoutComponent } from './combat-layout.component';
 
 describe('CombatLayoutComponent', () => {
@@ -19,8 +22,10 @@ describe('CombatLayoutComponent', () => {
     await TestBed.configureTestingModule({
       imports: [CombatLayoutComponent],
       providers: [
-        provideStore([EncounterState, MapState, FeedState]),
+        provideStore([EncounterState, MapState, FeedState, SessionState]),
         { provide: GameHubService, useValue: hubSpy },
+        { provide: AuthService, useValue: { getUserId: () => 'user-1' } },
+        { provide: QuickBattleService, useValue: jasmine.createSpyObj('QuickBattleService', ['start', 'leave']) },
       ],
     }).compileComponents();
 

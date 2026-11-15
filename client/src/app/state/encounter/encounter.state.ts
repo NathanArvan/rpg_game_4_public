@@ -14,6 +14,7 @@ import {
   PlayerLockedIn,
   PlanningPhaseStarted,
   ResolutionCompleted,
+  SelectMyCombatant,
   SetMyPlannedAction,
 } from './encounter.actions';
 import { Combatant, EncounterOutcome, EncounterStateModel } from './encounter.model';
@@ -28,7 +29,8 @@ import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
     roundPhase: null,
     roundNumber: 0,
     combatants: [],
-    myPlannedActions: [],
+    myPlannedActions: {},
+    selectedCombatantId: null,
     lockedInCombatantNames: [],
     planningTimerExpiresAt: null,
     resolutionTicks: [],
@@ -70,8 +72,13 @@ export class EncounterState {
   }
 
   @Selector()
-  static myPlannedActions(state: EncounterStateModel): PlannedActionEntry[] {
+  static myPlannedActions(state: EncounterStateModel): Record<string, PlannedActionEntry[]> {
     return state.myPlannedActions;
+  }
+
+  @Selector()
+  static selectedCombatantId(state: EncounterStateModel): string | null {
+    return state.selectedCombatantId;
   }
 
   @Selector()
@@ -118,7 +125,10 @@ export class EncounterState {
   @Action(PlanningPhaseStarted)
   planningPhaseStarted(ctx: StateContext<EncounterStateModel>, { roundNumber, planningTimerDurationSeconds, combatants }: PlanningPhaseStarted) {
     console.log('[encounter] PlanningPhaseStarted: round=', roundNumber, 'combatants=', combatants.length);
-    const expiresAt = new Date(Date.now() + planningTimerDurationSeconds * 1000).toISOString();
+    // 0 seconds means no timer (Quick Battle).
+    const expiresAt = planningTimerDurationSeconds > 0
+      ? new Date(Date.now() + planningTimerDurationSeconds * 1000).toISOString()
+      : null;
     const mapped: Combatant[] = combatants.map((c: PlanningCombatantDto) => ({
       id: c.id,
       userId: c.userId,
@@ -134,7 +144,7 @@ export class EncounterState {
       roundPhase: 'planning',
       roundNumber,
       combatants: mapped,
-      myPlannedActions: [],
+      myPlannedActions: {},
       lockedInCombatantNames: [],
       planningTimerExpiresAt: expiresAt,
       resolutionTicks: [],
@@ -186,13 +196,20 @@ export class EncounterState {
   }
 
   @Action(SetMyPlannedAction)
-  setMyPlannedAction(ctx: StateContext<EncounterStateModel>, { actions }: SetMyPlannedAction) {
-    ctx.patchState({ myPlannedActions: actions });
+  setMyPlannedAction(ctx: StateContext<EncounterStateModel>, { combatantId, actions }: SetMyPlannedAction) {
+    ctx.patchState({ myPlannedActions: { ...ctx.getState().myPlannedActions, [combatantId]: actions } });
   }
 
   @Action(ClearMyPlannedAction)
-  clearMyPlannedAction(ctx: StateContext<EncounterStateModel>) {
-    ctx.patchState({ myPlannedActions: [] });
+  clearMyPlannedAction(ctx: StateContext<EncounterStateModel>, { combatantId }: ClearMyPlannedAction) {
+    const plans = { ...ctx.getState().myPlannedActions };
+    delete plans[combatantId];
+    ctx.patchState({ myPlannedActions: plans });
+  }
+
+  @Action(SelectMyCombatant)
+  selectMyCombatant(ctx: StateContext<EncounterStateModel>, { combatantId }: SelectMyCombatant) {
+    ctx.patchState({ selectedCombatantId: combatantId });
   }
 
   @Action(CombatantDefeated)
@@ -249,7 +266,7 @@ export class EncounterState {
       roundPhase: 'ended',
       outcome: { winningSide, finalRoundNumber },
       planningTimerExpiresAt: null,
-      myPlannedActions: [],
+      myPlannedActions: {},
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
     });
@@ -263,7 +280,8 @@ export class EncounterState {
       roundPhase: null,
       roundNumber: 0,
       combatants: [],
-      myPlannedActions: [],
+      myPlannedActions: {},
+      selectedCombatantId: null,
       lockedInCombatantNames: [],
       planningTimerExpiresAt: null,
       resolutionTicks: [],

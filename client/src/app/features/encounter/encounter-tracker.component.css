@@ -10,3 +10,8 @@ th { font-weight: bold; color: #555; }
 .locked-in-badge { color: #2e7d32; font-size: 0.85em; font-weight: bold; }
 .lock-in-list { list-style: none; padding: 0; margin: 0 0 12px; color: #2e7d32; font-size: 0.9em; }
 .lock-in-list li.waiting { color: #888; font-style: italic; }
+
+/* Your characters: clickable to plan for them. */
+tr.mine:not(.defeated) { cursor: pointer; }
+tr.mine:not(.defeated):hover { background: rgba(46, 125, 50, 0.08); }
+tr.selected { background: rgba(255, 213, 79, 0.25); }

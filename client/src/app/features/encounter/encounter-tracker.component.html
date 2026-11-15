@@ -15,7 +15,11 @@
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let c of combatants$ | async" [class.defeated]="c.isDefeated">
+      <tr *ngFor="let c of combatants$ | async"
+          [class.defeated]="c.isDefeated"
+          [class.mine]="isMine(c)"
+          [class.selected]="isMine(c) && isSelected(c)"
+          (click)="select(c)">
         <td><strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong></td>
         <td>
           <span *ngIf="!c.isDefeated">{{ c.currentHp }}/{{ c.maxHp }}</span>

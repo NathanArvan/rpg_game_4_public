@@ -26,5 +26,7 @@ public static class HubEvents
         public const string AddMonster        = nameof(AddMonster);
         public const string PlanEnemyAction   = nameof(PlanEnemyAction);
         public const string LockInEnemies     = nameof(LockInEnemies);
+        public const string GetQuickBattlePresets = nameof(GetQuickBattlePresets);
+        public const string StartQuickBattle  = nameof(StartQuickBattle);
     }
 }

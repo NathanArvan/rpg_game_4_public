@@ -1,0 +1,28 @@
+.quick-battle-panel {
+  margin: 8px;
+  padding: 8px 10px;
+  border: 1px dashed #9fa8da;
+  border-radius: .5rem;
+  background: #f5f6ff;
+
+  h3 {
+    margin: 0 0 6px;
+    font-size: 0.95em;
+  }
+}
+
+.preset {
+  font-weight: normal;
+  color: #666;
+  font-size: 0.85em;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button {
+    font-size: 0.85em;
+  }
+}

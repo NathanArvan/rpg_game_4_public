@@ -12,6 +12,8 @@
       <button class="logout-btn" (click)="auth.logout()">Logout</button>
     </div>
 
+    <app-quick-battle-start></app-quick-battle-start>
+
     <app-player-join *ngIf="activeFlow === 'player'"></app-player-join>
     <app-gm-flow *ngIf="activeFlow === 'gm'" [playerCount]="(players$ | async)?.length ?? 0"></app-gm-flow>
   </div>

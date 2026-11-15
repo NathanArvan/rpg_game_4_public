@@ -93,3 +93,13 @@ export async function playerLockIn(page: Page): Promise<void> {
 export async function gmLockInEnemies(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Lock In Enemies' }).click();
 }
+
+// ---- Quick Battle ----
+
+/** Lobby: start a Quick Battle from a preset (by its menu name) and wait for round 1. */
+export async function startQuickBattle(page: Page, presetName: string): Promise<void> {
+  await page.getByLabel('Battle preset').selectOption({ label: presetName });
+  await page.getByRole('button', { name: 'Start Quick Battle' }).click();
+  await expect(page.locator('app-combat-layout')).toBeVisible();
+  await expectPlanningRound(page, 1);
+}

@@ -48,11 +48,17 @@ export class AllLockedIn {
 
 export class SetMyPlannedAction {
   static readonly type = '[Encounter] Set My Planned Action';
-  constructor(public actions: PlannedActionEntry[]) {}
+  constructor(public combatantId: string, public actions: PlannedActionEntry[]) {}
 }
 
 export class ClearMyPlannedAction {
   static readonly type = '[Encounter] Clear My Planned Action';
+  constructor(public combatantId: string) {}
+}
+
+export class SelectMyCombatant {
+  static readonly type = '[Encounter] Select My Combatant';
+  constructor(public combatantId: string | null) {}
 }
 
 export class CombatantDefeated {

@@ -90,6 +90,19 @@ export interface PlayerPresenceChangedPayload {
   isOnline: boolean;
 }
 
+export interface QuickBattlePresetDto {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface QuickBattleStartedResult {
+  joinCode: string;
+  campaignId: string;
+  gameSessionId: string;
+  presetId: string;
+}
+
 export interface ResolutionPayload {
   ticks: TickResult[];
   newRoundNumber: number;
@@ -155,5 +168,7 @@ export const HubEvents = {
     AddMonster: 'AddMonster',
     PlanEnemyAction: 'PlanEnemyAction',
     LockInEnemies: 'LockInEnemies',
+    GetQuickBattlePresets: 'GetQuickBattlePresets',
+    StartQuickBattle: 'StartQuickBattle',
   },
 } as const;

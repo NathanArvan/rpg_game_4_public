@@ -1,0 +1,15 @@
+{
+  "id": "ambush",
+  "name": "Ambush",
+  "description": "Two heroes in the middle of the field, five goblins closing in from every side.",
+  "order": 2,
+  "combatants": [
+    { "name": "Knight",   "side": "party", "hp": 30, "damage": "d8", "speed": 8,  "at": [9, 9] },
+    { "name": "Archer",   "side": "party", "hp": 18, "damage": "d6", "speed": 12, "at": [10, 9] },
+    { "name": "Goblin 1", "side": "enemy", "hp": 8,  "damage": "d4", "speed": 10, "at": [2, 2] },
+    { "name": "Goblin 2", "side": "enemy", "hp": 8,  "damage": "d4", "speed": 10, "at": [17, 2] },
+    { "name": "Goblin 3", "side": "enemy", "hp": 8,  "damage": "d4", "speed": 10, "at": [2, 17] },
+    { "name": "Goblin 4", "side": "enemy", "hp": 8,  "damage": "d4", "speed": 10, "at": [17, 17] },
+    { "name": "Goblin 5", "side": "enemy", "hp": 8,  "damage": "d4", "speed": 10, "at": [9, 18] }
+  ]
+}

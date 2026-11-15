@@ -1,0 +1,9 @@
+<div class="quick-battle-panel" *ngIf="presetId$ | async as presetId">
+  <h3>⚡ Quick Battle <span class="preset">{{ presetId }}</span></h3>
+  <div class="buttons">
+    <button (click)="forceResolve()" [disabled]="!(isPlanning$ | async)"
+            title="Resolve the round now; anyone without a plan defends">⚡ Force Resolve</button>
+    <button (click)="restart()" title="Start this battle again from the beginning">↻ Restart</button>
+    <button (click)="leave()" title="Back to the lobby">Leave</button>
+  </div>
+</div>

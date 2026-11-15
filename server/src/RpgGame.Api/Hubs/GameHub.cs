@@ -12,6 +12,7 @@ public class GameHub(
     IPlanningService planningSvc,
     IRoundOrchestrator roundOrchestrator,
     IAiPlanningService aiPlanningSvc,
+    IQuickBattleService quickBattleSvc,
     ILogger<GameHub> logger) : Hub
 {
     public override Task OnConnectedAsync()
@@ -45,11 +46,38 @@ public class GameHub(
         await roundOrchestrator.StartPlanningPhaseAsync(Guid.Parse(r.Payload.EncounterId), r.SessionId, r.PlanningPayload);
     }
 
-    public async Task PlanAction(string joinCode, PlannedActionArray plannedAction)
+    public IReadOnlyList<QuickBattlePresetDto> GetQuickBattlePresets() => quickBattleSvc.ListPresets();
+
+    /// <summary>
+    /// One-click battle: new campaign + session + encounter from a preset, with the caller controlling
+    /// the whole party against AI enemies. Returns the new session so the client can act in it.
+    /// </summary>
+    public async Task<QuickBattleStartedResult> StartQuickBattle(string presetId)
+    {
+        QuickBattleStart r;
+        try
+        {
+            r = await quickBattleSvc.StartAsync(Context.UserIdentifier!, presetId);
+        }
+        catch (GameActionException ex)
+        {
+            throw new HubException(ex.Message);
+        }
+        var groupName = $"session:{r.Session.GameSessionId}";
+        await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+
+        await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterStarted, r.Encounter.Payload);
+        await roundOrchestrator.StartPlanningPhaseAsync(
+            Guid.Parse(r.Encounter.Payload.EncounterId), r.Session.GameSessionId, r.Encounter.PlanningPayload);
+        return r.Session;
+    }
+
+    /// <param name="combatantId">Which of the caller's characters this is for; null if they control only one.</param>
+    public async Task PlanAction(string joinCode, PlannedActionArray plannedAction, string? combatantId)
     {
         try
         {
-            await planningSvc.PlanActionAsync(joinCode, Context.UserIdentifier!, plannedAction);
+            await planningSvc.PlanActionAsync(joinCode, Context.UserIdentifier!, plannedAction, combatantId);
             // No broadcast — plans are private until lock-in.
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
@@ -65,8 +93,10 @@ public class GameHub(
             var result = await planningSvc.LockInAsync(joinCode, Context.UserIdentifier!);
             var groupName = $"session:{result.SessionId}";
 
-            logger.LogInformation("LockIn: {CharacterName} locked in (allLockedIn={AllLockedIn})", result.CharacterName, result.AllLockedIn);
-            await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(result.CharacterName));
+            var names = result.LockedInNames ?? [result.CharacterName];
+            logger.LogInformation("LockIn: {Names} locked in (allLockedIn={AllLockedIn})", string.Join(", ", names), result.AllLockedIn);
+            foreach (var name in names)
+                await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(name));
 
             if (result.AllLockedIn)
                 await roundOrchestrator.ResolveAndAdvanceAsync(Guid.Parse(result.EncounterId), result.SessionId);

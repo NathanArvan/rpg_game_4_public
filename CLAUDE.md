@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. Next roadmap slice: **3B.0 Manual Testing Spike** (encounter end → simple enemy AI → one-click Quick Battle where one user commands a party against AI enemies). Then **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
+Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. **3B.0 Manual Testing Spike** is done: encounters end, monsters can be AI-controlled, and **⚡ Quick Battle** (lobby) lets one user command a party against AI enemies with no setup. Use Quick Battle to try out every change by hand. Next roadmap slice: **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
 
 ## Documentation
 
@@ -87,7 +87,7 @@ npm ci
 npx playwright install chromium  # first time only
 npm test                         # E2E_BASE_URL overrides the default http://localhost:4200
 ```
-The E2E suite drives two isolated browser contexts (GM + player) through the full loop: register → campaign → session → join → add monster → start encounter → plan → lock in → resolution on both screens (`combat-loop.spec.ts`, manual GM planning), plus an AI monster resolving a round with no GM input (`enemy-ai.spec.ts`). Run it after any change that crosses the client/server boundary (hub methods, contracts, NGXS handlers, templates).
+Specs: `quick-battle.spec.ts` (one browser: play the Training Dummy preset to victory; plan three Skirmish heroes and Lock In All) is the fastest end-to-end check and the default smoke test for each slice. `combat-loop.spec.ts` drives two isolated browser contexts (GM + player) through register → campaign → session → join → add monster → start encounter → plan → lock in → resolution on both screens, with manual GM planning. `enemy-ai.spec.ts` checks an AI monster resolves a round with no GM input. Run it after any change that crosses the client/server boundary (hub methods, contracts, NGXS handlers, templates).
 
 ## Architecture
 
@@ -106,7 +106,7 @@ Clean Architecture with four projects:
 - **GameSession** — Id, CampaignId, JoinCode (6-char alphanumeric, unique), StartedAt
 - **Character** — Id, UserId, Name, Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (D&D-style fields; unused by combat from 3B.1, removal deferred to the stats/progression decision)
 - **Encounter** — Id, GameSessionId, Status (Active|Ended), StartedAt, EndedAt (nullable), RoundNumber; unique-active index on GameSessionId
-- **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`), IsAiControlled
+- **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`), IsAiControlled, MaxHp / Speed / DamageDie (nullable preset stat overrides)
 - **GameEvent** — Id, EncounterId, OccurredAt, EventType (string), Payload (JSONB); append-only log
 
 ### API Routing Convention
@@ -134,6 +134,12 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 4. SignalR connection passes JWT via `accessTokenFactory` → query string `?access_token=<token>`
 5. `Program.cs` JwtBearer `OnMessageReceived` reads from query string
 
+### Quick Battle (3B.0)
+One click from the lobby: `StartQuickBattle(presetId)` creates a campaign (caller is GM), a session and an encounter from a **battle preset**, joins the caller to the session group and opens round 1. The caller controls every party combatant (`CombatantType "player"`, no `Character` row); enemies are AI-controlled monsters. The planning timer is off (`PlanningTimerEnabled = false` → `PlanningTimerDurationSeconds = 0`). The client shows the player view (`SessionState.quickBattlePresetId` set, `isGm` false) plus a Quick Battle panel (Force Resolve / Restart / Leave); the result overlay offers Play again.
+- **Presets:** `server/src/RpgGame.Api/QuickBattle/Presets/*.json` (copied to the output folder). Each lists combatants with `name`, `side` (`party` | `enemy`), `hp`, `damage` (die), `speed`, `at` [x, y], optional `ai` (enemies default to true). `BattlePresetCatalog` validates them at startup and stops the API with the file name if one is broken. To add a battle, drop in a new file; `order` sets its place in the menu (lowest first = default).
+- **Stats:** preset values are stored on `EncounterCombatant` (`MaxHp`, `Speed`, `DamageDie`) and win over Character/default values in `EncounterStateLoader`. Live HP is keyed by combatant ID when there's no character.
+- **Several characters per user:** `PlanAction` takes the `combatantId` of one of your `player` combatants (required if you control more than one). `LockIn` locks all your living combatants; unplanned ones defend (at least one must have a plan). The client tracks plans per combatant and which one you're planning for (click your token or tracker row); the button reads "Lock In All (n/m planned)".
+
 ### Combat Loop (Phase 3A)
 1. **Lobby** — GM creates campaign → starts session → connects; GM can `AddMonster` (staged in Redis until the encounter starts). Players join with a character.
 2. **StartEncounter** — creates Encounter + Combatants, places players on row 0 and monsters on row 19, broadcasts `EncounterStarted` + `PlanningPhaseStarted`, starts the planning timer (`GameConstants.PlanningTimerSeconds`, currently 300s).
@@ -154,8 +160,10 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 | `JoinSession(joinCode, displayName, characterId?)` | Any | Validates join code, adds to Redis, broadcasts `PlayerPresenceChanged` |
 | `AddMonster(joinCode, monsterName, isAiControlled)` | GM only | Stages a monster pre-encounter (or spawns one mid-encounter; an AI one plans and locks in immediately); broadcasts `MonsterAdded` |
 | `StartEncounter(joinCode)` | GM only | Creates encounter + combatants, seeds map/HP, starts round 1 planning |
-| `PlanAction(joinCode, plannedAction)` | Player (own combatant) | Validates and stores the caller's planned action |
-| `LockIn(joinCode)` | Player | Locks in; broadcasts `PlayerLockedIn`; triggers resolution if everyone is locked in |
+| `PlanAction(joinCode, plannedAction, combatantId)` | Player (own combatant) | Validates and stores a planned action for one of the caller's characters (`combatantId` may be null if they control only one) |
+| `LockIn(joinCode)` | Player | Locks in all the caller's living characters (unplanned → defend); one `PlayerLockedIn` each; triggers resolution if everyone is locked in |
+| `GetQuickBattlePresets()` | Any | Returns `QuickBattlePresetDto[]` (id, name, description) |
+| `StartQuickBattle(presetId)` | Any | Creates campaign + session + encounter from a preset, joins the caller, opens round 1; returns `QuickBattleStartedResult` (joinCode, campaignId, gameSessionId, presetId) |
 | `PlanEnemyAction(joinCode, combatantId, plannedAction)` | GM only | Stores a planned action for one monster |
 | `LockInEnemies(joinCode)` | GM only | Locks in all living monsters (unplanned → defend) |
 | `ForceResolve(joinCode)` | GM only | Resolves immediately; unplanned combatants defend |
@@ -181,9 +189,9 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 
 | Slice | Key fields |
 |-------|-----------|
-| `SessionState` (`state/session/`) | `campaignId`, `gameSessionId`, `joinCode`, `isGm`, `status`, `connectedPlayers[]` |
+| `SessionState` (`state/session/`) | `campaignId`, `gameSessionId`, `joinCode`, `isGm`, `status`, `connectedPlayers[]`, `quickBattlePresetId` |
 | `CharacterState` (`state/character/`) | `characters[]`, `selected`, `loading` |
-| `EncounterState` (`state/encounter/`) | `encounterId`, `active`, `roundPhase`, `roundNumber`, `combatants[]`, `myPlannedActions`, `lockedInCombatantNames`, `planningTimerExpiresAt`, `resolutionTicks`, `gmSelectedEnemyId`, `enemyPlannedActions` |
+| `EncounterState` (`state/encounter/`) | `encounterId`, `active`, `roundPhase`, `roundNumber`, `combatants[]`, `myPlannedActions` (per combatant), `selectedCombatantId`, `lockedInCombatantNames`, `planningTimerExpiresAt`, `resolutionTicks`, `gmSelectedEnemyId`, `enemyPlannedActions` |
 | `MapState` (`state/map/`) | `gridWidth/Height` (20×20), `positions` (Record<combatantId, {x,y}>) |
 | `FeedState` (`state/feed/`) | `entries[]`, `unreadCount` |
 
@@ -221,6 +229,9 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **IRoundOrchestrator / RoundOrchestrator** — Scoped; `ResolveAndAdvanceAsync` is the single post-lock-in flow (cancel timer → `AllLockedIn` → resolve → `ResolutionCompleted` / `CombatantDefeated` → playback delay → `EncounterEnded` or the next planning phase). `StartPlanningPhaseAsync` is the single way a planning phase opens (round 1 from `StartEncounter`, later rounds from resolution): `PlanningPhaseStarted` → timer → AI planning → one `PlayerLockedIn` per AI combatant. Broadcasts via `IHubContext<GameHub>`, so the hub and the timer share it
 - **IAiPlanningService / AiPlanningService** — Scoped; adapter around `EnemyAi`: loads state, plans every living AI combatant without a plan yet (a GM override wins), stores the plans and locks them in. Teams come from `CombatantType` for now
 - **EncounterStateLoader** — `internal static`; builds the Rules `EncounterState` (plus persistence records) from Postgres + Redis. Shared by resolution and AI planning
+- **EncounterLaunch** — `internal static`; the shared second half of starting an encounter (Redis active encounter, map, live HP, EncounterStarted/PlanningPhaseStarted payloads). Used by `EncounterService` and `QuickBattleService`
+- **IQuickBattleService / QuickBattleService** — Scoped; lists presets and starts a Quick Battle (campaign, GM membership, session, encounter, combatants with preset stats, timer off)
+- **BattlePresetCatalog** (`QuickBattle/`) — Singleton; loads and validates the preset files at startup
 - **EncounterEndCheck** — `internal static`; decides whether a round ended the encounter and who won (sides from `CombatantType` for now)
 - **IPlanningTimer / PlanningTimerService** — Singleton; per-encounter countdown (`Task.Delay` + CTS); on expiry defaults unplanned combatants to defend and calls `RoundOrchestrator` in a fresh scope
 - **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
@@ -233,7 +244,8 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - `swashbuckle.aspnetcore.cli` installed as a local dotnet tool (`server/.config/dotnet-tools.json`) for spec generation
 
 ### Components (`client/src/app/features/`)
-- **LobbyComponent** (`/`) — hosts AuthPanel, PlayerJoin, GmFlow and the connected-player list; swaps to CombatLayout when an encounter is active
+- **LobbyComponent** (`/`) — hosts AuthPanel, QuickBattleStart, PlayerJoin, GmFlow and the connected-player list; swaps to CombatLayout when an encounter is active
+  - **QuickBattleStartComponent** — preset dropdown + Start Quick Battle (via `QuickBattleService`, which also restarts and leaves)
   - **AuthPanelComponent** — register / login / ⚡ Quick Register
   - **PlayerJoinComponent** — join code + display name + character select
   - **GmFlowComponent** — create campaign → start session → connect → add monsters → start encounter
@@ -243,6 +255,8 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **RoundBannerComponent** — round number, phase, timer, lock-in count
 - **GridComponent** — 20×20 grid; players click a cell in range to plan a move or a token to plan an attack, Defend / Lock In bar; GM sees GmEnemyPlanner + ⚡ Force Resolve; animates resolution ticks with damage numbers
 - **GmEnemyPlannerComponent** — select a monster, plan via grid click or 🛡, Lock In Enemies
+- **QuickBattlePanelComponent** — Quick Battle only: preset name, Force Resolve, Restart, Leave
+- **EncounterResultComponent** — overlay when `EncounterEnded` arrives: Victory/Defeat/Draw, Return to lobby, Play again (Quick Battle)
 - **FeedComponent** — timestamped combat log; unread badge
 - **EncounterPreviewComponent** (`/preview`) — offline UI sandbox seeded with mock NGXS state (no server needed); toggle GM/player and planning/resolving
 
@@ -278,7 +292,7 @@ Host-run API (`dotnet watch`) listens on 5291; the Angular dev server proxy targ
 | Redis | 6379 | 6379 |
 
 ### EF Migrations
-Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 10 migrations through `AddCombatantIsAiControlled`.
+Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 11 migrations through `AddCombatantStatOverrides`.
 
 ### Branching Convention
 

@@ -105,57 +105,22 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
             positions[monsterCombatants[i].Id.ToString()] = new Position(Math.Min(i, gridWidth - 1), gridHeight - 1);
 
         var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
-        var planningTimerExpiresAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
-        var activeEncounterEntry = new ActiveEncounterEntry(
-            encounter.Id.ToString(),
-            "planning",
-            1,
-            planningTimerExpiresAt,
-            combatants.Select(c => new CombatantRef(c.Id.ToString(), c.UserId, c.CombatantType, c.IsAiControlled)).ToList());
 
-        await redisState.SetActiveEncounterAsync(sessionId, activeEncounterEntry);
-        await redisState.SetMapAsync(encounter.Id.ToString(), mapEntry);
-
-        foreach (var c in playerCombatants)
+        // Monsters have no Character row: 20 HP and the fighter die (see EncounterStateLoader).
+        var starts = combatants.Select(c =>
         {
-            if (c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch))
-                await redisState.SeedCharacterLiveStateAsync(c.CharacterId.Value.ToString(), ch.CurrentHp, ch.Class);
-        }
-        foreach (var m in monsterCombatants)
-            await redisState.SeedCharacterLiveStateAsync(m.Id.ToString(), 20, "fighter");
+            if (c.CombatantType == "monster")
+                return new CombatantStart(c, 20, 20, "fighter");
+            var character = characterMap[c.CharacterId!.Value];
+            return new CombatantStart(c, character.CurrentHp, character.MaxHp, character.Class);
+        }).ToList();
+
+        var result = await EncounterLaunch.PublishAsync(
+            redisState, gameSession.Id, encounter, starts, mapEntry, planningTimerEnabled: true);
 
         await redisState.ClearPendingMonstersAsync(sessionId);
 
-        var combatantDtos = combatants.Select(c =>
-        {
-            if (c.CombatantType == "monster")
-                return new CombatantDto(c.Id.ToString(), c.UserId, "", c.CharacterName, 20, 20, c.CombatantType, c.IsAiControlled);
-            var hasChar = c.CharacterId.HasValue && characterMap.TryGetValue(c.CharacterId.Value, out var ch);
-            var character = hasChar ? characterMap.GetValueOrDefault(c.CharacterId!.Value) : null;
-            return new CombatantDto(
-                c.Id.ToString(),
-                c.UserId,
-                c.CharacterId?.ToString() ?? "",
-                c.CharacterName,
-                character?.CurrentHp ?? 0,
-                character?.MaxHp ?? 0,
-                c.CombatantType,
-                c.IsAiControlled);
-        }).ToList();
-
-        var mapDto = new MapDto(
-            gridWidth,
-            gridHeight,
-            positions.ToDictionary(kv => kv.Key, kv => new PositionDto(kv.Value.X, kv.Value.Y)),
-            new List<string>());
-
-        var planningCombatantDtos = combatantDtos.Select(c =>
-            new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false, c.CombatantType, c.IsAiControlled)).ToList();
-
-        var encounterPayload = new EncounterStartedPayload(encounter.Id.ToString(), combatantDtos, mapDto);
-        var planningPayload = new PlanningPhaseStartedPayload(1, GameConstants.PlanningTimerSeconds, planningCombatantDtos);
-
-        return new EncounterStartedResult(gameSession.Id, encounterPayload, planningPayload);
+        return result;
     }
 
     public async Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName, bool isAiControlled)

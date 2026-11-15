@@ -284,11 +284,20 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("DamageDie")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("EncounterId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsAiControlled")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("MaxHp")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("Speed")
+                        .HasColumnType("integer");
 
                     b.Property<string>("UserId")
                         .IsRequired()

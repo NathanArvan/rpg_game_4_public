@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
-import { JoinSession, PlayerPresenceChanged, SetGmSession } from './session.actions';
+import { JoinSession, LeaveQuickBattle, PlayerPresenceChanged, SetGmSession, SetQuickBattleSession } from './session.actions';
 import { ConnectedPlayer, SessionStateModel } from './session.model';
 
 @State<SessionStateModel>({
@@ -12,6 +12,7 @@ import { ConnectedPlayer, SessionStateModel } from './session.model';
     isGm: false,
     status: 'disconnected',
     connectedPlayers: [],
+    quickBattlePresetId: null,
   },
 })
 @Injectable()
@@ -54,6 +55,22 @@ export class SessionState {
   @Action(SetGmSession)
   setGmSession(ctx: StateContext<SessionStateModel>, { campaignId, gameSessionId, joinCode }: SetGmSession) {
     ctx.patchState({ campaignId, gameSessionId, joinCode, isGm: true });
+  }
+
+  @Selector()
+  static quickBattlePresetId(state: SessionStateModel): string | null {
+    return state.quickBattlePresetId;
+  }
+
+  @Action(SetQuickBattleSession)
+  setQuickBattleSession(ctx: StateContext<SessionStateModel>, { campaignId, gameSessionId, joinCode, presetId }: SetQuickBattleSession) {
+    ctx.patchState({ campaignId, gameSessionId, joinCode, isGm: false, status: 'connected', quickBattlePresetId: presetId });
+  }
+
+  @Action(LeaveQuickBattle)
+  leaveQuickBattle(ctx: StateContext<SessionStateModel>) {
+    if (!ctx.getState().quickBattlePresetId) return;
+    ctx.patchState({ campaignId: null, gameSessionId: null, joinCode: null, isGm: false, quickBattlePresetId: null });
   }
 
   @Action(PlayerPresenceChanged)
