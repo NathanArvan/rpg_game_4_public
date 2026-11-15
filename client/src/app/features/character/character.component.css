@@ -15,3 +15,15 @@ h3 { margin-bottom: 4px; }
 a { display: inline-block; margin-bottom: 16px; }
 .dev-btn { background: #d97706; color: white; border: none; }
 .dev-btn:hover { background: #b45309; }
+
+.profile-summary {
+  font-size: 0.9em;
+  color: #444;
+  margin: 2px 0 8px;
+}
+
+.legacy-note {
+  font-size: 0.8em;
+  color: #888;
+  font-style: italic;
+}

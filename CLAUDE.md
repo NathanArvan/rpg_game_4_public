@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. **3B.0 Manual Testing Spike** is done: encounters end, monsters can be AI-controlled, and **⚡ Quick Battle** (lobby) lets one user command a party against AI enemies with no setup. Use Quick Battle to try out every change by hand. Next roadmap slice: **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
+Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. **3B.0 Manual Testing Spike** is done: encounters end, monsters can be AI-controlled, and **⚡ Quick Battle** (lobby) lets one user command a party against AI enemies with no setup. Use Quick Battle to try out every change by hand. **3B.1 Combat Profiles** is done: every combatant carries hand-authored combat values (HP, movement range, Speed, melee/ranged accuracy, dodge, damage die) from a preset in `server/src/RpgGame.Api/CombatProfiles/profiles.json`; D&D class dice and Dex are no longer used, and core stats and progression stay deferred until after Phase 3C. Next roadmap slice: **3B.5 Defeat & Incapacitation**. Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
 
 ## Documentation
 
@@ -74,7 +74,7 @@ Note: `dotnet build` of the API also rewrites `contracts/openapi.json` via a pos
 
 ### Design Loop (game-rule changes)
 Combat rules live in the pure `RpgGame.Rules` library, so a rule change doesn't need the server, a browser or containers:
-1. Change the rule in `server/src/RpgGame.Rules/` (usually `RoundResolver` or `RulesConfig`).
+1. Change the rule in `server/src/RpgGame.Rules/` (usually `RoundResolver`, `CombatProfile` or `RulesConfig`). To retune a profile instead, edit `server/src/RpgGame.Api/CombatProfiles/profiles.json`.
 2. Add or adjust a scenario JSON in `server/tests/RpgGame.Rules.Tests/Scenarios/` (format: that folder's `README.md`; `"ai"` plans run the enemy AI) and/or a `RoundResolverTests` / `EnemyAiTests` case.
 3. `dotnet test server/tests/RpgGame.Rules.Tests` — runs in about a second.
 4. Then the full `dotnet test` (the `ResolutionServiceTests` characterization tests pin exact feed text and persistence) and E2E if the change reaches the client.
@@ -95,7 +95,7 @@ Specs: `quick-battle.spec.ts` (one browser: play the Training Dummy preset to vi
 Clean Architecture with four projects:
 - **RpgGame.Domain** — Entities only (no EF, no Identity). All game entities live here.
 - **RpgGame.Infrastructure** — EF `AppDbContext` (IdentityDbContext<AppUser>), `AppUser`, migrations. Depends on Domain.
-- **RpgGame.Rules** — Pure combat rules engine. **No dependencies at all** (no packages, no EF/Redis/SignalR/ASP.NET/logging, no Domain). Own immutable types (`EncounterState`, `CombatantState`, `PlannedAction`, `RoundOutcome`, …), `RulesConfig` (3A constants), `CombatMath`, `IDiceRoller` (`RandomDice`, `SeededDice`, `ScriptedDice`), `RoundResolver.Resolve(state, plans, dice, config)` — the tick loop — and `EnemyAi.PlanRound(state, teamById, aiIds, config)`, the simple enemy AI (melee an adjacent enemy, else walk toward the nearest one, avoiding other AI walkers' paths). Never mutates inputs; plan (dictionary) order is meaningful (roll order, result order, contested-cell winner).
+- **RpgGame.Rules** — Pure combat rules engine. **No dependencies at all** (no packages, no EF/Redis/SignalR/ASP.NET/logging, no Domain). Own immutable types (`EncounterState`, `CombatantState`, `CombatProfile`, `PlannedAction`, `RoundOutcome`, …), `CombatProfile` (per-combatant values: MaxHp, MovementRange, Speed, Melee/RangedAccuracy, Dodge, BaseDamage die; an attack hits when d20 + the attacker's accuracy ≥ the target's Dodge), `RulesConfig` (shared constants: just `MeleeReach`), `IDiceRoller` (`RandomDice`, `SeededDice`, `ScriptedDice`), `RoundResolver.Resolve(state, plans, dice, config)` — the tick loop — and `EnemyAi.PlanRound(state, teamById, aiIds, config)`, the simple enemy AI (melee an adjacent enemy, else walk toward the nearest one, avoiding other AI walkers' paths). Never mutates inputs; plan (dictionary) order is meaningful (roll order, result order, contested-cell winner).
 - **RpgGame.Api** — Controllers, SignalR Hubs, services, `Program.cs`. Depends on Domain, Infrastructure and Rules (never the reverse).
 
 `AppUser` intentionally lives in Infrastructure (not Domain) because it extends `IdentityUser`.
@@ -104,9 +104,9 @@ Clean Architecture with four projects:
 - **Campaign** — Id, Name, CreatedAt; relations: Members[], Sessions[]
 - **CampaignMember** — CampaignId, UserId, Role (Gm|Player); unique index on (CampaignId, UserId)
 - **GameSession** — Id, CampaignId, JoinCode (6-char alphanumeric, unique), StartedAt
-- **Character** — Id, UserId, Name, Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (D&D-style fields; unused by combat from 3B.1, removal deferred to the stats/progression decision)
+- **Character** — Id, UserId, Name, CombatProfile (preset id, default `skirmisher`), Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (the D&D-style fields are unused by combat since 3B.1; removal deferred to the stats/progression decision)
 - **Encounter** — Id, GameSessionId, Status (Active|Ended), StartedAt, EndedAt (nullable), RoundNumber; unique-active index on GameSessionId
-- **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`), IsAiControlled, MaxHp / Speed / DamageDie (nullable preset stat overrides)
+- **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`), IsAiControlled, Profile (JSONB `CombatProfileValues`: the combat profile copied in when the combatant was created, with any battle-preset overrides applied; null only on pre-3B.1 rows, read as the default profile)
 - **GameEvent** — Id, EncounterId, OccurredAt, EventType (string), Payload (JSONB); append-only log
 
 ### API Routing Convention
@@ -126,6 +126,7 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 | GET | `/api/characters/{id}` | Get character |
 | PUT | `/api/characters/{id}` | Update character |
 | DELETE | `/api/characters/{id}` | Delete character |
+| GET | `/api/combat-profiles` | Combat profile presets (`CombatProfileDto[]`) for the character and monster pickers |
 
 ### Auth Flow
 1. Client POSTs to `/api/auth/register` or `/api/auth/token` → receives JWT
@@ -136,13 +137,13 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 
 ### Quick Battle (3B.0)
 One click from the lobby: `StartQuickBattle(presetId)` creates a campaign (caller is GM), a session and an encounter from a **battle preset**, joins the caller to the session group and opens round 1. The caller controls every party combatant (`CombatantType "player"`, no `Character` row); enemies are AI-controlled monsters. The planning timer is off (`PlanningTimerEnabled = false` → `PlanningTimerDurationSeconds = 0`). The client shows the player view (`SessionState.quickBattlePresetId` set, `isGm` false) plus a Quick Battle panel (Force Resolve / Restart / Leave); the result overlay offers Play again.
-- **Presets:** `server/src/RpgGame.Api/QuickBattle/Presets/*.json` (copied to the output folder). Each lists combatants with `name`, `side` (`party` | `enemy`), `hp`, `damage` (die), `speed`, `at` [x, y], optional `ai` (enemies default to true). `BattlePresetCatalog` validates them at startup and stops the API with the file name if one is broken. To add a battle, drop in a new file; `order` sets its place in the menu (lowest first = default).
-- **Stats:** preset values are stored on `EncounterCombatant` (`MaxHp`, `Speed`, `DamageDie`) and win over Character/default values in `EncounterStateLoader`. Live HP is keyed by combatant ID when there's no character.
+- **Presets:** `server/src/RpgGame.Api/QuickBattle/Presets/*.json` (copied to the output folder). Each lists combatants with `name`, `side` (`party` | `enemy`), `profile` (a combat profile id), `at` [x, y], optional `ai` (enemies default to true), and optional overrides of single profile values: `hp`, `damage` (die), `speed`, `move`, `meleeAccuracy`, `rangedAccuracy`, `dodge`. `BattlePresetCatalog` validates them at startup and stops the API with the file name if one is broken. To add a battle, drop in a new file; `order` sets its place in the menu (lowest first = default).
+- **Stats:** the resolved profile (preset + overrides) is stored on `EncounterCombatant.Profile`, like every other combatant. Live HP is keyed by combatant ID when there's no character.
 - **Several characters per user:** `PlanAction` takes the `combatantId` of one of your `player` combatants (required if you control more than one). `LockIn` locks all your living combatants; unplanned ones defend (at least one must have a plan). The client tracks plans per combatant and which one you're planning for (click your token or tracker row); the button reads "Lock In All (n/m planned)".
 
 ### Combat Loop (Phase 3A)
-1. **Lobby** — GM creates campaign → starts session → connects; GM can `AddMonster` (staged in Redis until the encounter starts). Players join with a character.
-2. **StartEncounter** — creates Encounter + Combatants, places players on row 0 and monsters on row 19, broadcasts `EncounterStarted` + `PlanningPhaseStarted`, starts the planning timer (`GameConstants.PlanningTimerSeconds`, currently 300s).
+1. **Lobby** — GM creates campaign → starts session → connects; GM can `AddMonster` with a combat profile (staged in Redis until the encounter starts). Players join with a character.
+2. **StartEncounter** — creates Encounter + Combatants (each gets a copy of its combat profile: the character's, or the staged monster's; everyone starts at the profile's MaxHp), places players on row 0 and monsters on row 19, broadcasts `EncounterStarted` + `PlanningPhaseStarted`, starts the planning timer (`GameConstants.PlanningTimerSeconds`, currently 300s).
 3. **Planning** — each player plans one action (`move` | `melee_attack` | `ranged_attack` | `defend`) as a `PlannedActionArray` of length 1 and locks in. AI-controlled monsters are planned and locked in by the server as soon as the phase opens (`AiPlanningService` → `EnemyAi`). The GM plans the other monsters (`PlanEnemyAction`, which can also override an AI monster for one round) and locks in all enemies at once (`LockInEnemies`; unplanned manual monsters defend). If every monster is AI, the round resolves when the last player locks in.
 4. **Resolution** — when every living combatant is locked in (or GM `ForceResolve`, or timer expiry), `ResolutionService` hands state to `RoundResolver`, which runs the tick loop (Movement → Attacks → Effects); `ResolutionService` then writes Redis + `GameEvent`s, and `RoundOrchestrator` broadcasts `ResolutionCompleted` (which carries `defeatedCombatantIds`) plus one `CombatantDefeated` per newly defeated combatant.
 5. **Next round or end** — after a 3s playback delay, `RoundOrchestrator` checks `EncounterEndCheck`: if one side has no living combatants (and both sides had at least one), `EncounterService.EndEncounterAsync` marks the encounter `Ended`, logs an `encounter_ended` GameEvent and deletes the session's Redis encounter state, and `EncounterEnded` (`winningSide`: `party` | `enemy` | `draw`) is broadcast. Otherwise the next `PlanningPhaseStarted` is sent and the timer restarts. Clients show a result overlay; "Return to lobby" clears encounter state, and the GM can start a new encounter in the same session.
@@ -158,7 +159,7 @@ One click from the lobby: `StartQuickBattle(presetId)` creates a campaign (calle
 | Method | Auth | Description |
 |--------|------|-------------|
 | `JoinSession(joinCode, displayName, characterId?)` | Any | Validates join code, adds to Redis, broadcasts `PlayerPresenceChanged` |
-| `AddMonster(joinCode, monsterName, isAiControlled)` | GM only | Stages a monster pre-encounter (or spawns one mid-encounter; an AI one plans and locks in immediately); broadcasts `MonsterAdded` |
+| `AddMonster(joinCode, monsterName, isAiControlled, profileId)` | GM only | `profileId` null → default `grunt`, unknown → `ActionRejected`. Stages a monster pre-encounter (or spawns one mid-encounter; an AI one plans and locks in immediately); broadcasts `MonsterAdded` |
 | `StartEncounter(joinCode)` | GM only | Creates encounter + combatants, seeds map/HP, starts round 1 planning |
 | `PlanAction(joinCode, plannedAction, combatantId)` | Player (own combatant) | Validates and stores a planned action for one of the caller's characters (`combatantId` may be null if they control only one) |
 | `LockIn(joinCode)` | Player | Locks in all the caller's living characters (unplanned → defend); one `PlayerLockedIn` each; triggers resolution if everyone is locked in |
@@ -176,10 +177,10 @@ One click from the lobby: `StartQuickBattle(presetId)` creates a campaign (calle
 | Key | Type | Contents |
 |-----|------|----------|
 | `session:{sessionId}:players` | Hash | Connected player presences |
-| `session:{sessionId}:pending_monsters` | List | Monsters staged before the encounter starts, as JSON `{ name, isAiControlled }` (plain-name entries read as manual) |
+| `session:{sessionId}:pending_monsters` | List | Monsters staged before the encounter starts, as JSON `{ name, isAiControlled, profile }` (plain-name entries read as manual; no `profile` → default enemy profile) |
 | `session:{sessionId}:active_encounter` | JSON | `encounterId`, `roundPhase`, `roundNumber`, `planningTimerExpiresAt`, combatants[] (`id`, `userId`, `combatantType`, `isAiControlled`) |
 | `encounter:map:{encounterId}` | JSON | 20×20 grid dims, positions by combatantId |
-| `character:live:{id}` | Hash | `currentHp`, `class` — keyed by character ID for players, combatant ID for monsters |
+| `character:live:{id}` | Hash | `currentHp`, `profile` (profile id; the values live on the combatant row) — keyed by character ID for players, combatant ID for monsters |
 | `encounter:{encounterId}:planned_actions` | Hash | combatantId → `PlannedActionArray` JSON |
 | `encounter:{encounterId}:locked_in` | Set | Locked-in combatant IDs |
 | `encounter:{encounterId}:defeated` | Set | Defeated combatant IDs |
@@ -222,16 +223,18 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **ISessionService / SessionService** — Scoped; `JoinSession` (DB lookup, character validation, campaign member auto-join, Redis player upsert)
 - **IEncounterService / EncounterService** — Scoped; `StartEncounterAsync` (DB persist, map/HP seed, round 1 planning), `AddMonsterAsync`, and `EndEncounterAsync` (Ended status + GameEvent, then clears Redis encounter state)
 - **IPlanningService / PlanningService** — Scoped; `PlanAction`, `LockIn`, `ForceResolve`, `PlanEnemyAction`, `LockInEnemies`; decides when all living combatants are locked in
-- **IResolutionService / ResolutionService** — Scoped; `ResolveRoundAsync` is an **adapter** around `RpgGame.Rules.RoundResolver`: loads state via `EncounterStateLoader`, maps it to `EncounterState` + plans (data-seeding defaults such as monster MaxHp 20 / fighter live here, not in Rules), calls the resolver with the injected `IDiceRoller`, maps the `RoundOutcome` to `ResolutionPayload`, then persists (GameEvents to DB before Redis mutations)
+- **IResolutionService / ResolutionService** — Scoped; `ResolveRoundAsync` is an **adapter** around `RpgGame.Rules.RoundResolver`: loads state via `EncounterStateLoader`, maps it to `EncounterState` + plans, calls the resolver with the injected `IDiceRoller`, maps the `RoundOutcome` to `ResolutionPayload`, then persists (GameEvents to DB before Redis mutations)
 - **ResolutionFeedFormatter** — `internal static`; feed text for attack/effect results (presentation stays in Api). Strings are pinned byte-for-byte by tests
 - **RulesWireMapping** — `internal static`; hub wire strings (`"melee_attack"`, …) ⇄ Rules enums
 - **IDiceRoller** (from Rules) — registered as a `RandomDice` singleton; tests inject `ScriptedDice`
 - **IRoundOrchestrator / RoundOrchestrator** — Scoped; `ResolveAndAdvanceAsync` is the single post-lock-in flow (cancel timer → `AllLockedIn` → resolve → `ResolutionCompleted` / `CombatantDefeated` → playback delay → `EncounterEnded` or the next planning phase). `StartPlanningPhaseAsync` is the single way a planning phase opens (round 1 from `StartEncounter`, later rounds from resolution): `PlanningPhaseStarted` → timer → AI planning → one `PlayerLockedIn` per AI combatant. Broadcasts via `IHubContext<GameHub>`, so the hub and the timer share it
 - **IAiPlanningService / AiPlanningService** — Scoped; adapter around `EnemyAi`: loads state, plans every living AI combatant without a plan yet (a GM override wins), stores the plans and locks them in. Teams come from `CombatantType` for now
-- **EncounterStateLoader** — `internal static`; builds the Rules `EncounterState` (plus persistence records) from Postgres + Redis. Shared by resolution and AI planning
+- **EncounterStateLoader** — `internal static`; builds the Rules `EncounterState` (plus persistence records) from Postgres (combatants and their stored profiles) + Redis. Shared by resolution and AI planning
+- **CombatProfileCatalog** (`CombatProfiles/`) — Singleton; loads and validates `profiles.json` at startup (stops the API naming the broken profile). `Snapshot()` copies a preset into a `CombatProfileValues`; `CombatProfileMapping.ToRules` turns stored values into the Rules `CombatProfile`. Defaults: `skirmisher` (party), `grunt` (enemy)
+- **CombatantDtos** — `internal static`; builds `CombatantDto` / `PlanningCombatantDto` (including `profileId`, `profileName`, `movementRange`)
 - **EncounterLaunch** — `internal static`; the shared second half of starting an encounter (Redis active encounter, map, live HP, EncounterStarted/PlanningPhaseStarted payloads). Used by `EncounterService` and `QuickBattleService`
 - **IQuickBattleService / QuickBattleService** — Scoped; lists presets and starts a Quick Battle (campaign, GM membership, session, encounter, combatants with preset stats, timer off)
-- **BattlePresetCatalog** (`QuickBattle/`) — Singleton; loads and validates the preset files at startup
+- **BattlePresetCatalog** (`QuickBattle/`) — Singleton; loads and validates the preset files at startup (needs `CombatProfileCatalog` to resolve each combatant's profile + overrides)
 - **EncounterEndCheck** — `internal static`; decides whether a round ended the encounter and who won (sides from `CombatantType` for now)
 - **IPlanningTimer / PlanningTimerService** — Singleton; per-encounter countdown (`Task.Delay` + CTS); on expiry defaults unplanned combatants to defend and calls `RoundOrchestrator` in a fresh scope
 - **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
@@ -248,10 +251,10 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
   - **QuickBattleStartComponent** — preset dropdown + Start Quick Battle (via `QuickBattleService`, which also restarts and leaves)
   - **AuthPanelComponent** — register / login / ⚡ Quick Register
   - **PlayerJoinComponent** — join code + display name + character select
-  - **GmFlowComponent** — create campaign → start session → connect → add monsters → start encounter
-- **CharacterComponent** (`/character`) — character list + CRUD form; ⚡ Quick Create Random
+  - **GmFlowComponent** — create campaign → start session → connect → add monsters (name, combat profile, AI toggle) → start encounter
+- **CharacterComponent** (`/character`) — character list + CRUD form with a combat profile picker (via `CombatProfileService`); ⚡ Quick Create Random
 - **CombatLayoutComponent** — three columns: CombatSidebar (EncounterTracker) | RoundBanner + Grid | Feed
-- **EncounterTrackerComponent** — combatant HP table, lock-in checkmarks, defeated state
+- **EncounterTrackerComponent** — combatant HP table (with each combatant's profile name), lock-in checkmarks, defeated state
 - **RoundBannerComponent** — round number, phase, timer, lock-in count
 - **GridComponent** — 20×20 grid; players click a cell in range to plan a move or a token to plan an attack, Defend / Lock In bar; GM sees GmEnemyPlanner + ⚡ Force Resolve; animates resolution ticks with damage numbers
 - **GmEnemyPlannerComponent** — select a monster, plan via grid click or 🛡, Lock In Enemies
@@ -292,7 +295,7 @@ Host-run API (`dotnet watch`) listens on 5291; the Angular dev server proxy targ
 | Redis | 6379 | 6379 |
 
 ### EF Migrations
-Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 11 migrations through `AddCombatantStatOverrides`.
+Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 12 migrations through `AddCombatProfiles`.
 
 ### Branching Convention
 
@@ -319,7 +322,7 @@ All branches target `master`. Branch protection requires CI to pass and a PR bef
 **Required GitHub Secrets:** `DROPLET_HOST`, `DROPLET_SSH_KEY`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `GHCR_PAT`
 
 ### Tests
-- **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests` (+ `ResolutionServiceCharacterizationTests`, which pin exact feed text, roll order, persistence and known quirks using `ScriptedDice`). Redis is mocked via `IRedisGameState`.
-- **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `EnemyAiTests`, `DiceTests`, `CombatMathTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable round scenarios; see `Scenarios/README.md`).
+- **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests` (+ `ResolutionServiceCharacterizationTests`, which pin exact feed text, roll order, persistence and known quirks using `ScriptedDice`), `CombatProfileCatalogTests`, `BattlePresetCatalogTests`, `QuickBattleServiceTests`. `TestProfiles` gives tests the shipped profile catalog and a `Values(...)` builder. Redis is mocked via `IRedisGameState`.
+- **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `EnemyAiTests`, `DiceTests`, `ModelTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable round scenarios; see `Scenarios/README.md`).
 - **Client (Karma/Jasmine)** — specs for all NGXS state slices (`state/*/*.state.spec.ts`) plus component smoke specs.
 - **E2E (Playwright)** — `e2e/tests/`; see the command section above.

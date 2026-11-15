@@ -75,7 +75,7 @@ public static class EnemyAi
                 continue;
             }
 
-            var path = ChooseMove(state, from, targetPos, occupied, blockers, reservedPaths, config);
+            var path = ChooseMove(state, from, targetPos, self.Profile.MovementRange, occupied, blockers, reservedPaths);
             if (path is null)
             {
                 plans[id] = PlannedAction.Defend(); // boxed in
@@ -112,7 +112,7 @@ public static class EnemyAi
     }
 
     /// <summary>
-    /// Picks where to walk: the free cell within movement range that is closest to the target
+    /// Picks where to walk: the free cell within the walker's movement range that is closest to the target
     /// (an adjacent cell when one is reachable). Ties prefer cells straight in line with the target,
     /// then a shorter walk, then top-to-bottom, left-to-right. A cell is skipped if the walk there
     /// would pass through a blocked cell, or step onto the same cell at the same moment as another
@@ -123,12 +123,11 @@ public static class EnemyAi
         EncounterState state,
         GridPosition from,
         GridPosition target,
+        int range,
         HashSet<GridPosition> occupied,
         HashSet<GridPosition> blockers,
-        List<List<GridPosition>> reservedPaths,
-        RulesConfig config)
+        List<List<GridPosition>> reservedPaths)
     {
-        int range = config.MovementRange;
         var candidates = new List<GridPosition>();
         for (int y = Math.Max(0, from.Y - range); y <= Math.Min(state.GridHeight - 1, from.Y + range); y++)
             for (int x = Math.Max(0, from.X - range); x <= Math.Min(state.GridWidth - 1, from.X + range); x++)

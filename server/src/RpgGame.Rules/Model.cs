@@ -39,9 +39,30 @@ public enum ActionType
     Defend,
 }
 
-/// <param name="Speed">
-/// Movement-conflict tiebreaker. Fed from Dex until 3B.1 introduces the real Speed stat.
-/// </param>
+/// <summary>
+/// A combatant's derived combat values (roadmap 3B.1). Hand-authored per preset until the stats
+/// decision; the rules engine only ever reads these, never where they came from.
+/// </summary>
+/// <param name="MaxHp">Maximum HP.</param>
+/// <param name="MovementRange">Max cells per move (Chebyshev steps).</param>
+/// <param name="Speed">Movement-conflict tiebreaker: the higher Speed takes a contested cell.</param>
+/// <param name="MeleeAccuracy">Added to the d20 of this combatant's melee attacks.</param>
+/// <param name="RangedAccuracy">Added to the d20 of this combatant's ranged attacks.</param>
+/// <param name="Dodge">An attack against this combatant hits when d20 + accuracy is at least this.</param>
+/// <param name="BaseDamage">Damage die rolled once per hit.</param>
+public sealed record CombatProfile(
+    int MaxHp,
+    int MovementRange,
+    int Speed,
+    int MeleeAccuracy,
+    int RangedAccuracy,
+    int Dodge,
+    DamageDie BaseDamage)
+{
+    /// <summary>The Phase 3A placeholder values: 20 HP, 6 cells, Speed 10, +0 accuracy, Dodge 10, d8.</summary>
+    public static CombatProfile Default { get; } = new(20, 6, 10, 0, 0, 10, DamageDie.D8);
+}
+
 /// <param name="Position">
 /// Current cell, or null if the combatant has no map position. Such a combatant isn't on the map:
 /// it can't move, can't make or receive melee attacks, and doesn't block anyone.
@@ -50,11 +71,13 @@ public sealed record CombatantState(
     string Id,
     string Name,
     int Hp,
-    int MaxHp,
-    int Speed,
-    DamageDie Damage,
+    CombatProfile Profile,
     GridPosition? Position,
-    bool IsDefeated);
+    bool IsDefeated)
+{
+    public int MaxHp => Profile.MaxHp;
+    public int Speed => Profile.Speed;
+}
 
 public sealed record EncounterState(
     int GridWidth,

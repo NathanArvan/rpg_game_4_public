@@ -89,7 +89,9 @@ builder.Services.AddScoped<IResolutionService, ResolutionService>();
 builder.Services.AddSingleton<IPlanningTimer, PlanningTimerService>();
 builder.Services.AddScoped<IRoundOrchestrator, RoundOrchestrator>();
 builder.Services.AddScoped<IAiPlanningService, AiPlanningService>();
-builder.Services.AddSingleton(_ => RpgGame.Api.QuickBattle.BattlePresetCatalog.FromAppDirectory());
+builder.Services.AddSingleton(_ => RpgGame.Api.CombatProfiles.CombatProfileCatalog.FromAppDirectory());
+builder.Services.AddSingleton(sp => RpgGame.Api.QuickBattle.BattlePresetCatalog.FromAppDirectory(
+    sp.GetRequiredService<RpgGame.Api.CombatProfiles.CombatProfileCatalog>()));
 builder.Services.AddScoped<IQuickBattleService, QuickBattleService>();
 
 builder.Services.AddHttpContextAccessor();
@@ -107,7 +109,7 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 
 var app = builder.Build();
 
-// Load battle presets now so a broken preset file fails startup instead of the first Quick Battle.
+// Load combat profiles and battle presets now so a broken file fails startup instead of the first battle.
 app.Services.GetRequiredService<RpgGame.Api.QuickBattle.BattlePresetCatalog>();
 
 // Auto-migrate on startup (skipped silently if DB is unreachable, e.g. during swagger spec generation)

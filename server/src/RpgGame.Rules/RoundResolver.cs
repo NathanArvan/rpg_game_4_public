@@ -72,12 +72,13 @@ public static class RoundResolver
             if (!round.Positions.TryGetValue(combatantId, out var start)) continue;
 
             // Re-check the move against the rules (PlanningService also validates it): the path
-            // stops after MovementRange steps or at the grid edge, whichever comes first.
-            var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, round.Config);
+            // stops after the mover's MovementRange steps or at the grid edge, whichever comes first.
+            var mover = round.Combatants[combatantId];
+            var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, mover.Profile.MovementRange);
 
             // A move to the combatant's own cell is a mover with a one-cell path: it never steps,
             // blocks like any stationary occupant, and still reports a (stay-put) result.
-            movers.Add(new Mover(combatantId, path, round.Combatants[combatantId].Speed));
+            movers.Add(new Mover(combatantId, path, mover.Speed));
         }
 
         if (movers.Count == 0) return [];
@@ -208,7 +209,7 @@ public static class RoundResolver
             int damage = 0;
             if (wasted == WastedReason.None)
             {
-                (hit, damage, isCrit) = ComputeAttack(round.Combatants[attackerId], round.Dice, round.Config);
+                (hit, damage, isCrit) = ComputeAttack(round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice);
                 if (hit)
                     hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - damage;
             }
@@ -253,16 +254,20 @@ public static class RoundResolver
     /// stats and crits can fill them in later without restructuring.
     /// </summary>
     private static (bool Hit, int Damage, bool IsCrit) ComputeAttack(
-        CombatantState attacker, IDiceRoller dice, RulesConfig config)
+        CombatantState attacker, CombatantState target, ActionType type, IDiceRoller dice)
     {
-        int hitRoll = dice.RollD20() + config.AccuracyBonus; // accuracyBonus: 0 in 3A
-        if (hitRoll < config.HitThreshold)                   // targetDodge: 10 in 3A
+        int accuracy = type == ActionType.MeleeAttack
+            ? attacker.Profile.MeleeAccuracy
+            : attacker.Profile.RangedAccuracy;
+        int hitRoll = dice.RollD20() + accuracy;
+        if (hitRoll < target.Profile.Dodge)
             return (false, 0, false);
 
-        int baseDamage = dice.Roll(attacker.Damage.Sides);   // class dice in 3A
-        int weaponBonus = 0;                                 // items (3B+)
+        int baseDamage = dice.Roll(attacker.Profile.BaseDamage.Sides);
+        int statModifier = 0;                                // stats (deferred)
+        int weaponBonus = 0;                                 // items (4.2)
         int abilityModifier = 0;                             // abilities (3B.3+)
-        int totalDamage = baseDamage + weaponBonus + abilityModifier;
+        int totalDamage = baseDamage + statModifier + weaponBonus + abilityModifier;
 
         bool isCrit = false;                                 // crit system (3B+)
         if (isCrit) totalDamage *= 2;
@@ -290,13 +295,13 @@ public static class RoundResolver
 
     /// <summary>
     /// The part of <paramref name="path"/> a move may legally walk: at most
-    /// <see cref="RulesConfig.MovementRange"/> steps, and never off the grid.
+    /// <paramref name="movementRange"/> steps, and never off the grid.
     /// </summary>
-    private static List<GridPosition> LegalPrefix(List<GridPosition> path, EncounterState state, RulesConfig config)
+    private static List<GridPosition> LegalPrefix(List<GridPosition> path, EncounterState state, int movementRange)
     {
         int length = 1; // the start cell
         while (length < path.Count
-               && length <= config.MovementRange
+               && length <= movementRange
                && IsOnGrid(path[length], state))
         {
             length++;

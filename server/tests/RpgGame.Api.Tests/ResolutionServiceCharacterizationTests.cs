@@ -44,8 +44,9 @@ public partial class ResolutionServiceTests
             return Register(id.ToString(), id.ToString(), at, hp, defeated);
         }
 
-        public string Player(string name, (int x, int y)? at, string charClass = "fighter", int dex = 10,
-            int maxHp = 20, int hp = 20, bool missingCharacter = false)
+        /// <param name="profile">Stored combat profile; null (as on pre-3B.1 rows) means the default profile.</param>
+        public string Player(string name, (int x, int y)? at, CombatProfileValues? profile = null,
+            int hp = 20, bool missingCharacter = false)
         {
             var id = Guid.NewGuid();
             var characterId = Guid.NewGuid();
@@ -53,14 +54,14 @@ public partial class ResolutionServiceTests
             {
                 Db.Characters.Add(new Character
                 {
-                    Id = characterId, UserId = $"user-{name}", Name = name, Race = "Human", Class = charClass,
-                    Level = 1, MaxHp = maxHp, CurrentHp = hp, BaseStats = new BaseStats { Dex = dex },
+                    Id = characterId, UserId = $"user-{name}", Name = name, Race = "Human", Class = "fighter",
+                    Level = 1, MaxHp = 20, CurrentHp = hp,
                 });
             }
             _combatants.Add(new EncounterCombatant
             {
                 Id = id, EncounterId = EncounterId, UserId = $"user-{name}", CharacterId = characterId,
-                CharacterName = name, CombatantType = "player",
+                CharacterName = name, CombatantType = "player", Profile = profile,
             });
             return Register(id.ToString(), characterId.ToString(), at, hp, defeated: false);
         }
@@ -366,10 +367,10 @@ public partial class ResolutionServiceTests
     // ----- Damage dice / data seeding -----
 
     [Fact]
-    public async Task Char_PlayerDamageDieFollowsClass()
+    public async Task Char_PlayerDamageDieFollowsProfile()
     {
         await using var s = new Scene();
-        var p = s.Player("Rogue", (0, 0), charClass: "Rogue");
+        var p = s.Player("Rogue", (0, 0), TestProfiles.Values(damage: "d6"));
         var m = s.Monster("Goblin", (1, 0));
         s.Melee(p, m);
 
@@ -377,14 +378,14 @@ public partial class ResolutionServiceTests
         Assert.Equal(6, SingleAttack(r).Damage);
 
         await using var s2 = new Scene();
-        var p2 = s2.Player("Rogue", (0, 0), charClass: "Rogue");
+        var p2 = s2.Player("Rogue", (0, 0), TestProfiles.Values(damage: "d6"));
         var m2 = s2.Monster("Goblin", (1, 0));
         s2.Melee(p2, m2);
         await Assert.ThrowsAsync<InvalidOperationException>(() => s2.Run(new ScriptedDice(10, 7))); // 7 is not a d6 result
     }
 
     [Fact]
-    public async Task Char_MonsterDefaults_FighterD8_MaxHp20()
+    public async Task Char_MonsterWithoutStoredProfile_DefaultsToD8_MaxHp20()
     {
         await using var s = new Scene();
         var m = s.Monster("Ogre", (0, 0), hp: 7);
@@ -402,21 +403,41 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_PlayerWithMissingCharacter_WizardD4_MaxHpIsCurrentHp()
+    public async Task Char_PlayerWithMissingCharacter_UsesStoredProfile()
     {
+        // 3B.1: combat values come only from the combatant's stored profile, so a deleted
+        // Character row changes nothing (before 3B.1 this fell back to a d4 and MaxHp = current HP).
         await using var s = new Scene();
-        var p = s.Player("Ghost", (0, 0), hp: 12, missingCharacter: true);
+        var p = s.Player("Ghost", (0, 0), TestProfiles.Values(maxHp: 16, damage: "d4"), hp: 12, missingCharacter: true);
         var m = s.Monster("Goblin", (1, 0));
         s.Melee(p, m);
 
         var r = await s.Run(new ScriptedDice(10, 4));
-        Assert.Equal(12, r.UpdatedCombatants.Single(c => c.Id == p).MaxHp);
+        Assert.Equal((12, 16), (r.UpdatedCombatants.Single(c => c.Id == p).CurrentHp, r.UpdatedCombatants.Single(c => c.Id == p).MaxHp));
 
         await using var s2 = new Scene();
-        var p2 = s2.Player("Ghost", (0, 0), hp: 12, missingCharacter: true);
+        var p2 = s2.Player("Ghost", (0, 0), TestProfiles.Values(damage: "d4"), hp: 12, missingCharacter: true);
         var m2 = s2.Monster("Goblin", (1, 0));
         s2.Melee(p2, m2);
         await Assert.ThrowsAsync<InvalidOperationException>(() => s2.Run(new ScriptedDice(10, 5))); // 5 is not a d4 result
+    }
+
+    [Fact]
+    public async Task Char_TargetDodgeAndAttackerAccuracy_FromProfiles()
+    {
+        // d20 7 + melee accuracy 3 = 10 misses a Dodge-11 target...
+        await using var s = new Scene();
+        var p = s.Player("Archer", (0, 0), TestProfiles.Values(melee: 3, ranged: 6));
+        var t = s.Player("Knight", (1, 0), TestProfiles.Values(dodge: 11));
+        s.Melee(p, t);
+        Assert.False(SingleAttack(await s.Run(new ScriptedDice(7))).Hit);
+
+        // ...while the same roll + ranged accuracy 6 = 13 hits it.
+        await using var s2 = new Scene();
+        var p2 = s2.Player("Archer", (0, 0), TestProfiles.Values(melee: 3, ranged: 6));
+        var t2 = s2.Player("Knight", (1, 0), TestProfiles.Values(dodge: 11));
+        s2.Ranged(p2, t2);
+        Assert.True(SingleAttack(await s2.Run(new ScriptedDice(7, 5))).Hit);
     }
 
     // ----- Movement -----
@@ -555,8 +576,8 @@ public partial class ResolutionServiceTests
     public async Task Char_ContestedCell_FasterClaimantWins_EvenIfPlannedSecond()
     {
         await using var s = new Scene();
-        var monster = s.Monster("Goblin", (2, 0));               // Dex 10
-        var player = s.Player("Frodo", (0, 0), dex: 14);          // Dex 14
+        var monster = s.Monster("Goblin", (2, 0));                                   // default Speed 10
+        var player = s.Player("Frodo", (0, 0), TestProfiles.Values(speed: 14));       // Speed 14
         s.Move(monster, 1, 0); // planned first
         s.Move(player, 1, 0);
 

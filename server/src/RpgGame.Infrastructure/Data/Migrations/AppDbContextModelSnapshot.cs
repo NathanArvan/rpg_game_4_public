@@ -208,6 +208,12 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CombatProfile")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("skirmisher");
+
                     b.Property<int>("CurrentHp")
                         .HasColumnType("integer");
 
@@ -284,20 +290,11 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("DamageDie")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("EncounterId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsAiControlled")
                         .HasColumnType("boolean");
-
-                    b.Property<int?>("MaxHp")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("Speed")
-                        .HasColumnType("integer");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -573,7 +570,46 @@ namespace RpgGame.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.OwnsOne("RpgGame.Domain.Entities.CombatProfileValues", "Profile", b1 =>
+                        {
+                            b1.Property<Guid>("EncounterCombatantId");
+
+                            b1.Property<string>("BaseDamage")
+                                .IsRequired();
+
+                            b1.Property<int>("Dodge");
+
+                            b1.Property<int>("MaxHp");
+
+                            b1.Property<int>("MeleeAccuracy");
+
+                            b1.Property<int>("MovementRange");
+
+                            b1.Property<string>("ProfileId")
+                                .IsRequired();
+
+                            b1.Property<string>("ProfileName")
+                                .IsRequired();
+
+                            b1.Property<int>("RangedAccuracy");
+
+                            b1.Property<int>("Speed");
+
+                            b1.HasKey("EncounterCombatantId");
+
+                            b1.ToTable("EncounterCombatants");
+
+                            b1
+                                .ToJson("Profile")
+                                .HasColumnType("jsonb");
+
+                            b1.WithOwner()
+                                .HasForeignKey("EncounterCombatantId");
+                        });
+
                     b.Navigation("Encounter");
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("RpgGame.Domain.Entities.GameEvent", b =>

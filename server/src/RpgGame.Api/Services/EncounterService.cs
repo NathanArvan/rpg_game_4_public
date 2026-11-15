@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.CombatProfiles;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
@@ -7,7 +8,11 @@ using System.Text.Json;
 
 namespace RpgGame.Api.Services;
 
-public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogger<EncounterService> logger) : IEncounterService
+public class EncounterService(
+    AppDbContext db,
+    IRedisGameState redisState,
+    CombatProfileCatalog profiles,
+    ILogger<EncounterService> logger) : IEncounterService
 {
 
     public async Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId)
@@ -60,6 +65,8 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
                 CharacterId = charId.Value,
                 CharacterName = character.Name,
                 CombatantType = "player",
+                // A profile id that no longer exists falls back to the default rather than blocking the encounter.
+                Profile = (profiles.Find(character.CombatProfile) ?? profiles.DefaultParty).Snapshot(),
             });
         }
 
@@ -78,6 +85,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
                 CharacterName = pending.Name,
                 CombatantType = "monster",
                 IsAiControlled = pending.IsAiControlled,
+                Profile = (profiles.Find(pending.Profile) ?? profiles.DefaultEnemy).Snapshot(),
             });
         }
 
@@ -106,14 +114,8 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
 
         var mapEntry = new MapEntry(gridWidth, gridHeight, positions, new List<string>());
 
-        // Monsters have no Character row: 20 HP and the fighter die (see EncounterStateLoader).
-        var starts = combatants.Select(c =>
-        {
-            if (c.CombatantType == "monster")
-                return new CombatantStart(c, 20, 20, "fighter");
-            var character = characterMap[c.CharacterId!.Value];
-            return new CombatantStart(c, character.CurrentHp, character.MaxHp, character.Class);
-        }).ToList();
+        // Everyone starts the encounter at their profile's full HP.
+        var starts = combatants.Select(c => new CombatantStart(c, c.Profile!.MaxHp)).ToList();
 
         var result = await EncounterLaunch.PublishAsync(
             redisState, gameSession.Id, encounter, starts, mapEntry, planningTimerEnabled: true);
@@ -123,7 +125,8 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
         return result;
     }
 
-    public async Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName, bool isAiControlled)
+    public async Task<AddMonsterResult> AddMonsterAsync(
+        string joinCode, string gmUserId, string monsterName, bool isAiControlled, string? profileId = null)
     {
         logger.LogInformation("AddMonster: joinCode={JoinCode} gmUserId={GmUserId} monsterName={MonsterName}", joinCode, gmUserId, monsterName);
 
@@ -139,14 +142,26 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
         logger.LogInformation("AddMonster: GM validated, sessionId={SessionId}", gameSession.Id);
 
         var trimmedName = string.IsNullOrWhiteSpace(monsterName) ? "Monster" : monsterName.Trim();
+        var profile = string.IsNullOrWhiteSpace(profileId)
+            ? profiles.DefaultEnemy
+            : profiles.Find(profileId.Trim())
+              ?? throw new GameActionException($"Unknown combat profile '{profileId}'.", isActionRejected: true);
         var sessionId = gameSession.Id.ToString();
         var activeEncounter = await redisState.GetActiveEncounterAsync(sessionId);
 
         if (activeEncounter is null)
         {
-            await redisState.AddPendingMonsterAsync(sessionId, new PendingMonster(trimmedName, isAiControlled));
-            var tempId = Guid.NewGuid().ToString();
-            var tempDto = new PlanningCombatantDto(tempId, gmUserId, trimmedName, 20, 20, false, "monster", isAiControlled);
+            await redisState.AddPendingMonsterAsync(sessionId, new PendingMonster(trimmedName, isAiControlled, profile.Id));
+            var staged = new EncounterCombatant
+            {
+                Id = Guid.NewGuid(), // temporary: the real row is created when the encounter starts
+                UserId = gmUserId,
+                CharacterName = trimmedName,
+                CombatantType = "monster",
+                IsAiControlled = isAiControlled,
+                Profile = profile.Snapshot(),
+            };
+            var tempDto = CombatantDtos.Planning(staged, profile.MaxHp, false);
             logger.LogInformation("AddMonster: no active encounter — staged pending monster '{Name}'", trimmedName);
             return new AddMonsterResult(gameSession.Id, "", tempDto, new PositionDto(0, 0));
         }
@@ -169,6 +184,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
             CharacterName = trimmedName,
             CombatantType = "monster",
             IsAiControlled = isAiControlled,
+            Profile = profile.Snapshot(),
         };
 
         db.EncounterCombatants.Add(monster);
@@ -198,7 +214,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
         await redisState.SetMapAsync(activeEncounter.EncounterId, map);
 
         // Seed monster HP using combatant ID as key (no Character row)
-        await redisState.SeedCharacterLiveStateAsync(monsterId, 20, "fighter");
+        await redisState.SeedCharacterLiveStateAsync(monsterId, profile.MaxHp, profile.Id);
 
         // Add monster to active encounter combatant list
         activeEncounter.Combatants.Add(new CombatantRef(monsterId, gmUserId, "monster", isAiControlled));
@@ -206,8 +222,7 @@ public class EncounterService(AppDbContext db, IRedisGameState redisState, ILogg
 
         logger.LogInformation("AddMonster: Redis updated — map, HP seeded, encounter combatants updated");
 
-        var monsterDto = new PlanningCombatantDto(
-            monsterId, gmUserId, monster.CharacterName, 20, 20, false, "monster", isAiControlled);
+        var monsterDto = CombatantDtos.Planning(monster, profile.MaxHp, false);
         var spawnDto = new PositionDto(spawnPos.X, spawnPos.Y);
 
         logger.LogInformation("AddMonster: complete, returning MonsterAdded result");

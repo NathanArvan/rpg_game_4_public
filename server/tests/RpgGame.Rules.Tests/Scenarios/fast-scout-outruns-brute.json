@@ -1,0 +1,18 @@
+{
+  // Combat profiles (3B.1): movement range is per combatant. Both plan the same long move;
+  // the scout (move 8) gets twice as far as the brute (move 4).
+  "description": "Movement range: a scout covers 8 cells while a brute covers 4",
+  "combatants": [
+    { "id": "Scout", "move": 8, "at": [0, 2] },
+    { "id": "Brute", "move": 4, "at": [0, 6] }
+  ],
+  "plans": {
+    "Scout": ["move 15,2"],
+    "Brute": ["move 15,6"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Scout": [8, 2], "Brute": [4, 6] },
+    "blocked": []
+  }
+}

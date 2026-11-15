@@ -12,10 +12,10 @@ const USER_PLAYER = 'user-player-1';
 const USER_MONSTER = 'user-gm';
 
 const COMBATANTS_DTO: CombatantDto[] = [
-  { id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, combatantType: 'player', isAiControlled: false },
-  { id: 'c2', userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, combatantType: 'player', isAiControlled: false },
-  { id: 'c3', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true },
-  { id: 'c4', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false },
+  { id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, combatantType: 'player', isAiControlled: false, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4 },
+  { id: 'c2', userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, combatantType: 'player', isAiControlled: false, profileId: 'scout', profileName: 'Scout', movementRange: 8 },
+  { id: 'c3', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5 },
+  { id: 'c4', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false, profileId: 'brute', profileName: 'Brute', movementRange: 4 },
 ];
 
 const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
@@ -27,6 +27,9 @@ const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
   isDefeated: false,
   combatantType: c.combatantType,
   isAiControlled: c.isAiControlled,
+  profileId: c.profileId,
+  profileName: c.profileName,
+  movementRange: c.movementRange,
 }));
 
 const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {

@@ -8,6 +8,8 @@ export class DevService {
   private fantasyNames = ['Theron', 'Lyria', 'Corvin', 'Seraphel', 'Daxon', 'Mira', 'Aldric', 'Zara', 'Fenwick', 'Isolde'];
   private races = ['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Gnome', 'Half-Orc', 'Tiefling'];
   private classes = ['Fighter', 'Wizard', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Barbarian', 'Bard'];
+  /** Party combat profiles shipped by the server (CombatProfiles/profiles.json). */
+  private combatProfiles = ['bruiser', 'skirmisher', 'scout'];
 
   private pick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
@@ -34,6 +36,7 @@ export class DevService {
     const surname = this.pick(this.nouns);
     return {
       name: this.pick(this.fantasyNames) + ' ' + surname.charAt(0).toUpperCase() + surname.slice(1),
+      combatProfile: this.pick(this.combatProfiles),
       race: this.pick(this.races),
       class: this.pick(this.classes),
       level,

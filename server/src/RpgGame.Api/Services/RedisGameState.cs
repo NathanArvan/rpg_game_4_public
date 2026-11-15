@@ -73,13 +73,13 @@ public class RedisGameState : IRedisGameState
         await db.StringSetAsync($"encounter:map:{encounterId}", JsonSerializer.Serialize(map, _jsonOptions));
     }
 
-    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string charClass)
+    public async Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string profileId)
     {
         var db = _redis.GetDatabase();
         await db.HashSetAsync($"character:live:{characterId}", new HashEntry[]
         {
             new("currentHp", currentHp),
-            new("class", charClass),
+            new("profile", profileId),
         });
     }
 

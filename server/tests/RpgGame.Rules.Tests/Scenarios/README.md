@@ -47,7 +47,11 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `name` | `id` | Display name (not used in checks) |
 | `hp` | 20 | HP at the start of the round |
 | `maxHp` | `hp` | Max HP |
-| `speed` | 10 | Movement tiebreaker when two movers claim the same cell. The server currently feeds this from Dex |
+| `speed` | 10 | Movement tiebreaker when two movers claim the same cell |
+| `move` | 6 | Movement range: max cells per move |
+| `meleeAccuracy` | 0 | Added to the d20 of this combatant's melee attacks |
+| `rangedAccuracy` | 0 | Added to the d20 of this combatant's ranged attacks |
+| `dodge` | 10 | An attack on this combatant hits when d20 + the attacker's accuracy is at least this |
 | `damage` | `"d8"` | Damage die, written as `"d4"`, `"d6"`, `"d8"`, or `"1d8"` |
 | `at` | none | `[x, y]` start cell. If you leave it out, the combatant is treated as standing at (0, 0) |
 | `defeated` | false | Already defeated before this round |
@@ -93,8 +97,8 @@ roll is impossible for the die (for example, 7 on a d6), or if any rolls are lef
 
 ### `config` (optional)
 
-These override rule constants for this scenario only: `hitThreshold` (default 10),
-`accuracyBonus` (default 0), and `meleeReach` (default 1).
+These override rule constants for this scenario only: `meleeReach` (default 1).
+Accuracy, dodge and movement range are per combatant (see `combatants`).
 
 ### `expect`
 

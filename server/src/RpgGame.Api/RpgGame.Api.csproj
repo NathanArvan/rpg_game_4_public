@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- Quick Battle presets are read at startup from the output folder -->
     <Content Update="QuickBattle/Presets/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Combat profile presets (3B.1), also read at startup -->
+    <Content Update="CombatProfiles/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

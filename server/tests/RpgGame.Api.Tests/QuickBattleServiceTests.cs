@@ -16,7 +16,7 @@ public class QuickBattleServiceTests
     private readonly Mock<IRedisGameState> _redis = new();
     private ActiveEncounterEntry? _active;
     private MapEntry? _map;
-    private readonly Dictionary<string, (int Hp, string Class)> _seeded = [];
+    private readonly Dictionary<string, (int Hp, string Profile)> _seeded = [];
 
     public QuickBattleServiceTests()
     {
@@ -25,11 +25,11 @@ public class QuickBattleServiceTests
         _redis.Setup(r => r.SetMapAsync(It.IsAny<string>(), It.IsAny<MapEntry>()))
             .Callback<string, MapEntry>((_, m) => _map = m).Returns(Task.CompletedTask);
         _redis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>()))
-            .Callback<string, int, string>((key, hp, cls) => _seeded[key] = (hp, cls)).Returns(Task.CompletedTask);
+            .Callback<string, int, string>((key, hp, profile) => _seeded[key] = (hp, profile)).Returns(Task.CompletedTask);
     }
 
     private QuickBattleService Service() =>
-        new(_db, _redis.Object, BattlePresetCatalog.FromAppDirectory(), NullLogger<QuickBattleService>.Instance);
+        new(_db, _redis.Object, BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog), NullLogger<QuickBattleService>.Instance);
 
     [Fact]
     public void ListPresets_ReturnsShippedPresetsInMenuOrder()
@@ -65,9 +65,13 @@ public class QuickBattleServiceTests
         Assert.All(combatants, c => Assert.Null(c.CharacterId));
 
         var bruiser = combatants.Single(c => c.CharacterName == "Bruiser");
-        Assert.Equal(("player", false, 24, 8, "d8"), (bruiser.CombatantType, bruiser.IsAiControlled, bruiser.MaxHp, bruiser.Speed, bruiser.DamageDie));
+        Assert.Equal(("player", false), (bruiser.CombatantType, bruiser.IsAiControlled));
+        Assert.Equal(("bruiser", 24, 4, 8, "d8"),
+            (bruiser.Profile!.ProfileId, bruiser.Profile.MaxHp, bruiser.Profile.MovementRange, bruiser.Profile.Speed, bruiser.Profile.BaseDamage));
         var goblin = combatants.Single(c => c.CharacterName == "Goblin 1");
-        Assert.Equal(("monster", true, 10), (goblin.CombatantType, goblin.IsAiControlled, goblin.MaxHp));
+        Assert.Equal(("monster", true, "grunt", 10), (goblin.CombatantType, goblin.IsAiControlled, goblin.Profile!.ProfileId, goblin.Profile.MaxHp));
+        // Each row owns its own copy: changing one goblin's values doesn't touch another's.
+        Assert.NotSame(goblin.Profile, combatants.Single(c => c.CharacterName == "Goblin 2").Profile);
     }
 
     [Fact]
@@ -85,6 +89,8 @@ public class QuickBattleServiceTests
         Assert.Equal(0, r.Encounter.PlanningPayload.PlanningTimerDurationSeconds);
         var dto = r.Encounter.Payload.Combatants.Single(c => c.Id == bruiserId);
         Assert.Equal((24, 24), (dto.CurrentHp, dto.MaxHp));
+        Assert.Equal(("bruiser", "Bruiser", 4), (dto.ProfileId, dto.ProfileName, dto.MovementRange));
+        Assert.Equal("bruiser", _seeded[bruiserId].Profile); // character:live records the profile id
         Assert.True(r.Encounter.Payload.Combatants.Single(c => c.CharacterName == "Goblin 1").IsAiControlled);
     }
 

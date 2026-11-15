@@ -15,3 +15,9 @@ th { font-weight: bold; color: #555; }
 tr.mine:not(.defeated) { cursor: pointer; }
 tr.mine:not(.defeated):hover { background: rgba(46, 125, 50, 0.08); }
 tr.selected { background: rgba(255, 213, 79, 0.25); }
+
+.profile-name {
+  display: block;
+  font-size: 0.75em;
+  opacity: 0.7;
+}

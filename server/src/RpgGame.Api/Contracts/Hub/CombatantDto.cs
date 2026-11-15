@@ -8,4 +8,7 @@ public record CombatantDto(
     int CurrentHp,
     int MaxHp,
     string CombatantType = "player",
-    bool IsAiControlled = false);
+    bool IsAiControlled = false,
+    string ProfileId = "",
+    string ProfileName = "",
+    int MovementRange = 6);

@@ -131,12 +131,13 @@ public class GameHub(
         }
     }
 
-    public async Task AddMonster(string joinCode, string monsterName, bool isAiControlled)
+    /// <param name="profileId">Combat profile preset; null or empty means the default enemy profile.</param>
+    public async Task AddMonster(string joinCode, string monsterName, bool isAiControlled, string? profileId)
     {
         logger.LogInformation("AddMonster hub: joinCode={JoinCode} userId={UserId} monsterName={MonsterName}", joinCode, Context.UserIdentifier, monsterName);
         try
         {
-            var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName, isAiControlled);
+            var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName, isAiControlled, profileId);
             var groupName = $"session:{r.SessionId}";
             logger.LogInformation("AddMonster hub: broadcasting MonsterAdded to group {GroupName}", groupName);
             await Clients.Group(groupName).SendAsync(HubEvents.Events.MonsterAdded,

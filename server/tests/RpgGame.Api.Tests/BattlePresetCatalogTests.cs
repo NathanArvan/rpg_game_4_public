@@ -12,14 +12,14 @@ public class BattlePresetCatalogTests : IDisposable
 
     private const string Valid = """
         { "id": "duel", "name": "Duel", "combatants": [
-            { "name": "Hero",   "side": "party", "hp": 10, "damage": "d6", "at": [0, 0] },
-            { "name": "Goblin", "side": "enemy", "hp": 5,  "damage": "d4", "at": [0, 1] } ] }
+            { "name": "Hero",   "side": "party", "profile": "scout", "hp": 10, "damage": "d6", "at": [0, 0] },
+            { "name": "Goblin", "side": "enemy", "profile": "grunt", "at": [0, 1] } ] }
         """;
 
     [Fact]
     public void ShippedPresets_AllLoad_AndIncludeTheE2EPreset()
     {
-        var catalog = BattlePresetCatalog.FromAppDirectory();
+        var catalog = BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog);
         Assert.Contains(catalog.All, p => p.Id == "skirmish");
         Assert.Contains(catalog.All, p => p.Id == "training-dummy");
         Assert.Equal("skirmish", catalog.All[0].Id); // default in the menu
@@ -29,24 +29,60 @@ public class BattlePresetCatalogTests : IDisposable
     public void ValidPreset_Loads_EnemiesDefaultToAi()
     {
         Write("duel.json", Valid);
-        var preset = Assert.Single(new BattlePresetCatalog(_dir).All);
+        var preset = Assert.Single(new BattlePresetCatalog(_dir, TestProfiles.Catalog).All);
         Assert.False(preset.Combatants.Single(c => c.Name == "Hero").IsAiControlled);
         Assert.True(preset.Combatants.Single(c => c.Name == "Goblin").IsAiControlled);
-        Assert.Equal(10, preset.Combatants.Single(c => c.Name == "Goblin").Speed); // default speed
+    }
+
+    [Fact]
+    public void Profile_IsCopied_AndOverridesWin()
+    {
+        Write("duel.json", Valid);
+        var preset = Assert.Single(new BattlePresetCatalog(_dir, TestProfiles.Catalog).All);
+
+        // Goblin: the grunt profile unchanged.
+        var goblin = preset.Combatants.Single(c => c.Name == "Goblin").Profile;
+        var grunt = TestProfiles.Catalog.Find("grunt")!;
+        Assert.Equal(("grunt", "Grunt", grunt.MaxHp, grunt.MovementRange, grunt.Dodge, grunt.BaseDamage),
+            (goblin.ProfileId, goblin.ProfileName, goblin.MaxHp, goblin.MovementRange, goblin.Dodge, goblin.BaseDamage));
+
+        // Hero: the scout profile with hp and damage overridden; everything else from the scout.
+        var hero = preset.Combatants.Single(c => c.Name == "Hero").Profile;
+        var scout = TestProfiles.Catalog.Find("scout")!;
+        Assert.Equal(("scout", 10, "d6", scout.MovementRange, scout.Speed, scout.RangedAccuracy),
+            (hero.ProfileId, hero.MaxHp, hero.BaseDamage, hero.MovementRange, hero.Speed, hero.RangedAccuracy));
+    }
+
+    [Fact]
+    public void AllOverrideFields_Apply()
+    {
+        Write("o.json", """
+            { "id": "o", "name": "O", "combatants": [
+                { "name": "A", "side": "party", "profile": "bruiser", "hp": 3, "damage": "d12", "speed": 1,
+                  "move": 2, "meleeAccuracy": 5, "rangedAccuracy": -4, "dodge": 17, "at": [0, 0] },
+                { "name": "B", "side": "enemy", "profile": "grunt", "at": [0, 1] } ] }
+            """);
+        var a = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants[0].Profile;
+        Assert.Equal((3, "d12", 1, 2, 5, -4, 17),
+            (a.MaxHp, a.BaseDamage, a.Speed, a.MovementRange, a.MeleeAccuracy, a.RangedAccuracy, a.Dodge));
     }
 
     [Theory]
-    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "hp": 5, "damage": "d6", "at": [0, 0] } ] }""", "at least one enemy")]
-    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "hp": 5, "damage": "d6", "at": [0, 0] }, { "name": "B", "side": "enemy", "hp": 5, "damage": "d6", "at": [0, 0] } ] }""", "already taken")]
-    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "hp": 5, "damage": "d6", "at": [0, 20] }, { "name": "B", "side": "enemy", "hp": 5, "damage": "d6", "at": [1, 0] } ] }""", "outside the grid")]
-    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "hp": 5, "damage": "2d6", "at": [0, 0] }, { "name": "B", "side": "enemy", "hp": 5, "damage": "d6", "at": [1, 0] } ] }""", "'damage'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "at": [0, 0] } ] }""", "at least one enemy")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "wizard", "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "at": [1, 0] } ] }""", "'profile'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "at": [1, 0] } ] }""", "'profile'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "hp": 0, "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "at": [1, 0] } ] }""", "'hp'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "move": 0, "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "at": [1, 0] } ] }""", "'move'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "hp": 5, "damage": "d6", "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "hp": 5, "damage": "d6", "at": [0, 0] } ] }""", "already taken")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "hp": 5, "damage": "d6", "at": [0, 20] }, { "name": "B", "side": "enemy", "profile": "grunt", "hp": 5, "damage": "d6", "at": [1, 0] } ] }""", "outside the grid")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "hp": 5, "damage": "2d6", "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "hp": 5, "damage": "d6", "at": [1, 0] } ] }""", "'damage'")]
     [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "ally", "hp": 5, "damage": "d6", "at": [0, 0] } ] }""", "'side'")]
     [InlineData("""{ "name": "X", "combatants": [] }""", "'id'")]
     [InlineData("""{ not json""", "invalid JSON")]
     public void BrokenPreset_FailsWithTheFileName(string json, string expected)
     {
         Write("broken.json", json);
-        var ex = Assert.Throws<InvalidDataException>(() => new BattlePresetCatalog(_dir));
+        var ex = Assert.Throws<InvalidDataException>(() => new BattlePresetCatalog(_dir, TestProfiles.Catalog));
         Assert.Contains("broken.json", ex.Message);
         Assert.Contains(expected, ex.Message);
     }
@@ -56,7 +92,7 @@ public class BattlePresetCatalogTests : IDisposable
     {
         Write("a.json", Valid);
         Write("b.json", Valid);
-        var ex = Assert.Throws<InvalidDataException>(() => new BattlePresetCatalog(_dir));
+        var ex = Assert.Throws<InvalidDataException>(() => new BattlePresetCatalog(_dir, TestProfiles.Catalog));
         Assert.Contains("'duel'", ex.Message);
     }
 }

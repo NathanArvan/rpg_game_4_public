@@ -2,30 +2,8 @@ using RpgGame.Rules;
 
 namespace RpgGame.Rules.Tests;
 
-public class CombatMathTests
+public class ModelTests
 {
-    [Theory]
-    [InlineData(10, 0)]
-    [InlineData(11, 0)]
-    [InlineData(14, 2)]
-    [InlineData(8, -1)]
-    [InlineData(9, -1)]
-    [InlineData(1, -5)]
-    public void DexModifier_FloorsHalfTheDifference(int dex, int expected) =>
-        Assert.Equal(expected, CombatMath.DexModifier(dex));
-
-    [Theory]
-    [InlineData("Fighter", 8)]
-    [InlineData("paladin", 8)]
-    [InlineData("RANGER", 8)]
-    [InlineData("Rogue", 6)]
-    [InlineData("bard", 6)]
-    [InlineData("Wizard", 4)]
-    [InlineData("cleric", 4)]
-    [InlineData("", 4)]
-    public void DamageDieForClass_UsesClassTable(string cls, int sides) =>
-        Assert.Equal(new DamageDie(sides), CombatMath.DamageDieForClass(cls));
-
     [Theory]
     [InlineData("d8", 8)]
     [InlineData("1d6", 6)]

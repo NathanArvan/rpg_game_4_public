@@ -4,8 +4,8 @@ using RpgGame.Domain.Entities;
 
 namespace RpgGame.Api.Services;
 
-/// <summary>A combatant's starting HP and the "class" field written to its Redis live state.</summary>
-internal sealed record CombatantStart(EncounterCombatant Combatant, int CurrentHp, int MaxHp, string LiveClass);
+/// <summary>A combatant (with its combat profile already set) and the HP it starts the encounter on.</summary>
+internal sealed record CombatantStart(EncounterCombatant Combatant, int CurrentHp);
 
 /// <summary>
 /// The shared second half of starting an encounter, once its rows are saved: write the Redis live
@@ -37,17 +37,10 @@ internal static class EncounterLaunch
         await redisState.SetActiveEncounterAsync(sessionIdStr, activeEncounterEntry);
         await redisState.SetMapAsync(encounter.Id.ToString(), map);
         foreach (var s in starts)
-            await redisState.SeedCharacterLiveStateAsync(EncounterStateLoader.HpKeyFor(s.Combatant), s.CurrentHp, s.LiveClass);
+            await redisState.SeedCharacterLiveStateAsync(
+                EncounterStateLoader.HpKeyFor(s.Combatant), s.CurrentHp, s.Combatant.Profile?.ProfileId ?? "");
 
-        var combatantDtos = starts.Select(s => new CombatantDto(
-            s.Combatant.Id.ToString(),
-            s.Combatant.UserId,
-            s.Combatant.CharacterId?.ToString() ?? "",
-            s.Combatant.CharacterName,
-            s.CurrentHp,
-            s.MaxHp,
-            s.Combatant.CombatantType,
-            s.Combatant.IsAiControlled)).ToList();
+        var combatantDtos = starts.Select(s => CombatantDtos.Combatant(s.Combatant, s.CurrentHp)).ToList();
 
         var mapDto = new MapDto(
             map.GridWidth,
@@ -55,8 +48,7 @@ internal static class EncounterLaunch
             map.Positions.ToDictionary(kv => kv.Key, kv => new PositionDto(kv.Value.X, kv.Value.Y)),
             new List<string>());
 
-        var planningCombatantDtos = combatantDtos.Select(c =>
-            new PlanningCombatantDto(c.Id, c.UserId, c.CharacterName, c.CurrentHp, c.MaxHp, false, c.CombatantType, c.IsAiControlled)).ToList();
+        var planningCombatantDtos = starts.Select(s => CombatantDtos.Planning(s.Combatant, s.CurrentHp, false)).ToList();
 
         return new EncounterStartedResult(
             sessionId,

@@ -42,6 +42,27 @@ export interface CharacterResponse {
   maxHp?: number;
   /** @format int32 */
   currentHp?: number;
+  combatProfile?: string | null;
+}
+
+export interface CombatProfileDto {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  side?: string | null;
+  /** @format int32 */
+  maxHp?: number;
+  /** @format int32 */
+  movementRange?: number;
+  /** @format int32 */
+  speed?: number;
+  /** @format int32 */
+  meleeAccuracy?: number;
+  /** @format int32 */
+  rangedAccuracy?: number;
+  /** @format int32 */
+  dodge?: number;
+  baseDamage?: string | null;
 }
 
 export interface CreateCampaignRequest {
@@ -64,6 +85,7 @@ export interface CreateCharacterRequest {
   maxHp?: number;
   /** @format int32 */
   currentHp?: number;
+  combatProfile?: string | null;
 }
 
 export interface RegisterRequest {
@@ -94,4 +116,5 @@ export interface UpdateCharacterRequest {
   maxHp?: number;
   /** @format int32 */
   currentHp?: number;
+  combatProfile?: string | null;
 }

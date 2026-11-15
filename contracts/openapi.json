@@ -306,6 +306,28 @@
           }
         }
       }
+    },
+    "/api/combat-profiles": {
+      "get": {
+        "tags": [
+          "CombatProfiles"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CombatProfileDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -383,6 +405,60 @@
           "currentHp": {
             "type": "integer",
             "format": "int32"
+          },
+          "combatProfile": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CombatProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "side": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxHp": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "movementRange": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "speed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "meleeAccuracy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rangedAccuracy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dodge": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "baseDamage": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -436,6 +512,10 @@
           "currentHp": {
             "type": "integer",
             "format": "int32"
+          },
+          "combatProfile": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -515,6 +595,10 @@
           "currentHp": {
             "type": "integer",
             "format": "int32"
+          },
+          "combatProfile": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -530,6 +614,9 @@
     },
     {
       "name": "Characters"
+    },
+    {
+      "name": "CombatProfiles"
     }
   ]
 }

@@ -68,13 +68,20 @@ public partial class ScenarioTests
         {
             if (string.IsNullOrWhiteSpace(c.Id)) throw new InvalidDataException($"{file}: every combatant needs an 'id'");
             var hp = c.Hp ?? 20;
+            var d = CombatProfile.Default;
+            var profile = new CombatProfile(
+                MaxHp: c.MaxHp ?? Math.Max(hp, 1),
+                MovementRange: c.Move ?? d.MovementRange,
+                Speed: c.Speed ?? d.Speed,
+                MeleeAccuracy: c.MeleeAccuracy ?? d.MeleeAccuracy,
+                RangedAccuracy: c.RangedAccuracy ?? d.RangedAccuracy,
+                Dodge: c.Dodge ?? d.Dodge,
+                BaseDamage: DamageDie.Parse(c.Damage ?? "d8"));
             return new CombatantState(
                 c.Id,
                 c.Name ?? c.Id,
                 hp,
-                c.MaxHp ?? Math.Max(hp, 1),
-                c.Speed ?? 10,
-                DamageDie.Parse(c.Damage ?? "d8"),
+                profile,
                 c.At is { } at ? Cell(at, $"{file}: combatant {c.Id} 'at'") : null,
                 c.Defeated ?? false);
         }).ToList();
@@ -99,8 +106,6 @@ public partial class ScenarioTests
             ? RulesConfig.Default
             : RulesConfig.Default with
             {
-                HitThreshold = s.Config.HitThreshold ?? RulesConfig.Default.HitThreshold,
-                AccuracyBonus = s.Config.AccuracyBonus ?? RulesConfig.Default.AccuracyBonus,
                 MeleeReach = s.Config.MeleeReach ?? RulesConfig.Default.MeleeReach,
             };
 
@@ -239,6 +244,10 @@ public partial class ScenarioTests
         public int? Hp { get; set; }
         public int? MaxHp { get; set; }
         public int? Speed { get; set; }
+        public int? Move { get; set; }
+        public int? MeleeAccuracy { get; set; }
+        public int? RangedAccuracy { get; set; }
+        public int? Dodge { get; set; }
         public string? Damage { get; set; }
         public int[]? At { get; set; }
         public bool? Defeated { get; set; }
@@ -247,8 +256,6 @@ public partial class ScenarioTests
 
     private sealed class ConfigDto
     {
-        public int? HitThreshold { get; set; }
-        public int? AccuracyBonus { get; set; }
         public int? MeleeReach { get; set; }
     }
 

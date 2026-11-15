@@ -6,8 +6,13 @@ public class RoundResolverTests
 {
     // ----- Builders -----
 
-    private static CombatantState C(string id, int x, int y, int hp = 20, int speed = 10, int die = 8, bool defeated = false) =>
-        new(id, id, hp, 20, speed, new DamageDie(die), new GridPosition(x, y), defeated);
+    private static CombatantState C(
+        string id, int x, int y, int hp = 20, int speed = 10, int die = 8, bool defeated = false,
+        int move = 6, int melee = 0, int ranged = 0, int dodge = 10) =>
+        new(id, id, hp, new CombatProfile(20, move, speed, melee, ranged, dodge, new DamageDie(die)),
+            new GridPosition(x, y), defeated);
+
+    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null, false);
 
     private static EncounterState State(params CombatantState[] combatants) => new(20, 20, combatants);
 
@@ -202,11 +207,13 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void Move_RespectsConfiguredMovementRange()
+    public void Move_RespectsEachCombatantsMovementRange()
     {
-        var o = Resolve(State(C("A", 0, 0)), new Plans().Add("A", PlannedAction.Move(5, 5)), new ScriptedDice(),
-            RulesConfig.Default with { MovementRange = 2 });
-        Assert.Equal(P(2, 2), Final(o, "A").Position);
+        var o = Resolve(State(C("Slow", 0, 0, move: 2), C("Fast", 0, 10, move: 8)),
+            new Plans().Add("Slow", PlannedAction.Move(10, 0)).Add("Fast", PlannedAction.Move(10, 10)),
+            new ScriptedDice());
+        Assert.Equal(P(2, 0), Final(o, "Slow").Position);
+        Assert.Equal(P(8, 10), Final(o, "Fast").Position);
     }
 
     [Fact]
@@ -223,8 +230,8 @@ public class RoundResolverTests
     [Fact]
     public void NullPosition_CannotMove_OrMeleeOrBeMeleed_AndStaysNull()
     {
-        var a = new CombatantState("A", "A", 20, 20, 10, DamageDie.D8, null, false);
-        var b = new CombatantState("B", "B", 20, 20, 10, DamageDie.D8, null, false);
+        var a = OffMap("A");
+        var b = OffMap("B");
         var o = Resolve(new EncounterState(20, 20, [a, b, C("T", 1, 1), C("U", 0, 1)]),
             new Plans()
                 .Add("A", PlannedAction.Move(2, 0))
@@ -242,7 +249,7 @@ public class RoundResolverTests
     [Fact]
     public void NullPosition_DoesNotBlockOrigin()
     {
-        var ghost = new CombatantState("G", "G", 20, 20, 10, DamageDie.D8, null, false);
+        var ghost = OffMap("G");
         var o = Resolve(new EncounterState(20, 20, [ghost, C("A", 1, 0)]),
             new Plans().Add("A", PlannedAction.Move(0, 0)), new ScriptedDice());
         Assert.Equal(P(0, 0), Final(o, "A").Position);
@@ -302,11 +309,44 @@ public class RoundResolverTests
     }
 
     [Fact]
-    public void RulesConfig_ThresholdAccuracyAndReachAreHonored()
+    public void Attack_HitsWhenRollPlusAccuracyReachesTargetDodge()
     {
-        var config = new RulesConfig { HitThreshold = 15, AccuracyBonus = 3, MeleeReach = 2 };
+        // 12 + 3 melee accuracy = 15 ≥ Dodge 15 → hit; ranged accuracy is ignored for melee.
+        var hit = Resolve(State(C("A", 0, 0, melee: 3, ranged: -5), C("B", 1, 0, dodge: 15)),
+            new Plans().Add("A", PlannedAction.Melee("B")), new ScriptedDice(12, 1));
+        Assert.True(Assert.Single(hit.Ticks[0].Attacks).Hit);
+
+        // 11 + 3 = 14 < 15 → miss.
+        var miss = Resolve(State(C("A", 0, 0, melee: 3), C("B", 1, 0, dodge: 15)),
+            new Plans().Add("A", PlannedAction.Melee("B")), new ScriptedDice(11));
+        Assert.False(Assert.Single(miss.Ticks[0].Attacks).Hit);
+    }
+
+    [Fact]
+    public void RangedAttack_UsesRangedAccuracy()
+    {
+        // 8 + 2 ranged = 10 ≥ Dodge 10 → hit, though melee accuracy (−5) would miss.
+        var o = Resolve(State(C("A", 0, 0, melee: -5, ranged: 2), C("B", 5, 5)),
+            new Plans().Add("A", PlannedAction.Ranged("B")), new ScriptedDice(8, 4));
+        var atk = Assert.Single(o.Ticks[0].Attacks);
+        Assert.True(atk.Hit);
+        Assert.Equal(4, atk.Damage);
+    }
+
+    [Fact]
+    public void Dodge_IsTheTargetsNotTheAttackers()
+    {
+        // Attacker's own Dodge 20 doesn't matter; the target's Dodge 5 does.
+        var o = Resolve(State(C("A", 0, 0, dodge: 20), C("B", 1, 0, dodge: 5)),
+            new Plans().Add("A", PlannedAction.Melee("B")), new ScriptedDice(5, 2));
+        Assert.True(Assert.Single(o.Ticks[0].Attacks).Hit);
+    }
+
+    [Fact]
+    public void RulesConfig_MeleeReachIsHonored()
+    {
         var o = Resolve(State(C("A", 0, 0), C("B", 2, 2)), new Plans().Add("A", PlannedAction.Melee("B")),
-            new ScriptedDice(12, 1), config); // 12 + 3 = 15 hits; distance 2 within reach 2
+            new ScriptedDice(10, 1), new RulesConfig { MeleeReach = 2 }); // distance 2 within reach 2
 
         var atk = Assert.Single(o.Ticks[0].Attacks);
         Assert.False(atk.Wasted);

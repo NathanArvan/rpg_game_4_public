@@ -1,12 +1,13 @@
 {
   // The quickest possible win: the first hit on the dummy ends the encounter. Used by the
-  // quick-battle E2E test, so keep it winnable in a few rounds.
+  // quick-battle E2E test, so keep it winnable in a few rounds (the dummy's dodge is 1, so
+  // every attack hits).
   "id": "training-dummy",
   "name": "Training Dummy",
   "description": "One hero next to a one-hit dummy. Ends on the first hit.",
   "order": 3,
   "combatants": [
-    { "name": "Hero",  "side": "party", "hp": 60, "damage": "d8", "speed": 10, "at": [9, 9] },
-    { "name": "Dummy", "side": "enemy", "hp": 1,  "damage": "d4", "speed": 10, "at": [9, 10] }
+    { "name": "Hero",  "side": "party", "profile": "skirmisher", "hp": 60, "at": [9, 9] },
+    { "name": "Dummy", "side": "enemy", "profile": "grunt", "hp": 1, "dodge": 1, "at": [9, 10] }
   ]
 }

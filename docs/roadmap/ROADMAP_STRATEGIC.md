@@ -67,7 +67,9 @@ A new single-browser E2E test (Quick Battle → play to victory) becomes the def
 
 Not in scope: smart AI (fleeing, focus fire, terrain), a preset editor UI, combat profiles (3B.1 extends battle presets with profile fields).
 
-### ⬜ Slice 3B.1 — Combat Profiles
+### ✅ Slice 3B.1 — Combat Profiles
+
+*Status: done. What shipped: profiles live in `server/src/RpgGame.Api/CombatProfiles/profiles.json` (Bruiser, Skirmisher, Scout, Grunt, Brute), loaded and validated at startup by `CombatProfileCatalog`. Each `EncounterCombatant` stores a **snapshot** of its resolved profile as JSONB (`Profile`), replacing the 3B.0 `MaxHp` / `Speed` / `DamageDie` override columns, so a running encounter never depends on the catalog. `BaseDamage` stays a die (e.g. `d8`). Hit check: d20 + attacker's melee/ranged accuracy ≥ target's Dodge. Characters pick a profile (`Character.CombatProfile`, default `skirmisher`) and start each encounter at its MaxHp. The GM picks one per monster (`AddMonster(..., profileId)`, default `grunt`). Quick Battle combatants name a `profile` and may override single values (`hp`, `damage`, `speed`, `move`, `meleeAccuracy`, `rangedAccuracy`, `dodge`). Combatant DTOs carry `profileId`, `profileName`, `movementRange`, and the grid's move highlight and `PlanningService` use the per-combatant range. Presets are served by `GET /api/combat-profiles`.*
 
 Delivers: Each combatant carries its own derived combat values instead of global constants and D&D class dice. Profiles extend the 3B.0 battle presets. A small set of hand-authored presets (e.g. Bruiser, Skirmisher, Scout for players; Grunt, Brute for monsters) defines `MaxHp`, `MovementRange`, `Speed` (contested-cell priority), melee/ranged `Accuracy`, `Dodge`, and `BaseDamage`. Characters and monsters each select a preset. Values that move from `RulesConfig` to per-combatant: `HitThreshold` (→ target Dodge), `AccuracyBonus`, `MovementRange`. Class-based damage dice (`CombatMath.DamageDieForClass`) are removed. Presets must differ meaningfully — Speed tiebreaks and per-player vision (3C.1) are only testable if combatants differ.
 
@@ -187,7 +189,8 @@ Covers: whether characters have core stats at all, and if so which ones and how 
 ```
 Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
 Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Quick Battle)
-Next        3B.1 Combat Profiles → 3B.5 Defeat & Incapacitation → 3B.2 Action Points
+Done        3B.1 Combat Profiles
+Next        3B.5 Defeat & Incapacitation → 3B.2 Action Points
 Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -226,7 +229,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3A.1** — Remove Initiative-related fields from `EncounterCombatant` (Initiative, InitiativeRoll, DexModifier). Add `RoundNumber` to `Encounter`.
 
-**3B.1** — Add a combat profile reference to `Character` (e.g. `CombatProfile` string preset key). Presets themselves can live in code/config rather than a table until there's a reason to edit them at runtime. `Race`, `Class`, `Level`, `BaseStats` are left untouched and unused by combat. Monster combatants get a preset too (staged with the monster name).
+**3B.1** (done) — `Character.CombatProfile` (string preset key, default `skirmisher`). `EncounterCombatant.Profile` (JSONB snapshot: profile id and name, MaxHp, MovementRange, Speed, MeleeAccuracy, RangedAccuracy, Dodge, BaseDamage) replaces the 3B.0 `MaxHp` / `Speed` / `DamageDie` columns. Presets live in `CombatProfiles/profiles.json`, not a table. `Race`, `Class`, `Level`, `BaseStats`, `MaxHp`, `CurrentHp` on `Character` are left untouched and unused by combat. Monsters get a preset too (staged with the monster name). Migration `AddCombatProfiles`.
 
 **3B.3** — New table: `ability_definitions` (id, name, description, ap_cost, cooldown_rounds, range, target_type, effect JSONB, tags[]). Loadouts: either a `character_abilities` (character_id, ability_definition_id) join table or abilities listed on the combat profile preset — pick in the sprint doc. No acquisition rules. Drop or repurpose `spell_definitions` and `character_known_spells`.
 
@@ -264,7 +267,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.0** (done) — `CombatantRef` entries in `session:{sessionId}:active_encounter` gain `isAiControlled`; `active_encounter` gains `planningTimerEnabled` (false for Quick Battle) and is deleted when the encounter ends (the winner goes out in `EncounterEnded`). `character:live` is keyed by combatant ID when there's no `Character` row (as for monsters). Pending monsters are stored as JSON `{ name, isAiControlled }`.
 
-**3B.1** — Update `character:live` hash: replace `class` field with the combatant's combat profile values (or the preset key, resolved on load) — `maxHp`, `movementRange`, `speed`, `accuracy`, `dodge`, `baseDamage`.
+**3B.1** (done) — `character:live` hash: the `class` field is replaced by `profile` (the preset key). The values themselves are read from the Postgres snapshot on `EncounterCombatant`, not duplicated in Redis. Pending monsters gain `profile` (`{ name, isAiControlled, profile }`).
 
 **3B.2** — Add `currentAp` to `character:live` (`maxAp` comes from the profile). Add `apCost` field to each entry in planned actions.
 
@@ -379,6 +382,7 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `PlanEnemyAction(joinCode, combatantId, plannedAction)` | Client → Server | 3A.3 | GM only |
 | `LockInEnemies(joinCode)` | Client → Server | 3A.3 | GM only |
 | `StartQuickBattle(presetId)` | Client → Server | 3B.0 | Any signed-in user (becomes GM of a new campaign/session) |
+| `AddMonster(joinCode, monsterName, isAiControlled, profileId?)` | Client → Server | 3B.1 (`profileId`; null → default enemy profile) | GM only |
 | `PlanAction(joinCode, plannedAction, combatantId?)` | Client → Server | 3B.0 (optional `combatantId`) | Player (owned combatant) |
 | `LockIn(joinCode)` | Client → Server | 3B.0 (locks all owned living combatants) | Player |
 
@@ -407,8 +411,8 @@ What the rules engine consumes per combatant from 3B.1 on. Values are hand-autho
 | `MovementRange` | Move validation | 3B.1 |
 | `Speed` | Contested-cell priority | 3B.1 |
 | `MeleeAccuracy`, `RangedAccuracy` | Hit check | 3B.1 |
-| `Dodge` | Hit check threshold | 3B.1 |
-| `BaseDamage` | Damage pipeline | 3B.1 |
+| `Dodge` | Hit check threshold (d20 + attacker accuracy ≥ target Dodge) | 3B.1 |
+| `BaseDamage` (a die, e.g. `d8`) | Damage pipeline | 3B.1 |
 | `MaxAp` | AP budget | 3B.2 |
 | `ConditionResist` | Condition application | 3B.4 |
 | `VisionRange` | Fog of war | 3C.1 |
@@ -445,7 +449,7 @@ Values that are not blocking decisions — build with these, adjust through play
 | Melee range | Adjacent (Chebyshev ≤ 1) | Post-movement |
 | Ranged attack range | Unlimited in 3A | Range limits tied to Precision in 3B |
 | Grid size | 20×20 | Unchanged from Phase 2 |
-| Movement range | 6 cells Chebyshev in 3A | Per combatant from the combat profile in 3B.1 |
+| Movement range | Per combatant (`MovementRange` on the combat profile, 4–8 in the shipped presets) | Was 6 cells Chebyshev for everyone in 3A |
 
 Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 
@@ -459,6 +463,8 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Mutual kills | Enabled | `DESIGN_SPIKE.md` D2 | Natural consequence of simultaneous damage; no tiebreaker needed |
 | Healing + damage | Net calculation (all deltas summed, then applied) | `DESIGN_SPIKE.md` D3 | Never temporarily "dead"; well-predicted heal saves from lethal damage |
 | Combat values before stats | Hand-authored combat profiles; stats & progression deferred | This roadmap (Nov 2026) | Rules engine only consumes derived values; build abilities, conditions, vision (and optionally items) first, then decide what stats need to do |
+| Combat profile storage | Presets in a JSON file; each combatant stores a snapshot of its resolved profile | 3B.1 | Running encounters don't change when presets are retuned; Quick Battle overrides apply once, at creation |
+| Base damage | A die (1dN), not a flat number | 3B.1 | Keeps the existing roll order and damage feel; switching to flat or die + bonus is a later tuning call |
 | Resource model | AP (per round) + Cooldowns + Consumables | `GAME_DESIGN.md` | AP creates round-to-round tension; cooldowns prevent spam; consumables add session-level strategy |
 | Character progression | Abilities over classes | `GAME_DESIGN.md` | Composable; avoids rigid hierarchies; ability choice affects resolution phase timing |
 | Default action on timeout | Defend in place | `DESIGN_SPIKE.md` D5 | Least punishing; doesn't waste resources or move character |

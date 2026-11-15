@@ -65,15 +65,7 @@ public class ResolutionService(
         {
             var id = c.Id.ToString();
             var final = finalStates[id];
-            return new PlanningCombatantDto(
-                id,
-                c.UserId,
-                c.CharacterName,
-                final.Hp,
-                records[id].MaxHp,
-                final.IsDefeated,
-                c.CombatantType,
-                c.IsAiControlled);
+            return CombatantDtos.Planning(c, final.Hp, final.IsDefeated);
         }).ToList();
 
         // ----- Persist -----

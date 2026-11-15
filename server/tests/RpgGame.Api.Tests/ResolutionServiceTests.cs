@@ -98,7 +98,7 @@ public partial class ResolutionServiceTests
 
     // Adds an Encounter with one player combatant (and the backing Character) plus optional monsters.
     private static async Task<(Guid encounterId, Guid characterId, Guid playerCombatantId)> SeedEncounterWithPlayer(
-        AppDbContext db, Guid sessionId, string userId, int dex, params (Guid id, string name)[] monsters)
+        AppDbContext db, Guid sessionId, string userId, int speed, params (Guid id, string name)[] monsters)
     {
         var characterId = Guid.NewGuid();
         db.Characters.Add(new Character
@@ -111,7 +111,6 @@ public partial class ResolutionServiceTests
             Level = 1,
             MaxHp = 20,
             CurrentHp = 20,
-            BaseStats = new BaseStats { Dex = dex },
         });
 
         var encounterId = Guid.NewGuid();
@@ -119,7 +118,8 @@ public partial class ResolutionServiceTests
 
         var combatants = new List<EncounterCombatant>
         {
-            new() { Id = playerCombatantId, EncounterId = encounterId, UserId = userId, CharacterId = characterId, CharacterName = "Frodo", CombatantType = "player" },
+            new() { Id = playerCombatantId, EncounterId = encounterId, UserId = userId, CharacterId = characterId, CharacterName = "Frodo", CombatantType = "player",
+                Profile = TestProfiles.Values(speed: speed) },
         };
         combatants.AddRange(monsters.Select(m => new EncounterCombatant
         {
@@ -177,14 +177,14 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task ResolveRound_HigherDexWinsContestedCell()
+    public async Task ResolveRound_HigherSpeedWinsContestedCell()
     {
         await using var db = CreateDb();
         var sessionId = Guid.NewGuid();
         var monsterId = Guid.NewGuid();
-        // Player has Dex 14, monster defaults to 10
+        // Player has Speed 14, the monster (no stored profile) the default 10
         var (encounterId, characterId, playerCombatantId) =
-            await SeedEncounterWithPlayer(db, sessionId, "user-1", dex: 14, (monsterId, "Goblin"));
+            await SeedEncounterWithPlayer(db, sessionId, "user-1", speed: 14, (monsterId, "Goblin"));
 
         var encounterIdStr = encounterId.ToString();
         var monsterIdStr = monsterId.ToString();
@@ -222,7 +222,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task ResolveRound_TiedDexBothStopAtContestedCell()
+    public async Task ResolveRound_TiedSpeedBothStopAtContestedCell()
     {
         await using var db = CreateDb();
         var sessionId = Guid.NewGuid();
@@ -231,7 +231,7 @@ public partial class ResolutionServiceTests
         var encounterId = await SeedEncounterWithMonsters(db, sessionId, (monsterA, "Goblin A"), (monsterB, "Goblin B"));
         var encounterIdStr = encounterId.ToString();
 
-        // Both monsters target (1, 0); both have default Dex 10
+        // Both monsters target (1, 0); both have the default Speed 10
         var mapEntry = new MapEntry(20, 20,
             new Dictionary<string, Position>
             {
@@ -420,7 +420,7 @@ public partial class ResolutionServiceTests
     {
         // Intentional deviation in the rules-engine extraction: PlanningService never stores plans
         // for non-combatants, but if one appears the adapter now drops it instead of resolving it
-        // as an "Unknown" Dex-10 / d4 combatant.
+        // as an "Unknown" Speed-10 / d4 combatant.
         await using var db = CreateDb();
         var sessionId = Guid.NewGuid();
         var monsterId = Guid.NewGuid();
@@ -447,9 +447,9 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task ResolveRound_UsesPresetStatOverrides_ForCombatantsWithoutACharacter()
+    public async Task ResolveRound_UsesTheCombatantsStoredProfile()
     {
-        // Quick Battle: a "player" combatant with no Character row, stats stored on the combatant.
+        // Combat values come from the profile stored on the combatant (here a Quick Battle player with no Character row).
         await using var db = CreateDb();
         var sessionId = Guid.NewGuid();
         var encounterId = Guid.NewGuid();
@@ -461,9 +461,9 @@ public partial class ResolutionServiceTests
             Combatants =
             [
                 new EncounterCombatant { Id = scoutId, EncounterId = encounterId, UserId = "u", CharacterName = "Scout",
-                    CombatantType = "player", MaxHp = 12, Speed = 12, DamageDie = "d12" },
+                    CombatantType = "player", Profile = TestProfiles.Values(maxHp: 12, speed: 12, damage: "d12") },
                 new EncounterCombatant { Id = goblinId, EncounterId = encounterId, UserId = "u", CharacterName = "Goblin",
-                    CombatantType = "monster", IsAiControlled = true, MaxHp = 10, Speed = 10, DamageDie = "d4" },
+                    CombatantType = "monster", IsAiControlled = true, Profile = TestProfiles.Values(maxHp: 10, damage: "d4") },
             ],
         });
         await db.SaveChangesAsync();
@@ -477,15 +477,15 @@ public partial class ResolutionServiceTests
         var redis = BuildMockRedis(encounterId.ToString(), sessionId.ToString(), plans, map,
             hpByKey: new() { [scoutId.ToString()] = 7, [goblinId.ToString()] = 10 });
 
-        // d20 = 15 hits, then 11 damage: only possible on the preset's d12 (ScriptedDice rejects 11 on
-        // the d4 a character-less player would otherwise get).
+        // d20 = 15 hits, then 11 damage: only possible on the profile's d12 (ScriptedDice rejects 11 on
+        // the default d8).
         var service = new ResolutionService(db, redis.Object, new ScriptedDice(15, 11), NullLogger<ResolutionService>.Instance);
         var payload = await service.ResolveRoundAsync(encounterId);
 
         var attack = Assert.Single(payload.Ticks[0].Attacks);
         Assert.Equal((true, 11, -1), (attack.Hit, attack.Damage, attack.TargetNewHp));
         var scout = payload.UpdatedCombatants.Single(c => c.Id == scoutId.ToString());
-        Assert.Equal((7, 12), (scout.CurrentHp, scout.MaxHp)); // MaxHp from the override, not the current HP
+        Assert.Equal((7, 12), (scout.CurrentHp, scout.MaxHp)); // MaxHp from the profile, not the current HP
         Assert.True(payload.UpdatedCombatants.Single(c => c.Id == goblinId.ToString()).IsAiControlled);
         redis.Verify(r => r.SetHpAsync(goblinId.ToString(), -1), Times.Once);
         Assert.Equal([goblinId.ToString()], payload.DefeatedCombatantIds);

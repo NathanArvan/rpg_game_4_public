@@ -40,9 +40,7 @@ public class QuickBattleService(
             CharacterName = p.Name,
             CombatantType = p.Side == BattlePresetCatalog.Party ? "player" : "monster",
             IsAiControlled = p.IsAiControlled,
-            MaxHp = p.Hp,
-            Speed = p.Speed,
-            DamageDie = p.Damage,
+            Profile = Copy(p.Profile), // each row gets its own copy of the preset's values
         })).ToList();
 
         var encounter = new Encounter
@@ -67,7 +65,7 @@ public class QuickBattleService(
             placed.ToDictionary(x => x.Combatant.Id.ToString(), x => new Position(x.Preset.X, x.Preset.Y)),
             new List<string>());
 
-        var starts = placed.Select(x => new CombatantStart(x.Combatant, x.Preset.Hp, x.Preset.Hp, "preset")).ToList();
+        var starts = placed.Select(x => new CombatantStart(x.Combatant, x.Preset.Profile.MaxHp)).ToList();
         var encounterResult = await EncounterLaunch.PublishAsync(
             redisState, session.Id, encounter, starts, map, planningTimerEnabled: false);
 
@@ -78,4 +76,17 @@ public class QuickBattleService(
             new QuickBattleStartedResult(session.JoinCode, campaign.Id, session.Id, preset.Id),
             encounterResult);
     }
+
+    private static CombatProfileValues Copy(CombatProfileValues v) => new()
+    {
+        ProfileId = v.ProfileId,
+        ProfileName = v.ProfileName,
+        MaxHp = v.MaxHp,
+        MovementRange = v.MovementRange,
+        Speed = v.Speed,
+        MeleeAccuracy = v.MeleeAccuracy,
+        RangedAccuracy = v.RangedAccuracy,
+        Dodge = v.Dodge,
+        BaseDamage = v.BaseDamage,
+    };
 }

@@ -13,4 +13,7 @@ public record PlanningCombatantDto(
     int MaxHp,
     bool IsDefeated,
     string CombatantType = "player",
-    bool IsAiControlled = false);
+    bool IsAiControlled = false,
+    string ProfileId = "",
+    string ProfileName = "",
+    int MovementRange = 6);
