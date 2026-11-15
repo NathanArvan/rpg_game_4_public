@@ -26,6 +26,9 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
   maxHp: 20,
   combatantType: 'player',
   isAiControlled: false,
+  profileId: 'bruiser',
+  profileName: 'Bruiser',
+  movementRange: 4,
   ...overrides,
 });
 
@@ -38,6 +41,9 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   isDefeated: false,
   combatantType: 'player',
   isAiControlled: false,
+  profileId: 'bruiser',
+  profileName: 'Bruiser',
+  movementRange: 4,
   ...overrides,
 });
 
@@ -65,6 +71,16 @@ describe('EncounterState', () => {
 
       const combatants = store.selectSnapshot(EncounterState.combatants);
       expect(combatants[0].isDefeated).toBeFalse();
+    });
+  });
+
+  describe('combat profile', () => {
+    it('keeps profile name and movement range from every combatant payload', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'c1' })]));
+      expect(store.snapshot().encounter.combatants[0]).toEqual(jasmine.objectContaining({ profileName: 'Bruiser', movementRange: 4 }));
+
+      store.dispatch(new PlanningPhaseStarted(2, 0, [makePlanningCombatantDto({ id: 'c1', profileName: 'Scout', movementRange: 8 })]));
+      expect(store.snapshot().encounter.combatants[0]).toEqual(jasmine.objectContaining({ profileName: 'Scout', movementRange: 8 }));
     });
   });
 

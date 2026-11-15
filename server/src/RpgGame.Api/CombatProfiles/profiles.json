@@ -1,0 +1,43 @@
+{
+  // Hand-authored combat profiles (roadmap 3B.1). Characters, GM-added monsters and Quick Battle
+  // combatants each pick one. The rules engine reads only these values.
+  //
+  //   hp              max HP
+  //   move            max cells per move
+  //   speed           contested-cell tiebreaker (higher wins)
+  //   meleeAccuracy   added to the d20 of melee attacks
+  //   rangedAccuracy  added to the d20 of ranged attacks
+  //   dodge           an attack on this combatant hits when d20 + accuracy >= dodge
+  //   damage          damage die rolled per hit
+  //   side            "party" | "enemy" | "any" — only orders the pick lists
+  //
+  // Keep values on a consistent scale: if core stats are adopted later, a stats → profile
+  // function will be calibrated against these.
+  "profiles": [
+    {
+      "id": "bruiser", "name": "Bruiser", "side": "party",
+      "description": "Tough and hard-hitting up close, but slow and easy to hit.",
+      "hp": 24, "move": 4, "speed": 8, "meleeAccuracy": 2, "rangedAccuracy": -2, "dodge": 9, "damage": "d8"
+    },
+    {
+      "id": "skirmisher", "name": "Skirmisher", "side": "party",
+      "description": "Quick all-rounder that wins races for contested cells.",
+      "hp": 16, "move": 6, "speed": 14, "meleeAccuracy": 1, "rangedAccuracy": 1, "dodge": 12, "damage": "d6"
+    },
+    {
+      "id": "scout", "name": "Scout", "side": "party",
+      "description": "Fragile, far-moving and hard to pin down; best at range.",
+      "hp": 12, "move": 8, "speed": 12, "meleeAccuracy": 0, "rangedAccuracy": 2, "dodge": 13, "damage": "d4"
+    },
+    {
+      "id": "grunt", "name": "Grunt", "side": "enemy",
+      "description": "Ordinary rank-and-file foe.",
+      "hp": 10, "move": 5, "speed": 10, "meleeAccuracy": 0, "rangedAccuracy": 0, "dodge": 10, "damage": "d4"
+    },
+    {
+      "id": "brute", "name": "Brute", "side": "enemy",
+      "description": "Big, slow and dangerous in melee.",
+      "hp": 28, "move": 4, "speed": 6, "meleeAccuracy": 1, "rangedAccuracy": -2, "dodge": 8, "damage": "d10"
+    }
+  ]
+}

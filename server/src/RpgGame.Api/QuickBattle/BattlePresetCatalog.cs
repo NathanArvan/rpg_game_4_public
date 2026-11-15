@@ -1,3 +1,4 @@
+using RpgGame.Api.CombatProfiles;
 using RpgGame.Rules;
 using System.Text.Json;
 
@@ -21,11 +22,11 @@ public sealed class BattlePresetCatalog
 
     private readonly Dictionary<string, BattlePreset> _byId;
 
-    public BattlePresetCatalog(string directory)
+    public BattlePresetCatalog(string directory, CombatProfileCatalog profiles)
     {
         var presets = Directory.EnumerateFiles(directory, "*.json")
             .Order(StringComparer.Ordinal)
-            .Select(Load)
+            .Select(path => Load(path, profiles))
             .ToList();
         if (presets.Count == 0)
             throw new InvalidDataException($"No battle presets found in {directory}.");
@@ -38,8 +39,8 @@ public sealed class BattlePresetCatalog
         All = presets.OrderBy(p => p.Order).ThenBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
 
-    public static BattlePresetCatalog FromAppDirectory() =>
-        new(Path.Combine(AppContext.BaseDirectory, "QuickBattle", "Presets"));
+    public static BattlePresetCatalog FromAppDirectory(CombatProfileCatalog profiles) =>
+        new(Path.Combine(AppContext.BaseDirectory, "QuickBattle", "Presets"), profiles);
 
     /// <summary>Presets in menu order.</summary>
     public IReadOnlyList<BattlePreset> All { get; }
@@ -48,7 +49,7 @@ public sealed class BattlePresetCatalog
 
     // ----- Loading & validation -----
 
-    internal static BattlePreset Load(string path)
+    internal static BattlePreset Load(string path, CombatProfileCatalog profiles)
     {
         var file = Path.GetFileName(path);
         PresetDto dto;
@@ -78,17 +79,33 @@ public sealed class BattlePresetCatalog
             if (string.IsNullOrWhiteSpace(c.Name)) Fail("every combatant needs a 'name'");
             var side = c.Side?.Trim().ToLowerInvariant();
             if (side is not (Party or Enemy)) Fail($"{who}: 'side' must be \"party\" or \"enemy\"");
-            if (c.Hp is not > 0) Fail($"{who}: 'hp' must be at least 1");
-            try { DamageDie.Parse(c.Damage ?? ""); }
-            catch (FormatException) { Fail($"{who}: 'damage' must be a die like \"d6\""); }
+            var definition = profiles.Find(c.Profile?.Trim());
+            if (definition is null) Fail($"{who}: 'profile' must name a combat profile (got '{c.Profile}')");
+            if (c.Hp is <= 0) Fail($"{who}: 'hp' must be at least 1");
+            if (c.Move is <= 0) Fail($"{who}: 'move' must be at least 1");
+            if (c.Damage is not null)
+            {
+                try { DamageDie.Parse(c.Damage); }
+                catch (FormatException) { Fail($"{who}: 'damage' must be a die like \"d6\""); }
+            }
             if (c.At is not { Length: 2 }) Fail($"{who}: 'at' must be [x, y]");
             var (x, y) = (c.At![0], c.At[1]);
             if (x < 0 || y < 0 || x >= grid[0] || y >= grid[1]) Fail($"{who}: 'at' [{x}, {y}] is outside the grid");
             if (!cells.Add((x, y))) Fail($"{who}: cell [{x}, {y}] is already taken");
             if (side == Party && c.Ai == true) Fail($"{who}: party combatants can't be AI-controlled yet");
 
+            // The named profile, with any per-combatant overrides on top.
+            var profile = definition!.Snapshot();
+            profile.MaxHp = c.Hp ?? profile.MaxHp;
+            profile.MovementRange = c.Move ?? profile.MovementRange;
+            profile.Speed = c.Speed ?? profile.Speed;
+            profile.MeleeAccuracy = c.MeleeAccuracy ?? profile.MeleeAccuracy;
+            profile.RangedAccuracy = c.RangedAccuracy ?? profile.RangedAccuracy;
+            profile.Dodge = c.Dodge ?? profile.Dodge;
+            profile.BaseDamage = c.Damage?.Trim() ?? profile.BaseDamage;
+
             combatants.Add(new PresetCombatant(
-                c.Name!.Trim(), side!, c.Hp!.Value, c.Damage!.Trim(), c.Speed ?? 10, x, y,
+                c.Name!.Trim(), side!, profile, x, y,
                 IsAiControlled: side == Enemy && (c.Ai ?? true)));
         }
 
@@ -113,9 +130,14 @@ public sealed class BattlePresetCatalog
     {
         public string? Name { get; set; }
         public string? Side { get; set; }
+        public string? Profile { get; set; }
         public int? Hp { get; set; }
         public string? Damage { get; set; }
         public int? Speed { get; set; }
+        public int? Move { get; set; }
+        public int? MeleeAccuracy { get; set; }
+        public int? RangedAccuracy { get; set; }
+        public int? Dodge { get; set; }
         public int[]? At { get; set; }
         public bool? Ai { get; set; }
     }

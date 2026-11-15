@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.CombatProfiles;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
@@ -166,18 +167,30 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 var x = entry.TargetCell.X;
                 var y = entry.TargetCell.Y;
 
-                if (x < 0 || x > 19 || y < 0 || y > 19)
-                    throw new GameActionException("Target cell is out of bounds (0–19).", isActionRejected: true);
-
                 var map = await redisState.GetMapAsync(activeEncounter.EncounterId)
                     ?? throw new GameActionException("Map data not found.", isActionRejected: true);
+
+                if (x < 0 || x >= map.GridWidth || y < 0 || y >= map.GridHeight)
+                    throw new GameActionException(
+                        $"Target cell is out of bounds (0–{map.GridWidth - 1}, 0–{map.GridHeight - 1}).", isActionRejected: true);
 
                 if (!map.Positions.TryGetValue(combatantId, out var current))
                     throw new GameActionException("Current position not found.", isActionRejected: true);
 
+                // Movement range comes from the combatant's combat profile (3B.1).
+                var combatantGuid = GuidParser.TryParse(combatantId);
+                var profile = combatantGuid is null
+                    ? null
+                    : await db.EncounterCombatants
+                        .AsNoTracking()
+                        .Where(c => c.Id == combatantGuid.Value)
+                        .Select(c => c.Profile)
+                        .FirstOrDefaultAsync();
+                var range = CombatProfileMapping.MovementRange(profile);
+
                 var chebyshev = Math.Max(Math.Abs(x - current.X), Math.Abs(y - current.Y));
-                if (chebyshev > 6)
-                    throw new GameActionException("Move exceeds maximum range (6 squares).", isActionRejected: true);
+                if (chebyshev > range)
+                    throw new GameActionException($"Move exceeds maximum range ({range} squares).", isActionRejected: true);
                 break;
 
             case "melee_attack":

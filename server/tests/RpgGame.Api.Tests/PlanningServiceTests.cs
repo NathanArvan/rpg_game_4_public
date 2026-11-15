@@ -96,6 +96,66 @@ public class PlanningServiceTests
         Assert.Contains("maximum range", ex.Message);
     }
 
+    /// <summary>One player combatant whose stored profile has the given movement range, standing at (0, 0).</summary>
+    private static async Task<(PlanningService Service, Mock<IRedisGameState> Redis, string JoinCode, string CombatantId)> SetupMover(
+        AppDbContext db, int movementRange)
+    {
+        var sessionId = Guid.NewGuid();
+        var encounterId = Guid.NewGuid();
+        var combatantId = Guid.NewGuid();
+        const string joinCode = "MOVE01";
+        db.GameSessions.Add(new GameSession { Id = sessionId, CampaignId = Guid.NewGuid(), JoinCode = joinCode, StartedAt = DateTimeOffset.UtcNow });
+        db.EncounterCombatants.Add(new EncounterCombatant
+        {
+            Id = combatantId, EncounterId = encounterId, UserId = "user-1", CharacterName = "Mover",
+            CombatantType = "player", Profile = TestProfiles.Values(move: movementRange),
+        });
+        await db.SaveChangesAsync();
+
+        var id = combatantId.ToString();
+        var redis = new Mock<IRedisGameState>();
+        redis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(MakeActiveEncounter(encounterId.ToString(), "user-1", id));
+        redis.Setup(r => r.GetMapAsync(encounterId.ToString())).ReturnsAsync(
+            new MapEntry(20, 20, new Dictionary<string, Position> { [id] = new Position(0, 0) }, []));
+        return (new PlanningService(db, redis.Object, NullLogger<PlanningService>.Instance), redis, joinCode, id);
+    }
+
+    private static PlannedActionArray MoveTo(int x, int y) => new([new("move", new PositionDto(x, y), null)]);
+
+    [Theory]
+    [InlineData(4, 4, true)]
+    [InlineData(4, 5, false)]
+    [InlineData(8, 8, true)]
+    [InlineData(8, 9, false)]
+    public async Task PlanAction_MoveRangeComesFromTheCombatantsProfile(int range, int distance, bool accepted)
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, _) = await SetupMover(db, range);
+
+        if (accepted)
+        {
+            Assert.True((await service.PlanActionAsync(joinCode, "user-1", MoveTo(distance, 0))).Success);
+        }
+        else
+        {
+            var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", MoveTo(distance, 0)));
+            Assert.True(ex.IsActionRejected);
+            Assert.Contains($"maximum range ({range} squares)", ex.Message);
+        }
+    }
+
+    [Fact]
+    public async Task PlanAction_RejectsMoveOutsideTheMapsGrid()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, id) = await SetupMover(db, 6);
+        redis.Setup(r => r.GetMapAsync(It.IsAny<string>())).ReturnsAsync(
+            new MapEntry(4, 4, new Dictionary<string, Position> { [id] = new Position(0, 0) }, []));
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", MoveTo(4, 0)));
+        Assert.Contains("out of bounds", ex.Message);
+    }
+
     [Fact]
     public async Task PlanAction_AcceptsMoveWithinRange()
     {

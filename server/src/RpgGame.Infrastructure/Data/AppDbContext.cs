@@ -46,6 +46,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasKey(c => c.Id);
             e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
             e.OwnsOne(c => c.BaseStats, b => b.ToJson());
+            e.Property(c => c.CombatProfile).HasDefaultValue("skirmisher");
         });
 
         builder.Entity<Encounter>(e =>
@@ -63,6 +64,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(c => c.EncounterId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Character>().WithMany().HasForeignKey(c => c.CharacterId).OnDelete(DeleteBehavior.Restrict);
+            e.OwnsOne(c => c.Profile, p => p.ToJson());
         });
 
         builder.Entity<GameEvent>(e =>

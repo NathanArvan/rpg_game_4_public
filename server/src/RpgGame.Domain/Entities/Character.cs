@@ -19,6 +19,11 @@ public class Character
     public string Class { get; set; } = string.Empty;
     public int Level { get; set; } = 1;
     public BaseStats BaseStats { get; set; } = new();
+    // Race, Class, Level, BaseStats, MaxHp and CurrentHp are D&D-era fields, unused by combat
+    // since 3B.1. Their fate is part of the deferred stats & progression decision.
     public int MaxHp { get; set; }
     public int CurrentHp { get; set; }
+
+    /// <summary>Combat profile preset key (e.g. "bruiser"); supplies every value combat uses.</summary>
+    public string CombatProfile { get; set; } = "skirmisher";
 }

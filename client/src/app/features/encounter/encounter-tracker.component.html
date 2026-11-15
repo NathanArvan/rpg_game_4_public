@@ -20,7 +20,10 @@
           [class.mine]="isMine(c)"
           [class.selected]="isMine(c) && isSelected(c)"
           (click)="select(c)">
-        <td><strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong></td>
+        <td>
+          <strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong>
+          <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange">{{ c.profileName }}</span>
+        </td>
         <td>
           <span *ngIf="!c.isDefeated">{{ c.currentHp }}/{{ c.maxHp }}</span>
         </td>

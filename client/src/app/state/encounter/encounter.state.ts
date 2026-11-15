@@ -17,7 +17,7 @@ import {
   SelectMyCombatant,
   SetMyPlannedAction,
 } from './encounter.actions';
-import { Combatant, EncounterOutcome, EncounterStateModel } from './encounter.model';
+import { Combatant, DEFAULT_MOVEMENT_RANGE, EncounterOutcome, EncounterStateModel } from './encounter.model';
 import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
 import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
 
@@ -118,7 +118,14 @@ export class EncounterState {
 
   @Action(EncounterStarted)
   encounterStarted(ctx: StateContext<EncounterStateModel>, { encounterId, combatants }: EncounterStarted) {
-    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({ ...c, isDefeated: false, combatantType: c.combatantType as 'player' | 'monster', isAiControlled: c.isAiControlled ?? false }));
+    const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({
+      ...c,
+      isDefeated: false,
+      combatantType: c.combatantType as 'player' | 'monster',
+      isAiControlled: c.isAiControlled ?? false,
+      profileName: c.profileName ?? '',
+      movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
+    }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
 
@@ -139,6 +146,8 @@ export class EncounterState {
       isDefeated: c.isDefeated,
       combatantType: c.combatantType as 'player' | 'monster',
       isAiControlled: c.isAiControlled ?? false,
+      profileName: c.profileName ?? '',
+      movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -234,6 +243,8 @@ export class EncounterState {
       isDefeated: payload.monster.isDefeated,
       combatantType: 'monster',
       isAiControlled: payload.monster.isAiControlled ?? false,
+      profileName: payload.monster.profileName ?? '',
+      movementRange: payload.monster.movementRange ?? DEFAULT_MOVEMENT_RANGE,
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }

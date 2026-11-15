@@ -16,7 +16,8 @@ import {
  * locks in, with no GM input, and the monster walks toward the party.
  *
  * Spawn rules (EncounterService): players start on row 0, monsters on row 19. The AI moves up to
- * 6 cells along the straight path toward the nearest enemy.
+ * its movement range along the straight path toward the nearest enemy: a GM-added monster with no
+ * profile chosen gets the default "grunt" combat profile, which moves 5 cells.
  */
 test('AI monster closes in without the GM planning it', async ({ browser }) => {
   const gm = await newActor(browser);
@@ -52,9 +53,9 @@ test('AI monster closes in without the GM planning it', async ({ browser }) => {
 
     for (const page of [gm, player]) {
       await expect(feedEntries(page).filter({ hasText: 'Round 1 Resolution' })).toHaveCount(1);
-      await expect(feedEntries(page).filter({ hasText: `${monsterName} moves to (0, 13)` })).toHaveCount(1);
+      await expect(feedEntries(page).filter({ hasText: `${monsterName} moves to (0, 14)` })).toHaveCount(1);
       await expectPlanningRound(page, 2);
-      await expect(tokenAt(page, 0, 13)).toBeVisible();
+      await expect(tokenAt(page, 0, 14)).toBeVisible();
     }
   });
 });

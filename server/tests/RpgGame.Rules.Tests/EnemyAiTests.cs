@@ -4,8 +4,8 @@ namespace RpgGame.Rules.Tests;
 
 public class EnemyAiTests
 {
-    private static CombatantState C(string id, int x, int y, int hp = 20, bool defeated = false) =>
-        new(id, id, hp, 20, 10, DamageDie.D8, new GridPosition(x, y), defeated);
+    private static CombatantState C(string id, int x, int y, int hp = 20, bool defeated = false, int move = 6) =>
+        new(id, id, hp, CombatProfile.Default with { MovementRange = move }, new GridPosition(x, y), defeated);
 
     /// <summary>Ids starting with "g" are goblins (enemy team, AI-controlled); everyone else is the party.</summary>
     private static Dictionary<string, PlannedAction> Plan(params CombatantState[] combatants)
@@ -16,7 +16,7 @@ public class EnemyAiTests
         return EnemyAi.PlanRound(state, teams, ai);
     }
 
-    private static CombatantState OffMap(string id) => new(id, id, 20, 20, 10, DamageDie.D8, null, false);
+    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null, false);
 
     [Fact]
     public void AiWithNoMapPosition_Defends()
@@ -177,5 +177,15 @@ public class EnemyAiTests
         var before = combatants.ToList();
         Plan(combatants);
         Assert.Equal(before, combatants);
+    }
+
+    [Fact]
+    public void Ai_WalksOnlyItsOwnMovementRange()
+    {
+        var slow = Plan(C("hero", 10, 0), C("g1", 10, 15, move: 2));
+        Assert.Equal(PlannedAction.Move(10, 13), slow["g1"]);
+
+        var fast = Plan(C("hero", 10, 0), C("g1", 10, 15, move: 9));
+        Assert.Equal(PlannedAction.Move(10, 6), fast["g1"]);
     }
 }

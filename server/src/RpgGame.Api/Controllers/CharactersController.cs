@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.CombatProfiles;
 using RpgGame.Api.Contracts.Characters;
 using RpgGame.Api.Services;
 using RpgGame.Domain.Entities;
@@ -16,11 +17,13 @@ public class CharactersController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUserAccessor _user;
+    private readonly CombatProfileCatalog _profiles;
 
-    public CharactersController(AppDbContext db, ICurrentUserAccessor user)
+    public CharactersController(AppDbContext db, ICurrentUserAccessor user, CombatProfileCatalog profiles)
     {
         _db = db;
         _user = user;
+        _profiles = profiles;
     }
 
     [HttpPost]
@@ -29,6 +32,7 @@ public class CharactersController : ControllerBase
     {
         var userId = _user.UserId;
         if (userId is null) return Unauthorized();
+        if (UnknownProfile(request.CombatProfile) is { } invalid) return invalid;
 
         var character = new Character
         {
@@ -49,6 +53,7 @@ public class CharactersController : ControllerBase
             },
             MaxHp = request.MaxHp,
             CurrentHp = request.CurrentHp,
+            CombatProfile = request.CombatProfile?.Trim() ?? CombatProfileCatalog.DefaultPartyId,
         };
 
         _db.Characters.Add(character);
@@ -93,6 +98,7 @@ public class CharactersController : ControllerBase
 
         var character = await _db.Characters.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
         if (character is null) return NotFound();
+        if (UnknownProfile(request.CombatProfile) is { } invalid) return invalid;
 
         character.Name = request.Name;
         character.Race = request.Race;
@@ -106,6 +112,7 @@ public class CharactersController : ControllerBase
         character.BaseStats.Cha = request.BaseStats.Cha;
         character.MaxHp = request.MaxHp;
         character.CurrentHp = request.CurrentHp;
+        if (request.CombatProfile is not null) character.CombatProfile = request.CombatProfile.Trim();
 
         await _db.SaveChangesAsync();
 
@@ -135,7 +142,16 @@ public class CharactersController : ControllerBase
         c.Level,
         new BaseStatsDto(c.BaseStats.Str, c.BaseStats.Dex, c.BaseStats.Con, c.BaseStats.Int, c.BaseStats.Wis, c.BaseStats.Cha),
         c.MaxHp,
-        c.CurrentHp
+        c.CurrentHp,
+        c.CombatProfile
     );
+
+    /// <summary>A 400 if <paramref name="profileId"/> is given but isn't a known combat profile.</summary>
+    private ActionResult? UnknownProfile(string? profileId)
+    {
+        if (profileId is null || _profiles.Find(profileId.Trim()) is not null) return null;
+        ModelState.AddModelError(nameof(CreateCharacterRequest.CombatProfile), $"Unknown combat profile '{profileId}'.");
+        return ValidationProblem(ModelState);
+    }
 }
 

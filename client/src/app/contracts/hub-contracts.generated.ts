@@ -18,6 +18,9 @@ export interface CombatantDto {
   maxHp: number;
   combatantType: string;
   isAiControlled: boolean;
+  profileId: string;
+  profileName: string;
+  movementRange: number;
 }
 
 export interface EncounterEndedPayload {
@@ -74,6 +77,9 @@ export interface PlanningCombatantDto {
   isDefeated: boolean;
   combatantType: string;
   isAiControlled: boolean;
+  profileId: string;
+  profileName: string;
+  movementRange: number;
 }
 
 export interface PlayerLockedInPayload {

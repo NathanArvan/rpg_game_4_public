@@ -185,19 +185,19 @@ export class GridComponent implements OnInit, OnDestroy {
     // GM enemy planning mode — show range around selected enemy
     if (this.isGm && this.gmSelectedEnemyId) {
       const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
-      if (!enemy) return false;
-      const enemyPos = this.positions[enemy.id];
-      if (!enemyPos) return false;
-      const chebyshev = Math.max(Math.abs(cell.x - enemyPos.x), Math.abs(cell.y - enemyPos.y));
-      return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
+      return enemy ? this.isMoveTarget(enemy, cell) : false;
     }
     if (this.lockedIn) return false;
     const myCombatant = this.selected;
-    if (!myCombatant) return false;
-    const myPos = this.positions[myCombatant.id];
-    if (!myPos) return false;
-    const chebyshev = Math.max(Math.abs(cell.x - myPos.x), Math.abs(cell.y - myPos.y));
-    return chebyshev > 0 && chebyshev <= 6 && !this.tokenAt(cell);
+    return myCombatant ? this.isMoveTarget(myCombatant, cell) : false;
+  }
+
+  /** A free cell within the combatant's movement range (from its combat profile). */
+  private isMoveTarget(combatant: Combatant, cell: Cell): boolean {
+    const pos = this.positions[combatant.id];
+    if (!pos) return false;
+    const chebyshev = Math.max(Math.abs(cell.x - pos.x), Math.abs(cell.y - pos.y));
+    return chebyshev > 0 && chebyshev <= combatant.movementRange && !this.tokenAt(cell);
   }
 
   isEnemyGhostTarget(cell: Cell): boolean {

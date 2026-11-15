@@ -1,0 +1,19 @@
+{
+  // Combat profiles (3B.1): accuracy is the attacker's, dodge is the target's.
+  // The grunt's 12 misses the nimble scout (dodge 13); the scout's 8 + 2 ranged accuracy
+  // reaches the grunt's dodge 10.
+  "description": "Dodge vs accuracy: a high-dodge scout is missed, its accurate shot lands",
+  "combatants": [
+    { "id": "Grunt", "hp": 10, "damage": "d4", "dodge": 10, "at": [5, 5] },
+    { "id": "Scout", "hp": 12, "damage": "d4", "dodge": 13, "rangedAccuracy": 2, "meleeAccuracy": -3, "at": [6, 5] }
+  ],
+  "plans": {
+    "Grunt": ["melee Scout"],
+    "Scout": ["ranged Grunt"]
+  },
+  "dice": [12, 8, 3],
+  "expect": {
+    "hp": { "Scout": 12, "Grunt": 7 },
+    "hits": [ { "tick": 1, "attacker": "Scout" } ]
+  }
+}

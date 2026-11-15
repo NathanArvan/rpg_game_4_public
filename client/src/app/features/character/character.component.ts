@@ -3,12 +3,13 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { Store } from '@ngxs/store';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { CharacterService } from '../../core/services/character.service';
-import { CreateCharacterRequest } from '../../contracts/api-contracts.generated';
+import { CombatProfileDto } from '../../contracts/api-contracts.generated';
+import { CombatProfileService } from '../../core/services/combat-profile.service';
 
 interface CharacterForm {
-  name: string; race: string; class: string; level: number;
+  name: string; combatProfile: string; race: string; class: string; level: number;
   maxHp: number; currentHp: number;
   baseStats: { str: number; dex: number; con: number; int: number; wis: number; cha: number };
 }
@@ -16,6 +17,9 @@ import { DevService } from '../../core/services/dev.service';
 import { LoadMyCharacters, SelectCharacter, SetMyCharacter } from '../../state/character/character.actions';
 import { CharacterSummary } from '../../state/character/character.model';
 import { CharacterState } from '../../state/character/character.state';
+
+/** Matches the server's default party profile (CombatProfileCatalog.DefaultPartyId). */
+const DEFAULT_PROFILE = 'skirmisher';
 
 @Component({
   selector: 'app-character',
@@ -28,13 +32,25 @@ export class CharacterComponent implements OnInit {
   characters$: Observable<CharacterSummary[]>;
   selected$: Observable<CharacterSummary | null>;
   loading$: Observable<boolean>;
+  profiles$: Observable<CombatProfileDto[]>;
+  private profilesById: Record<string, CombatProfileDto> = {};
 
   showCreate = false;
   formError = '';
 
   form: CharacterForm = this.emptyForm();
 
-  constructor(private store: Store, private characterService: CharacterService, private dev: DevService) {
+  constructor(
+    private store: Store,
+    private characterService: CharacterService,
+    private dev: DevService,
+    combatProfiles: CombatProfileService,
+  ) {
+    this.profiles$ = combatProfiles.getProfiles().pipe(map(p => CombatProfileService.forSide(p, 'party')));
+    this.profiles$.subscribe({
+      next: profiles => this.profilesById = Object.fromEntries(profiles.map(p => [p.id, p])),
+      error: e => console.error('[character] failed to load combat profiles:', e),
+    });
     this.characters$ = store.select(CharacterState.characters);
     this.selected$ = store.select(CharacterState.selected);
     this.loading$ = store.select(CharacterState.loading);
@@ -47,6 +63,7 @@ export class CharacterComponent implements OnInit {
   selectCharacter(c: CharacterSummary): void {
     this.form = {
       name: c.name ?? '',
+      combatProfile: c.combatProfile ?? DEFAULT_PROFILE,
       race: c.race ?? '',
       class: c.class ?? '',
       level: c.level ?? 1,
@@ -114,9 +131,16 @@ export class CharacterComponent implements OnInit {
     });
   }
 
+  /** Display name and stat line for a profile id (falls back to the id until profiles load). */
+  profileLabel(id: string | null | undefined): string {
+    const p = this.profilesById[id ?? DEFAULT_PROFILE];
+    return p ? `${p.name} — ${CombatProfileService.summary(p)}` : (id ?? DEFAULT_PROFILE);
+  }
+
   private emptyForm(): CharacterForm {
     return {
       name: '',
+      combatProfile: DEFAULT_PROFILE,
       race: '',
       class: '',
       level: 1,

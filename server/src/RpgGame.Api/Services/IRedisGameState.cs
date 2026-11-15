@@ -11,7 +11,8 @@ public interface IRedisGameState
     Task DeleteActiveEncounterAsync(string sessionId);
     Task<MapEntry?> GetMapAsync(string encounterId);
     Task SetMapAsync(string encounterId, MapEntry map);
-    Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string charClass);
+    /// <summary>Writes <c>character:live:{key}</c>: current HP and the combat profile id (values live on the combatant row).</summary>
+    Task SeedCharacterLiveStateAsync(string characterId, int currentHp, string profileId);
     Task<long> DecrementHpAsync(string characterId, long amount);
     Task SetHpAsync(string characterId, long value);
     Task<bool> IsDefeatedAsync(string encounterId, string combatantId);

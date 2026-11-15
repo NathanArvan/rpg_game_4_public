@@ -200,8 +200,9 @@ export class GameHubService {
     await this.connection.invoke(HubEvents.Methods.ForceResolve, joinCode);
   }
 
-  async addMonster(joinCode: string, name: string, isAiControlled: boolean): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.AddMonster, joinCode, name, isAiControlled);
+  /** @param profileId combat profile preset; null means the server's default enemy profile. */
+  async addMonster(joinCode: string, name: string, isAiControlled: boolean, profileId: string | null = null): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.AddMonster, joinCode, name, isAiControlled, profileId);
   }
 
   async planEnemyAction(joinCode: string, combatantId: string, action: PlannedActionArray): Promise<void> {

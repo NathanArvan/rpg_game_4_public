@@ -2,9 +2,11 @@ import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Store } from '@ngxs/store';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { CampaignService } from '../../../core/services/campaign.service';
+import { CombatProfileService } from '../../../core/services/combat-profile.service';
+import { CombatProfileDto } from '../../../contracts/api-contracts.generated';
 import { SetGmSession } from '../../../state/session/session.actions';
 import { SessionState } from '../../../state/session/session.state';
 import { EncounterState } from '../../../state/encounter/encounter.state';
@@ -29,14 +31,23 @@ export class GmFlowComponent {
   encounterError = '';
   newMonsterName = '';
   newMonsterAi = true;
+  /** Combat profile for the next monster; null until the profile list loads (server default). */
+  newMonsterProfileId: string | null = null;
   monsters$: Observable<Combatant[]>;
+  profiles$: Observable<CombatProfileDto[]>;
 
   constructor(
     private campaignService: CampaignService,
     private hub: GameHubService,
-    private store: Store
+    private store: Store,
+    combatProfiles: CombatProfileService
   ) {
     this.monsters$ = store.select(EncounterState.monsterCombatants);
+    this.profiles$ = combatProfiles.getProfiles().pipe(map(p => CombatProfileService.forSide(p, 'enemy')));
+    this.profiles$.subscribe({
+      next: p => this.newMonsterProfileId ??= p[0]?.id ?? null,
+      error: e => console.error('[gm-flow] failed to load combat profiles:', e),
+    });
 
     // This component is destroyed while an encounter is on screen. When the GM returns to the
     // lobby afterwards, pick the session back up instead of starting over at "Create Campaign".
@@ -90,7 +101,7 @@ export class GmFlowComponent {
   async addMonster(): Promise<void> {
     const name = this.newMonsterName.trim();
     if (!name || !this.gmJoinCode) return;
-    await this.hub.addMonster(this.gmJoinCode, name, this.newMonsterAi);
+    await this.hub.addMonster(this.gmJoinCode, name, this.newMonsterAi, this.newMonsterProfileId);
     this.newMonsterName = '';
   }
 

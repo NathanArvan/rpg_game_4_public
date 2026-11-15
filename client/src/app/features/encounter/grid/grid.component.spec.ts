@@ -6,6 +6,7 @@ import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { PlanningPhaseStarted, SelectMyCombatant } from '../../../state/encounter/encounter.actions';
 import { PlanningCombatantDto } from '../../../contracts/hub-contracts.generated';
+import { MapInitialized } from '../../../state/map/map.actions';
 
 describe('GridComponent', () => {
   let fixture: ComponentFixture<GridComponent>;
@@ -14,8 +15,9 @@ describe('GridComponent', () => {
   const hub = jasmine.createSpyObj<GameHubService>('GameHubService', ['planAction', 'lockIn', 'forceResolve', 'planEnemyAction']);
 
   // Quick Battle: the user's ID is on every row, but only the "player" rows are theirs to plan.
-  const row = (id: string, name: string, combatantType: string, isDefeated = false): PlanningCombatantDto =>
-    ({ id, userId: 'me', characterName: name, currentHp: 10, maxHp: 10, isDefeated, combatantType, isAiControlled: combatantType === 'monster' });
+  const row = (id: string, name: string, combatantType: string, isDefeated = false, movementRange = 6): PlanningCombatantDto =>
+    ({ id, userId: 'me', characterName: name, currentHp: 10, maxHp: 10, isDefeated, combatantType, isAiControlled: combatantType === 'monster',
+       profileId: 'test', profileName: 'Test', movementRange });
 
   beforeEach(async () => {
     hub.planAction.and.resolveTo();
@@ -56,5 +58,20 @@ describe('GridComponent', () => {
     expect(hub.planAction).toHaveBeenCalledWith('QB1234', { actions: [jasmine.objectContaining({ type: 'defend' })] }, 'scout');
     expect(grid.plannedCount).toBe(1);
     expect(grid.lockInLabel).toBe('Lock In All (1/2 planned)');
+  });
+
+  it("highlights move cells out to the selected character's own movement range", () => {
+    store.dispatch(new PlanningPhaseStarted(1, 0, [
+      row('bruiser', 'Bruiser', 'player', false, 4),
+      row('scout', 'Scout', 'player', false, 8),
+    ]));
+    store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, scout: { x: 0, y: 10 } }));
+
+    expect(grid.isInRange({ x: 4, y: 4 })).toBeTrue();   // bruiser: 4 cells
+    expect(grid.isInRange({ x: 5, y: 0 })).toBeFalse();
+
+    store.dispatch(new SelectMyCombatant('scout'));
+    expect(grid.isInRange({ x: 8, y: 10 })).toBeTrue();  // scout: 8 cells
+    expect(grid.isInRange({ x: 9, y: 10 })).toBeFalse();
   });
 });

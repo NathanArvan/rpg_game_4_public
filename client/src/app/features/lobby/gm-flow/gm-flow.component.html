@@ -29,6 +29,9 @@
         [(ngModel)]="newMonsterName"
         placeholder="Monster name"
         (keyup.enter)="addMonster()" />
+      <select [(ngModel)]="newMonsterProfileId" class="profile-select" aria-label="Monster combat profile">
+        <option *ngFor="let p of profiles$ | async" [ngValue]="p.id" [title]="p.description">{{ p.name }}</option>
+      </select>
       <button (click)="addMonster()" [disabled]="!newMonsterName.trim()">
         + Add Monster
       </button>
@@ -41,6 +44,7 @@
     <div class="monster-list" *ngIf="(monsters$ | async)?.length">
       <div class="monster-item" *ngFor="let m of monsters$ | async">
         <span class="monster-name">{{ m.characterName }}</span>
+        <span class="monster-profile" *ngIf="m.profileName">{{ m.profileName }}</span>
         <span class="ai-badge" *ngIf="m.isAiControlled" title="Planned by the enemy AI">🤖 AI</span>
         <span class="monster-hp">{{ m.currentHp }}/{{ m.maxHp }} HP</span>
       </div>

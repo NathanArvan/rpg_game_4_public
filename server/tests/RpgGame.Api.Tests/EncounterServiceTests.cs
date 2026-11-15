@@ -64,7 +64,7 @@ public class EncounterServiceTests
         await db.SaveChangesAsync();
 
         var mockRedis = new Mock<IRedisGameState>();
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
             () => service.StartEncounterAsync(joinCode, userId));
@@ -85,7 +85,7 @@ public class EncounterServiceTests
         await db.SaveChangesAsync();
 
         var mockRedis = new Mock<IRedisGameState>();
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
             () => service.AddMonsterAsync(joinCode, "player-1", "Goblin", isAiControlled: false));
@@ -109,7 +109,7 @@ public class EncounterServiceTests
         var mockRedis = new Mock<IRedisGameState>();
         mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(resolvingEntry);
 
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         var ex = await Assert.ThrowsAsync<GameActionException>(
             () => service.AddMonsterAsync(joinCode, gmUserId, "Goblin", isAiControlled: false));
@@ -143,17 +143,19 @@ public class EncounterServiceTests
         mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(planningEntry);
         mockRedis.Setup(r => r.GetMapAsync(encounterId.ToString())).ReturnsAsync(mapEntry);
         mockRedis.Setup(r => r.SetMapAsync(It.IsAny<string>(), It.IsAny<MapEntry>())).Returns(Task.CompletedTask);
-        mockRedis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 20, "fighter")).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 10, "grunt")).Returns(Task.CompletedTask);
         mockRedis.Setup(r => r.SetActiveEncounterAsync(It.IsAny<string>(), It.IsAny<ActiveEncounterEntry>())).Returns(Task.CompletedTask);
 
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         var result = await service.AddMonsterAsync(joinCode, gmUserId, "Goblin", isAiControlled: false);
 
         Assert.Equal(2, result.SpawnPosition.X);
         Assert.Equal(19, result.SpawnPosition.Y);
         Assert.Equal("monster", result.MonsterDto.CombatantType);
-        mockRedis.Verify(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 20, "fighter"), Times.Once());
+        // No profile given: the default enemy profile (grunt, 10 HP).
+        Assert.Equal(("grunt", 10, 10), (result.MonsterDto.ProfileId, result.MonsterDto.CurrentHp, result.MonsterDto.MaxHp));
+        mockRedis.Verify(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 10, "grunt"), Times.Once());
         mockRedis.Verify(r => r.SetActiveEncounterAsync(It.IsAny<string>(), It.Is<ActiveEncounterEntry>(e =>
             e.Combatants.Any(c => c.CombatantType == "monster"))), Times.Once());
     }
@@ -175,10 +177,10 @@ public class EncounterServiceTests
         mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(planningEntry);
         mockRedis.Setup(r => r.GetMapAsync(encounterId.ToString())).ReturnsAsync(mapEntry);
         mockRedis.Setup(r => r.SetMapAsync(It.IsAny<string>(), It.IsAny<MapEntry>())).Returns(Task.CompletedTask);
-        mockRedis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 20, "fighter")).Returns(Task.CompletedTask);
+        mockRedis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), 10, "grunt")).Returns(Task.CompletedTask);
         mockRedis.Setup(r => r.SetActiveEncounterAsync(It.IsAny<string>(), It.IsAny<ActiveEncounterEntry>())).Returns(Task.CompletedTask);
 
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         var result = await service.AddMonsterAsync(joinCode, gmUserId, "   ", isAiControlled: false);
 
@@ -202,7 +204,7 @@ public class EncounterServiceTests
         await db.SaveChangesAsync();
 
         var mockRedis = new Mock<IRedisGameState>();
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
         await service.EndEncounterAsync(encounterId, "party", 4);
 
@@ -227,7 +229,7 @@ public class EncounterServiceTests
         await using var db = CreateDb();
         const string gmUserId = "gm-ai";
         var (sessionId, _) = await SetupGmSession(db, "AIFLAG", gmUserId);
-        var character = new Character { Id = Guid.NewGuid(), UserId = "player-1", Name = "Hero", MaxHp = 12, CurrentHp = 12 };
+        var character = new Character { Id = Guid.NewGuid(), UserId = "player-1", Name = "Hero", MaxHp = 12, CurrentHp = 12, CombatProfile = "bruiser" };
         db.Characters.Add(character);
         await db.SaveChangesAsync();
 
@@ -239,14 +241,14 @@ public class EncounterServiceTests
         mockRedis.Setup(r => r.GetPendingMonstersAsync(sessionId.ToString())).ReturnsAsync(
         [
             new PendingMonster("Goblin", IsAiControlled: true),
-            new PendingMonster("Puppet", IsAiControlled: false),
+            new PendingMonster("Puppet", IsAiControlled: false, Profile: "brute"),
         ]);
         ActiveEncounterEntry? stored = null;
         mockRedis.Setup(r => r.SetActiveEncounterAsync(sessionId.ToString(), It.IsAny<ActiveEncounterEntry>()))
             .Callback<string, ActiveEncounterEntry>((_, e) => stored = e)
             .Returns(Task.CompletedTask);
 
-        var service = new EncounterService(db, mockRedis.Object, NullLogger<EncounterService>.Instance);
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
         var result = await service.StartEncounterAsync("AIFLAG", gmUserId);
 
         var goblin = await db.EncounterCombatants.SingleAsync(c => c.CharacterName == "Goblin");
@@ -262,10 +264,105 @@ public class EncounterServiceTests
         Assert.False(result.PlanningPayload.Combatants.Single(c => c.CharacterName == "Hero").IsAiControlled);
     }
 
+    [Fact]
+    public async Task StartEncounter_SnapshotsProfiles_AndEveryoneStartsAtProfileMaxHp()
+    {
+        await using var db = CreateDb();
+        const string gmUserId = "gm-prof";
+        var (sessionId, _) = await SetupGmSession(db, "PROF01", gmUserId);
+        // The character's own (D&D-era) HP fields are ignored: the bruiser profile has 24 HP.
+        var hero = new Character { Id = Guid.NewGuid(), UserId = "p1", Name = "Hero", MaxHp = 99, CurrentHp = 3, CombatProfile = "bruiser" };
+        var lost = new Character { Id = Guid.NewGuid(), UserId = "p2", Name = "Lost", CombatProfile = "no-such-profile" };
+        db.Characters.AddRange(hero, lost);
+        await db.SaveChangesAsync();
+
+        var seeded = new Dictionary<string, (int Hp, string Profile)>();
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetPlayersAsync(sessionId.ToString())).ReturnsAsync(new Dictionary<string, PlayerEntry>
+        {
+            ["p1"] = new PlayerEntry("Hero", hero.Id.ToString()),
+            ["p2"] = new PlayerEntry("Lost", lost.Id.ToString()),
+        });
+        mockRedis.Setup(r => r.GetPendingMonstersAsync(sessionId.ToString())).ReturnsAsync(
+        [
+            new PendingMonster("Ogre", IsAiControlled: true, Profile: "brute"),
+            new PendingMonster("Old Goblin", IsAiControlled: false), // staged before 3B.1: default enemy profile
+        ]);
+        mockRedis.Setup(r => r.SeedCharacterLiveStateAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>()))
+            .Callback<string, int, string>((key, hp, profile) => seeded[key] = (hp, profile))
+            .Returns(Task.CompletedTask);
+
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
+        var result = await service.StartEncounterAsync("PROF01", gmUserId);
+
+        var rows = await db.EncounterCombatants.ToDictionaryAsync(c => c.CharacterName);
+        Assert.Equal(("bruiser", 24, 4), (rows["Hero"].Profile!.ProfileId, rows["Hero"].Profile!.MaxHp, rows["Hero"].Profile!.MovementRange));
+        Assert.Equal("skirmisher", rows["Lost"].Profile!.ProfileId); // unknown id → default party profile
+        Assert.Equal("brute", rows["Ogre"].Profile!.ProfileId);
+        Assert.Equal("grunt", rows["Old Goblin"].Profile!.ProfileId);
+
+        Assert.Equal((24, "bruiser"), seeded[hero.Id.ToString()]); // players keyed by character ID
+        Assert.Equal((28, "brute"), seeded[rows["Ogre"].Id.ToString()]);
+
+        var heroDto = result.Payload.Combatants.Single(c => c.CharacterName == "Hero");
+        Assert.Equal((24, 24, "Bruiser", 4), (heroDto.CurrentHp, heroDto.MaxHp, heroDto.ProfileName, heroDto.MovementRange));
+        var ogreDto = result.PlanningPayload.Combatants.Single(c => c.CharacterName == "Ogre");
+        Assert.Equal(("brute", 28, 4), (ogreDto.ProfileId, ogreDto.MaxHp, ogreDto.MovementRange));
+    }
+
+    [Fact]
+    public async Task AddMonster_WithProfile_SpawnsWithThatProfile()
+    {
+        await using var db = CreateDb();
+        var (sessionId, _) = await SetupGmSession(db, "MON05", "gm-1");
+        var encounterId = Guid.NewGuid();
+        var mockRedis = new Mock<IRedisGameState>();
+        mockRedis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(
+            new ActiveEncounterEntry(encounterId.ToString(), "planning", 1, DateTimeOffset.UtcNow, []));
+        mockRedis.Setup(r => r.GetMapAsync(encounterId.ToString())).ReturnsAsync(new MapEntry(20, 20, [], []));
+
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
+        var result = await service.AddMonsterAsync("MON05", "gm-1", "Ogre", isAiControlled: true, profileId: "brute");
+
+        var row = await db.EncounterCombatants.SingleAsync();
+        Assert.Equal(("brute", 28, "d10"), (row.Profile!.ProfileId, row.Profile.MaxHp, row.Profile.BaseDamage));
+        Assert.Equal((28, 28, "Brute", 4), (result.MonsterDto.CurrentHp, result.MonsterDto.MaxHp, result.MonsterDto.ProfileName, result.MonsterDto.MovementRange));
+        mockRedis.Verify(r => r.SeedCharacterLiveStateAsync(row.Id.ToString(), 28, "brute"), Times.Once());
+    }
+
+    [Fact]
+    public async Task AddMonster_UnknownProfile_IsRejected()
+    {
+        await using var db = CreateDb();
+        await SetupGmSession(db, "MON06", "gm-1");
+        var service = new EncounterService(db, new Mock<IRedisGameState>().Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.AddMonsterAsync("MON06", "gm-1", "Dragon", isAiControlled: false, profileId: "dragon"));
+
+        Assert.True(ex.IsActionRejected);
+        Assert.Contains("dragon", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddMonster_BeforeTheEncounter_StagesTheProfile()
+    {
+        await using var db = CreateDb();
+        var (sessionId, _) = await SetupGmSession(db, "MON07", "gm-1");
+        var mockRedis = new Mock<IRedisGameState>();
+
+        var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
+        var result = await service.AddMonsterAsync("MON07", "gm-1", "Ogre", isAiControlled: false, profileId: "brute");
+
+        mockRedis.Verify(r => r.AddPendingMonsterAsync(sessionId.ToString(), new PendingMonster("Ogre", false, "brute")), Times.Once());
+        Assert.Equal((28, "Brute"), (result.MonsterDto.MaxHp, result.MonsterDto.ProfileName));
+    }
+
     [Theory]
-    [InlineData("{\"name\":\"Goblin\",\"isAiControlled\":true}", "Goblin", true)]
-    [InlineData("Old Goblin", "Old Goblin", false)]       // entries written before the AI flag existed
-    [InlineData("{not json", "{not json", false)]
-    public void PendingMonster_ParsesJsonAndPlainNames(string stored, string name, bool ai) =>
-        Assert.Equal(new PendingMonster(name, ai), RedisGameState.ParsePendingMonster(stored));
+    [InlineData("{\"name\":\"Goblin\",\"isAiControlled\":true,\"profile\":\"brute\"}", "Goblin", true, "brute")]
+    [InlineData("{\"name\":\"Goblin\",\"isAiControlled\":true}", "Goblin", true, null)] // before 3B.1 profiles
+    [InlineData("Old Goblin", "Old Goblin", false, null)]       // entries written before the AI flag existed
+    [InlineData("{not json", "{not json", false, null)]
+    public void PendingMonster_ParsesJsonAndPlainNames(string stored, string name, bool ai, string? profile) =>
+        Assert.Equal(new PendingMonster(name, ai, profile), RedisGameState.ParsePendingMonster(stored));
 }

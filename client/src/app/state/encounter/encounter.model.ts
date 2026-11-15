@@ -11,7 +11,14 @@ export interface Combatant {
   combatantType: 'player' | 'monster';
   /** Planned and locked in by the server's enemy AI each round. */
   isAiControlled: boolean;
+  /** Combat profile display name, e.g. "Bruiser" (empty for combatants from before profiles). */
+  profileName: string;
+  /** Max cells per move, from the combatant's combat profile. */
+  movementRange: number;
 }
+
+/** Movement range for a combatant whose server DTO doesn't carry one (the 3A default). */
+export const DEFAULT_MOVEMENT_RANGE = 6;
 
 /**
  * Whether this user plans for the combatant. Checking the type matters in Quick Battle, where the
