@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. Next roadmap slice: **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.1 → 3B.5 (Defeat & Encounter End) → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
+Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. Next roadmap slice: **3B.0 Manual Testing Spike** (encounter end → simple enemy AI → one-click Quick Battle where one user commands a party against AI enemies). Then **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
 
 ## Documentation
 

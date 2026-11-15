@@ -17,7 +17,7 @@ Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
 **Phase 1 & 2** — Auth, campaigns, sessions, character CRUD, a sequential encounter loop (initiative → move → attack → end turn), a 20×20 grid, and a combat feed. All works end-to-end across multiple browser tabs. The sequential turn system will be replaced, but the infrastructure beneath it — Redis state, SignalR broadcasting, NGXS slices, the service layer pattern — carries forward.
 
-**Phase 3A** (merged April–May 2026, PRs #62–#69) — Simultaneous planning, tick-based resolution with playback, GM enemy planning, and a combat UI pass. The sequential turn system has been removed. Known gaps carried forward: no end-of-encounter detection (`EncounterEnded` is never broadcast), and the planning timer is 300s rather than the 30s default below.
+**Phase 3A** (merged April–May 2026, PRs #62–#69) — Simultaneous planning, tick-based resolution with playback, GM enemy planning, and a combat UI pass. The sequential turn system has been removed. Known gaps carried forward: no end-of-encounter detection (`EncounterEnded` is never broadcast — fixed in 3B.0), and the planning timer is 300s rather than the 30s default below.
 
 ---
 
@@ -47,11 +47,27 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 *Scope note (November 2026):* Character stats and progression are **deferred** (see [Deferred: Character Stats & Progression](#deferred-character-stats--progression)). Phase 3B and 3C build against **combat profiles**: hand-authored bundles of derived combat values (HP, movement, accuracy, dodge, damage, AP, vision, …). The rules engine only ever consumes derived values, so whatever later produces them (six core stats, equipment, abilities, or a mix) is a mapping layer in the Api and doesn't touch `RoundResolver`. Building items, abilities, and conditions first should make it clearer what stats, if any, need to do.
 
-*Execution order:* 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4. Slice numbers are kept stable for cross-references; 3B.5 moves up because a single battle needs a win condition before anything else.
+*Execution order:* 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4. Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
+
+### ⬜ Slice 3B.0 — Manual Testing Spike
+
+*Goal: one person can start a battle in one click, command a party of several characters against preset AI enemies, and play it to a win or a loss. This is the harness for trying out every later 3B/3C feature by hand.*
+
+Delivers, as three PRs in this order (each is useful on its own):
+
+1. **Encounter end.** Closes the known 3A gap. The two copies of the post-resolution flow (`GameHub.RunResolutionAsync` and `PlanningTimerService.RunResolutionAsync`) are merged into one round-orchestration service. After each round, if one side has no living combatants, the server sets the encounter to `Ended`, cancels the timer, broadcasts `CombatantDefeated` / `EncounterEnded` (with the winning side), and does not start another planning phase. The client handles `EncounterEnded` with a result overlay (back to lobby / rematch). Applies to normal GM-run encounters too.
+2. **Simple enemy AI.** A pure `EnemyAi.Plan(state)` function in `RpgGame.Rules`: attack an adjacent enemy if there is one; otherwise move up to movement range toward the nearest living enemy, ending on a free adjacent cell when possible. Ties break deterministically so the AI can be covered by scenario tests. Combatants get an AI-controlled flag; at the start of each planning phase the server plans and locks in every AI combatant, so a round resolves as soon as the human locks in. Unflagged monsters still work the 3A way (GM plans them).
+3. **Quick Battle & multi-character control.** A lobby "⚡ Quick Battle" button calls a `StartQuickBattle(presetId)` entry point that creates the campaign, session and encounter in one step from a **battle preset**: a JSON file in the server (same combatant shape as the Rules `Scenarios/` files: name, HP, damage die, Speed, start cell, side, AI flag). Party combatants are owned by the user and need no `Character` rows; enemies are AI-controlled. The planning timer is off by default. Behind the scenes the user is the campaign GM (so debug tools like Force Resolve and Add Monster stay available), but the screen shows the player view plus a small debug panel. `PlanAction` takes an optional `combatantId` (ownership checked); `LockIn` locks all of the caller's living combatants, defaulting unplanned ones to defend. Client: select which of your characters you're planning for (token or sidebar row), see per-character plan markers, "Lock In All". Client planned-action state becomes per combatant (`Record<combatantId, PlannedActionEntry[]>`) so 3B.2's multi-action queues fit without a redesign.
+
+A new single-browser E2E test (Quick Battle → play to victory) becomes the default per-slice smoke test; the two-browser GM + player test stays for multiplayer and per-player vision.
+
+**Ongoing cost:** from here on, each slice that adds something combatants can do (AP queues, abilities, conditions, hiding) also teaches `EnemyAi` a minimal use of it, so the feature shows up in Quick Battle. Budget a small AI task in each sprint doc.
+
+Not in scope: smart AI (fleeing, focus fire, terrain), a preset editor UI, combat profiles (3B.1 extends battle presets with profile fields).
 
 ### ⬜ Slice 3B.1 — Combat Profiles
 
-Delivers: Each combatant carries its own derived combat values instead of global constants and D&D class dice. A small set of hand-authored presets (e.g. Bruiser, Skirmisher, Scout for players; Grunt, Brute for monsters) defines `MaxHp`, `MovementRange`, `Speed` (contested-cell priority), melee/ranged `Accuracy`, `Dodge`, and `BaseDamage`. Characters and monsters each select a preset. Values that move from `RulesConfig` to per-combatant: `HitThreshold` (→ target Dodge), `AccuracyBonus`, `MovementRange`. Class-based damage dice (`CombatMath.DamageDieForClass`) are removed. Presets must differ meaningfully — Speed tiebreaks and per-player vision (3C.1) are only testable if combatants differ.
+Delivers: Each combatant carries its own derived combat values instead of global constants and D&D class dice. Profiles extend the 3B.0 battle presets. A small set of hand-authored presets (e.g. Bruiser, Skirmisher, Scout for players; Grunt, Brute for monsters) defines `MaxHp`, `MovementRange`, `Speed` (contested-cell priority), melee/ranged `Accuracy`, `Dodge`, and `BaseDamage`. Characters and monsters each select a preset. Values that move from `RulesConfig` to per-combatant: `HitThreshold` (→ target Dodge), `AccuracyBonus`, `MovementRange`. Class-based damage dice (`CombatMath.DamageDieForClass`) are removed. Presets must differ meaningfully — Speed tiebreaks and per-player vision (3C.1) are only testable if combatants differ.
 
 Later slices add fields to the profile as they need them: `MaxAp` (3B.2), `ConditionResist` (3B.4), `VisionRange` and `Perception` (3C.1/3C.3).
 
@@ -69,9 +85,9 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
-### ⬜ Slice 3B.5 — Defeat, Incapacitation & Encounter End
+### ⬜ Slice 3B.5 — Defeat & Incapacitation
 
-Delivers: What happens at 0 HP, and how an encounter ends. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model (see `GAME_DESIGN.md`). Allies can stabilize incapacitated combatants. Closes the known 3A gap: the server detects when one side has no combatants left standing, broadcasts `CombatantDefeated` / `EncounterEnded`, sets the encounter to `Ended`, and stops the round cycle. No stat dependency. Runs second in execution order (after 3B.1).
+Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model (see `GAME_DESIGN.md`). Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
 
 ---
 
@@ -102,6 +118,8 @@ Delivers: Enemies can be hidden until they enter a player's vision range or atta
 ### ⬜ Slice 3D.1 — Tier 1 AI: Instinctive Behavior
 
 Delivers: Simplest enemy AI. Attack nearest visible threat, flee when HP is low. No coordination. GM can override any AI-planned action.
+
+*After 3B.0:* the base (`EnemyAi` in Rules, AI-controlled flag, auto plan + lock-in) already exists from the manual testing spike. This slice adds fleeing, respecting per-player vision (target only what the AI's side can see), the GM override, and `behavior_tier`.
 
 ### ⬜ Slice 3D.2 — Tier 2 AI: Tactical Behavior
 
@@ -166,7 +184,8 @@ Covers: whether characters have core stats at all, and if so which ones and how 
 
 ```
 Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
-Next        3B.1 Combat Profiles → 3B.5 Defeat & Encounter End → 3B.2 Action Points
+Next        3B.0 Manual Testing Spike (encounter end → enemy AI → Quick Battle)
+Then        3B.1 Combat Profiles → 3B.5 Defeat & Incapacitation → 3B.2 Action Points
 Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -213,7 +232,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 
-**3B.5** — `Encounter.Status` transitions to `Ended` (and an `EndedAt` timestamp) when one side is defeated.
+**3B.0** — `Encounter.Status` transitions to `Ended` (and an `EndedAt` timestamp) when one side is defeated. `EncounterCombatant` gets `Side` (`party` | `enemy`) and `IsAiControlled`; a nullable `CharacterId` on party combatants is allowed (Quick Battle combatants have no `Character` row). Battle presets live as JSON files in the server, not in the database.
 
 **Deferred (Stats & Progression)** — Rework or remove `Character.BaseStats`, `Race`, `Class`, `Level`; persistent inventory and ability acquisition.
 
@@ -240,6 +259,8 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 ### Changes by Slice
 
 **3A.1** — Rework `session:{sessionId}:active_encounter`: remove `activeTurnCombatantId`, `initiativeOrder`. Add `roundPhase` (`planning` | `resolving` | `between_rounds`), `roundNumber`, `planningTimerExpiresAt`. New key `encounter:{encounterId}:planned_actions` (Hash): one field per combatant ID, value is JSON action array. New key `encounter:{encounterId}:locked_in` (Set): combatant IDs that have locked in.
+
+**3B.0** — `CombatantRef` entries in `session:{sessionId}:active_encounter` gain `side` and `isAiControlled`. `active_encounter` gains `planningTimerEnabled` (false for Quick Battle) and `endedAt`/`winningSide` once ended. `character:live` is keyed by combatant ID for party combatants without a `Character` row (as monsters already are).
 
 **3B.1** — Update `character:live` hash: replace `class` field with the combatant's combat profile values (or the preset key, resolved on load) — `maxHp`, `movementRange`, `speed`, `accuracy`, `dodge`, `baseDamage`.
 
@@ -355,6 +376,9 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `ForceResolve(joinCode)` | Client → Server | 3A.1 | GM only |
 | `PlanEnemyAction(joinCode, combatantId, plannedAction)` | Client → Server | 3A.3 | GM only |
 | `LockInEnemies(joinCode)` | Client → Server | 3A.3 | GM only |
+| `StartQuickBattle(presetId)` | Client → Server | 3B.0 | Any signed-in user (becomes GM of a new campaign/session) |
+| `PlanAction(joinCode, plannedAction, combatantId?)` | Client → Server | 3B.0 (optional `combatantId`) | Player (owned combatant) |
+| `LockIn(joinCode)` | Client → Server | 3B.0 (locks all owned living combatants) | Player |
 
 | Broadcast | Direction | Added In | Notes |
 |---|---|---|---|
@@ -363,6 +387,8 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `AllLockedIn` | Server → Group | 3A.1 | resolution about to begin |
 | `ResolutionCompleted` | Server → Group (per-player in 3C.1) | 3A.2 | ordered resolution steps for playback; filtered per-recipient after 3C.1 |
 | `RoundStarted` | Server → Group | 3A.2 | signals next planning phase |
+| `CombatantDefeated` | Server → Group | 3B.0 | contract existed since 3A; first broadcast in 3B.0 |
+| `EncounterEnded` | Server → Group | 3B.0 | winning side; no further planning phase |
 | `VisibilityUpdated` | Server → Client | 3C.1 | per-player visible cells and revealed/hidden combatants |
 
 Removed from Phase 2: `EndTurn`, `TurnAdvanced`.
@@ -449,6 +475,7 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Defeat model | 3B.5 | Knockout / Last stand / Bleedout | Not decided |
 | Info sharing model | 3C.2 | Auto-share within fixed range / Manual callout (costs AP) / Full share | Not decided; no Influence stat to lean on, which favors callout |
 | Core stats | After 3C | Six-stat model / fewer stats / no stats (profiles from abilities + gear) | Not decided — see Deferred: Character Stats & Progression |
+| Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
 | Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Not decided |
 | Unused prepared actions refund AP? | 3B.3 | Full / partial / none | No refund |
 | Multiple prepared reactions on same trigger? | 3B.3 | All fire / only first | All fire (wasted duplicates) |
