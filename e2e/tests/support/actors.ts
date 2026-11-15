@@ -81,8 +81,9 @@ export function feedEntries(page: Page): Locator {
   return page.locator('app-feed .entry');
 }
 
-export async function expectPlanningRound(page: Page, round: number): Promise<void> {
-  await expect(page.locator('app-round-banner .phase')).toHaveText(new RegExp(`Planning\\s+.\\s+Round ${round}\\b`));
+/** @param timeout ms to wait; playback takes about 3 s per tick, so multi-action rounds need longer. */
+export async function expectPlanningRound(page: Page, round: number, timeout?: number): Promise<void> {
+  await expect(page.locator('app-round-banner .phase')).toHaveText(new RegExp(`Planning\\s+.\\s+Round ${round}\\b`), { timeout });
 }
 
 export async function playerLockIn(page: Page): Promise<void> {

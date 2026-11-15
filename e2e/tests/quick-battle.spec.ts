@@ -15,7 +15,7 @@ test('Training Dummy: play a Quick Battle to victory, then play again', async ({
   await expect(page.locator('app-round-banner .timer')).toHaveCount(0);
   await expect(page.locator('app-quick-battle-panel')).toContainText('training-dummy');
 
-  // Hero (9,9) hits the 1-HP Dummy (9,10) until a d20 lands 10+. ~55% per round.
+  // Hero (9,9) hits the 1-HP Dummy (9,10); the Dummy's dodge is 1, so the first hit wins.
   const result = page.locator('.result-card');
   for (let round = 1; round <= 15 && !(await result.isVisible()); round++) {
     await expectPlanningRound(page, round);
@@ -36,14 +36,20 @@ test('Training Dummy: play a Quick Battle to victory, then play again', async ({
   await expect(tokenAt(page, 9, 10)).toBeVisible(); // a fresh Dummy
 });
 
-test('Skirmish: command three heroes in one round with Lock In All', async ({ browser }) => {
+test('Skirmish: command three heroes in one round with Lock In All, queueing two moves (AP)', async ({ browser }) => {
   const page = await newActor(browser);
   await startQuickBattle(page, 'Skirmish');
 
   // Bruiser (8,2), Skirmisher (10,2), Scout (12,2); goblins on row 14.
   const actionBar = page.locator('.action-bar');
   await expect(actionBar).toContainText('Planning for Bruiser');
+  await expect(actionBar.locator('.ap-budget')).toHaveText(/AP 0\/4/);
+  // The Bruiser (4 AP, 4 cells a round) queues two moves of 2 cells each (3B.2).
   await cell(page, 8, 4).click();
+  await cell(page, 8, 6).click();
+  await expect(actionBar.locator('.ap-budget')).toHaveText(/AP 2\/4/);
+  await expect(page.locator('.planned-action-display')).toContainText('1. Move to (8, 4) → 2. Move to (8, 6)');
+  await expect(cell(page, 8, 7)).not.toHaveClass(/in-range/); // movement budget used up
 
   await tokenAt(page, 10, 2).click();
   await expect(actionBar).toContainText('Planning for Skirmisher');
@@ -58,9 +64,10 @@ test('Skirmish: command three heroes in one round with Lock In All', async ({ br
   await lockIn.click();
 
   await expect(feedEntries(page).filter({ hasText: 'Round 1 Resolution' })).toHaveCount(1);
-  for (const line of ['Bruiser moves to (8, 4)', 'Skirmisher moves to (10, 5)', 'Scout moves to (12, 6)'])
+  for (const line of ['Bruiser moves to (8, 4)', 'Bruiser moves to (8, 6)', 'Skirmisher moves to (10, 5)', 'Scout moves to (12, 6)'])
     await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1);
+  await expect(feedEntries(page).filter({ hasText: 'Tick 2' })).toHaveCount(1);
   await expect(feedEntries(page).filter({ hasText: /Goblin \d moves to/ })).toHaveCount(3);
-  await expectPlanningRound(page, 2);
-  await expect(tokenAt(page, 8, 4)).toBeVisible();
+  await expectPlanningRound(page, 2, 15_000); // two ticks of playback
+  await expect(tokenAt(page, 8, 6)).toBeVisible();
 });

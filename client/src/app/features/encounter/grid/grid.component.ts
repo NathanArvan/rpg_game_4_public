@@ -5,7 +5,10 @@ import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { ClearMyPlannedAction, GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
+import { GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
+import {
+  DEFAULT_AP_COSTS, apCost, apSpent, canAfford, chebyshev, describeQueue, moveCellsUsed, projectedPosition,
+} from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant, isControlledBy } from '../../../state/encounter/encounter.model';
@@ -50,6 +53,9 @@ export class GridComponent implements OnInit, OnDestroy {
   private preResolutionPositions: Record<string, Position> = {};
   private isPlayingBack = false;
   private defeatingNow = new Set<string>();
+  /** 1-based tick being played back, and how many ticks the round has. */
+  playbackTick = 0;
+  playbackTickCount = 0;
   damageNumbers: DamageNumber[] = [];
 
   /** This user's plans this round, per character they control. */
@@ -57,7 +63,8 @@ export class GridComponent implements OnInit, OnDestroy {
   private selectedCombatantId: string | null = null;
   lockedIn = false;
   gmSelectedEnemyId: string | null = null;
-  enemyPlannedActions: Record<string, PlannedActionEntry> = {};
+  enemyPlannedActions: Record<string, PlannedActionEntry[]> = {};
+  private apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
 
   private destroyed = false;
 
@@ -104,6 +111,7 @@ export class GridComponent implements OnInit, OnDestroy {
     this.store.select(EncounterState.roundNumber).subscribe(() => this.lockedIn = false);
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
+    this.store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
 
     // Trigger playback when resolution ticks arrive
     this.store.select(EncounterState.resolutionTicks).subscribe(ticks => {
@@ -185,28 +193,34 @@ export class GridComponent implements OnInit, OnDestroy {
     // GM enemy planning mode — show range around selected enemy
     if (this.isGm && this.gmSelectedEnemyId) {
       const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
-      return enemy ? this.isMoveTarget(enemy, cell) : false;
+      return enemy ? this.isMoveTarget(enemy, cell, this.enemyQueue(enemy.id)) : false;
     }
     if (this.lockedIn) return false;
     const myCombatant = this.selected;
-    return myCombatant ? this.isMoveTarget(myCombatant, cell) : false;
+    return myCombatant ? this.isMoveTarget(myCombatant, cell, this.selectedPlan) : false;
   }
 
-  /** A free cell within the combatant's movement range (from its combat profile). */
-  private isMoveTarget(combatant: Combatant, cell: Cell): boolean {
-    const pos = this.positions[combatant.id];
-    if (!pos) return false;
-    const chebyshev = Math.max(Math.abs(cell.x - pos.x), Math.abs(cell.y - pos.y));
-    return chebyshev > 0 && chebyshev <= combatant.movementRange && !this.tokenAt(cell);
+  /**
+   * A free cell the combatant can still walk to this round: measured from where its queued moves
+   * end, within the movement cells it has left, and only while it can afford another move (3B.2).
+   */
+  private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
+    const start = this.positions[combatant.id];
+    if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts)) return false;
+    const from = projectedPosition(start, queue)!;
+    const cellsLeft = combatant.movementRange - moveCellsUsed(start, queue);
+    const distance = chebyshev(from, cell);
+    const occupant = this.tokenAt(cell);
+    return distance > 0 && distance <= cellsLeft && (!occupant || occupant.id === combatant.id);
+  }
+
+  private enemyQueue(combatantId: string): PlannedActionEntry[] {
+    return this.enemyPlannedActions[combatantId] ?? [];
   }
 
   isEnemyGhostTarget(cell: Cell): boolean {
-    for (const action of Object.values(this.enemyPlannedActions)) {
-      if (action.type === 'move' && action.targetCell) {
-        if (action.targetCell.x === cell.x && action.targetCell.y === cell.y) return true;
-      }
-    }
-    return false;
+    return Object.values(this.enemyPlannedActions).some(queue => queue.some(a =>
+      a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
   /** A cell one of your characters plans to move to. */
@@ -215,8 +229,21 @@ export class GridComponent implements OnInit, OnDestroy {
       a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
-  private isSelectedGhostTarget(cell: Cell): boolean {
-    return this.selectedPlan.some(a => a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y);
+  /** Queue step (1-based) of the selected character's move to this cell, for the marker on the grid. */
+  ghostStep(cell: Cell): number | null {
+    const plan = this.selectedPlan;
+    if (plan.length < 2) return null;
+    for (let i = plan.length - 1; i >= 0; i--) {
+      const a = plan[i];
+      if (a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y) return i + 1;
+    }
+    return null;
+  }
+
+  /** The last queued action is a move to this cell (clicking it again undoes it). */
+  private isLastMoveTarget(cell: Cell): boolean {
+    const last = this.selectedPlan[this.selectedPlan.length - 1];
+    return last?.type === 'move' && last.targetCell?.x === cell.x && last.targetCell?.y === cell.y;
   }
 
   isTargeted(combatant: Combatant): boolean {
@@ -228,20 +255,40 @@ export class GridComponent implements OnInit, OnDestroy {
     return this.defeatingNow.has(combatant.id);
   }
 
-  get plannedActionType(): string | null {
-    return this.selectedPlan[0]?.type ?? null;
+  get hasDefendPlanned(): boolean {
+    return this.selectedPlan.some(a => a.type === 'defend');
   }
 
   get plannedActionSummary(): string {
-    const action = this.selectedPlan[0];
-    if (!action) return '';
-    if (action.type === 'move' && action.targetCell)
-      return `Move to (${action.targetCell.x}, ${action.targetCell.y})`;
-    const target = this.combatants.find(c => c.id === action.targetCombatantId)?.characterName;
-    if (action.type === 'melee_attack') return target ? `Melee Attack on ${target}` : 'Melee Attack';
-    if (action.type === 'ranged_attack') return target ? `Ranged Attack on ${target}` : 'Ranged Attack';
-    if (action.type === 'defend') return 'Defend';
-    return action.type;
+    return describeQueue(this.selectedPlan, id => this.combatants.find(c => c.id === id)?.characterName);
+  }
+
+  /** AP the selected character's queue costs. */
+  get apUsed(): number {
+    return apSpent(this.selectedPlan, this.apCosts);
+  }
+
+  get maxAp(): number {
+    return this.selected?.maxAp ?? 0;
+  }
+
+  get canAffordDefend(): boolean {
+    const selected = this.selected;
+    return !!selected && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts);
+  }
+
+  /** Cells the selected character can still move this round. */
+  get moveCellsLeft(): number {
+    const selected = this.selected;
+    if (!selected) return 0;
+    return Math.max(0, selected.movementRange - moveCellsUsed(this.positions[selected.id], this.selectedPlan));
+  }
+
+  /** Melee if the target is within reach of where the planner's queued moves end, otherwise ranged. */
+  private attackTypeAgainst(plannerId: string, queue: PlannedActionEntry[], target: Combatant): string {
+    const from = projectedPosition(this.positions[plannerId], queue);
+    const targetPos = this.positions[target.id];
+    return from && targetPos && chebyshev(from, targetPos) <= 1 ? 'melee_attack' : 'ranged_attack';
   }
 
   // ----- Interaction -----
@@ -249,28 +296,27 @@ export class GridComponent implements OnInit, OnDestroy {
   onCellClick(cell: Cell): void {
     if (this.isPlayingBack) return;
 
-    // GM enemy planning mode
+    // GM enemy planning mode: each click appends to the selected monster's queue.
     if (this.isGm && this.gmSelectedEnemyId) {
-      const enemyId = this.gmSelectedEnemyId;
+      const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
+      if (!enemy) return;
+      const queue = this.enemyQueue(enemy.id);
       const targetCombatant = this.tokenAt(cell);
 
-      if (targetCombatant && targetCombatant.id !== enemyId && !targetCombatant.isDefeated) {
-        const enemyPos = this.positions[enemyId];
-        const targetPos = this.positions[targetCombatant.id];
-        const chebyshev = enemyPos && targetPos
-          ? Math.max(Math.abs(targetPos.x - enemyPos.x), Math.abs(targetPos.y - enemyPos.y))
-          : 99;
-        const attackType = chebyshev <= 1 ? 'melee_attack' : 'ranged_attack';
-        const action: PlannedActionEntry = { type: attackType, targetCell: null, targetCombatantId: targetCombatant.id };
-        this.store.dispatch(new GmSetEnemyPlan(enemyId, action));
-        this.hub.planEnemyAction(this.joinCode, enemyId, { actions: [action] });
-        this.store.dispatch(new GmSelectEnemy(null));
-      } else if (!targetCombatant && this.isInRange(cell)) {
-        const action: PlannedActionEntry = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
-        this.store.dispatch(new GmSetEnemyPlan(enemyId, action));
-        this.hub.planEnemyAction(this.joinCode, enemyId, { actions: [action] });
-        this.store.dispatch(new GmSelectEnemy(null));
+      let action: PlannedActionEntry | null = null;
+      if (targetCombatant && targetCombatant.id !== enemy.id && !targetCombatant.isDefeated) {
+        action = { type: this.attackTypeAgainst(enemy.id, queue, targetCombatant), targetCell: null, targetCombatantId: targetCombatant.id };
+      } else if (this.isInRange(cell)) {
+        action = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
       }
+      if (!action || !canAfford(queue, action.type, enemy.maxAp, this.apCosts)) return;
+
+      const next = [...queue, action];
+      this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
+      this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
+      // Done with this monster once it can't afford even the cheapest action.
+      const cheapest = Math.min(...Object.keys(this.apCosts).map(t => apCost(t, this.apCosts)));
+      if (apSpent(next, this.apCosts) + cheapest > enemy.maxAp) this.store.dispatch(new GmSelectEnemy(null));
       return;
     }
 
@@ -288,27 +334,28 @@ export class GridComponent implements OnInit, OnDestroy {
     const myCombatant = this.selected;
     if (!myCombatant) return;
 
+    const queue = this.selectedPlan;
     if (targetCombatant && !targetCombatant.isDefeated) {
-      const myPos = this.positions[myCombatant.id];
-      const targetPos = this.positions[targetCombatant.id];
-      const chebyshev = myPos && targetPos
-        ? Math.max(Math.abs(targetPos.x - myPos.x), Math.abs(targetPos.y - myPos.y))
-        : 99;
-      const attackType = chebyshev <= 1 ? 'melee_attack' : 'ranged_attack';
-
-      const action: PlannedActionEntry = { type: attackType, targetCell: null, targetCombatantId: targetCombatant.id };
-      this.plan(myCombatant, action);
-    } else if (!targetCombatant && this.isSelectedGhostTarget(cell)) {
-      this.cancelPlan();
-    } else if (!targetCombatant && this.isInRange(cell)) {
-      const action: PlannedActionEntry = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
-      this.plan(myCombatant, action);
+      const type = this.attackTypeAgainst(myCombatant.id, queue, targetCombatant);
+      this.plan(myCombatant, { type, targetCell: null, targetCombatantId: targetCombatant.id });
+    } else if (!targetCombatant && this.isLastMoveTarget(cell)) {
+      this.undoLast();
+    } else if (this.isInRange(cell)) {
+      this.plan(myCombatant, { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null });
     }
   }
 
+  /** Appends an action to the character's queue if its AP allows, and sends the whole queue. */
   private plan(combatant: Combatant, action: PlannedActionEntry): void {
-    this.store.dispatch(new SetMyPlannedAction(combatant.id, [action]));
-    this.hub.planAction(this.joinCode, { actions: [action] }, combatant.id);
+    const queue = this.myPlans[combatant.id] ?? [];
+    if (!canAfford(queue, action.type, combatant.maxAp, this.apCosts)) return;
+    this.setPlan(combatant, [...queue, action]);
+  }
+
+  /** Stores and sends a character's queue; an empty queue clears the plan on the server too. */
+  private setPlan(combatant: Combatant, queue: PlannedActionEntry[]): void {
+    this.store.dispatch(new SetMyPlannedAction(combatant.id, queue));
+    this.hub.planAction(this.joinCode, { actions: queue }, combatant.id);
   }
 
   planDefend(): void {
@@ -317,9 +364,18 @@ export class GridComponent implements OnInit, OnDestroy {
     this.plan(selected, { type: 'defend', targetCell: null, targetCombatantId: null });
   }
 
-  cancelPlan(): void {
+  /** Drops the last queued action of the selected character. */
+  undoLast(): void {
     const selected = this.selected;
-    if (selected) this.store.dispatch(new ClearMyPlannedAction(selected.id));
+    if (this.lockedIn || !selected || this.selectedPlan.length === 0) return;
+    this.setPlan(selected, this.selectedPlan.slice(0, -1));
+  }
+
+  /** Clears the selected character's whole queue. */
+  clearPlan(): void {
+    const selected = this.selected;
+    if (this.lockedIn || !selected || this.selectedPlan.length === 0) return;
+    this.setPlan(selected, []);
   }
 
   onLockIn(): void {
@@ -334,69 +390,63 @@ export class GridComponent implements OnInit, OnDestroy {
 
   // ----- Playback animation -----
 
+  /** Plays every tick in order: movement, then damage numbers, then defeat fades (3B.2). */
   private async startPlayback(ticks: TickResult[]): Promise<void> {
-    console.log('[grid] startPlayback: starting with', ticks.length, 'ticks');
     this.isPlayingBack = true;
-    // Use pre-resolution positions as starting point for animation
+    this.playbackTickCount = ticks.length;
+    // Use pre-resolution positions as the starting point; each tick continues from the last.
     this.animPositions = { ...this.preResolutionPositions };
 
-    const tick = ticks[0]; // 3A: always 1 tick
-    console.log('[grid] tick 0:', tick.movements.length, 'movements,', tick.attacks.length, 'attacks');
-
-    // Phase 1: Movement (~1.5s)
-    if (tick.movements.length > 0) {
-      for (const m of tick.movements) {
-        console.log('[grid] movement:', m.combatantName, 'path=', JSON.stringify(m.path), 'final=', JSON.stringify(m.finalPosition));
-      }
-      const maxPathLen = Math.max(...tick.movements.map(m => m.path.length));
-      if (maxPathLen > 1) {
-        const stepMs = Math.max(80, Math.floor(1500 / maxPathLen));
-        for (let step = 0; step < maxPathLen; step++) {
-          if (this.destroyed) return;
-          for (const movement of tick.movements) {
-            if (step < movement.path.length) {
-              this.animPositions = {
-                ...this.animPositions,
-                [movement.combatantId]: movement.path[step],
-              };
-            }
-          }
-          await this.sleep(stepMs);
-        }
-      }
-    }
-
-    // Phase 2: Attacks — show floating damage numbers (~1.5s)
-    const newDamageNumbers: DamageNumber[] = [];
-    for (const attack of tick.attacks) {
-      if (!attack.wasted) {
-        newDamageNumbers.push({
-          combatantId: attack.targetId,
-          text: attack.hit ? `-${attack.damage}` : 'MISS',
-          isHit: attack.hit,
-          key: Math.random().toString(36).slice(2),
-        });
-      }
-    }
-    this.damageNumbers = newDamageNumbers;
-    await this.sleep(1200);
-    this.damageNumbers = [];
-
-    // Phase 3: Defeat fade (~500ms)
-    const newlyDefeated = new Set(
-      tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId)
-    );
-    if (newlyDefeated.size > 0) {
-      this.defeatingNow = newlyDefeated;
-      await this.sleep(500);
-      this.defeatingNow = new Set();
+    for (let i = 0; i < ticks.length; i++) {
+      if (this.destroyed) return;
+      this.playbackTick = i + 1;
+      await this.playTick(ticks[i]);
     }
 
     // Positions already committed to MapState in game-hub.service.ts when ResolutionCompleted arrived.
     // Just clean up playback state so tokenAt() switches back to this.positions (which has final positions).
     this.animPositions = {};
+    this.playbackTick = 0;
+    this.playbackTickCount = 0;
     this.isPlayingBack = false;
-    console.log('[grid] playback complete');
+  }
+
+  private async playTick(tick: TickResult): Promise<void> {
+    // Phase 1: Movement (~1.2s)
+    const maxPathLen = tick.movements.length > 0 ? Math.max(...tick.movements.map(m => m.path.length)) : 0;
+    if (maxPathLen > 1) {
+      const stepMs = Math.max(80, Math.floor(1200 / maxPathLen));
+      for (let step = 0; step < maxPathLen; step++) {
+        if (this.destroyed) return;
+        for (const movement of tick.movements) {
+          if (step < movement.path.length) {
+            this.animPositions = { ...this.animPositions, [movement.combatantId]: movement.path[step] };
+          }
+        }
+        await this.sleep(stepMs);
+      }
+    }
+
+    // Phase 2: Attacks — floating damage numbers (~1s), or a short beat if nobody attacked.
+    const newDamageNumbers: DamageNumber[] = tick.attacks
+      .filter(attack => !attack.wasted)
+      .map(attack => ({
+        combatantId: attack.targetId,
+        text: attack.hit ? `-${attack.damage}` : 'MISS',
+        isHit: attack.hit,
+        key: Math.random().toString(36).slice(2),
+      }));
+    this.damageNumbers = newDamageNumbers;
+    await this.sleep(newDamageNumbers.length > 0 ? 1000 : 300);
+    this.damageNumbers = [];
+
+    // Phase 3: Defeat fade (~400ms)
+    const newlyDefeated = new Set(tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId));
+    if (newlyDefeated.size > 0) {
+      this.defeatingNow = newlyDefeated;
+      await this.sleep(400);
+      this.defeatingNow = new Set();
+    }
   }
 
   private sleep(ms: number): Promise<void> {

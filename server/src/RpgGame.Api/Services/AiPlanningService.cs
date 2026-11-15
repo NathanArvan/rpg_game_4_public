@@ -40,18 +40,18 @@ public class AiPlanningService(
         var plans = EnemyAi.PlanRound(loaded.ToRulesState(), teamById, aiIds);
 
         var lockedIn = new List<AiLockIn>();
-        foreach (var (id, action) in plans)
+        foreach (var (id, queue) in plans)
         {
-            var entry = new PlannedActionEntry(
+            var entries = queue.Select(action => new PlannedActionEntry(
                 RulesWireMapping.ToWire(action.Type),
                 action.TargetCell is { } cell ? new PositionDto(cell.X, cell.Y) : null,
-                action.TargetCombatantId);
+                action.TargetCombatantId)).ToList();
             await redisState.SetPlannedActionAsync(encounterIdStr, id,
-                JsonSerializer.Serialize(new PlannedActionArray([entry]), _jsonOptions));
+                JsonSerializer.Serialize(new PlannedActionArray(entries), _jsonOptions));
             lockedIn.Add(new AiLockIn(id, loaded.Records[id].State.Name));
 
-            logger.LogInformation("AiPlanning: encounter={EncounterId} combatant={CombatantId} planned {ActionType}",
-                encounterId, id, entry.Type);
+            logger.LogInformation("AiPlanning: encounter={EncounterId} combatant={CombatantId} planned {Actions}",
+                encounterId, id, string.Join(",", entries.Select(e => e.Type)));
         }
 
         await redisState.AddLockedInBatchAsync(encounterIdStr, lockedIn.Select(l => l.CombatantId));

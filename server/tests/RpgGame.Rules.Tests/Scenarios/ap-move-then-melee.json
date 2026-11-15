@@ -1,0 +1,20 @@
+{
+  // Roadmap 3B.2: Move (1 AP) then Melee (2 AP) fits a 3-AP budget. The move closes in on tick 1,
+  // the strike lands on tick 2 — a "charge" is just two queued actions.
+  "description": "AP: a 3-AP fighter moves next to the goblin and strikes in the same round",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [2, 5], "maxAp": 3 },
+    { "id": "Goblin",  "hp": 10, "damage": "d4", "at": [6, 5] }
+  ],
+  "plans": {
+    "Fighter": ["move 5,5", "melee Goblin"],
+    "Goblin":  ["defend"]
+  },
+  "dice": [12, 6],
+  "expect": {
+    "ticks": 2,
+    "positions": { "Fighter": [5, 5] },
+    "hp": { "Goblin": 4 },
+    "hits": [ { "tick": 2, "attacker": "Fighter" } ]
+  }
+}

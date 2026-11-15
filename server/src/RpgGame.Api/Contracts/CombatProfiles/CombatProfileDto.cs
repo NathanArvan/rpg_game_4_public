@@ -12,4 +12,5 @@ public record CombatProfileDto(
     int MeleeAccuracy,
     int RangedAccuracy,
     int Dodge,
-    string BaseDamage);
+    string BaseDamage,
+    int MaxAp);

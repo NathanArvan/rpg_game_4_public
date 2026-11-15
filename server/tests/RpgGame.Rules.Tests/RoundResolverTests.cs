@@ -8,8 +8,8 @@ public class RoundResolverTests
 
     private static CombatantState C(
         string id, int x, int y, int hp = 20, int speed = 10, int die = 8, bool defeated = false,
-        int move = 6, int melee = 0, int ranged = 0, int dodge = 10) =>
-        new(id, id, hp, new CombatProfile(20, move, speed, melee, ranged, dodge, new DamageDie(die)),
+        int move = 6, int melee = 0, int ranged = 0, int dodge = 10, int ap = CombatProfile.DefaultMaxAp) =>
+        new(id, id, hp, new CombatProfile(20, move, speed, melee, ranged, dodge, new DamageDie(die), ap),
             new GridPosition(x, y), defeated);
 
     private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null, false);
@@ -493,7 +493,7 @@ public class RoundResolverTests
     public void LaterTicks_SeePositionsAndHpFromEarlierTicks()
     {
         // Tick 0: A steps adjacent. Tick 1: A hits B. Tick 2: A hits again from the new HP.
-        var o = Resolve(State(C("A", 0, 0), C("B", 2, 0)),
+        var o = Resolve(State(C("A", 0, 0, ap: 5), C("B", 2, 0)),
             new Plans().Add("A", PlannedAction.Move(1, 0), PlannedAction.Melee("B"), PlannedAction.Melee("B")),
             new ScriptedDice(10, 5, 10, 4));
 
@@ -518,6 +518,58 @@ public class RoundResolverTests
         Assert.Equal(("C", WastedReason.TargetDefeated, false), (wasted.AttackerId, wasted.WastedReason, wasted.TargetDefeated));
         Assert.Empty(o.Ticks[2].Movements); // B's move voided
         Assert.Equal(P(1, 0), Final(o, "B").Position);
+    }
+
+    // ----- Action points (3B.2) -----
+
+    [Fact]
+    public void OverBudgetQueue_IsCutToWhatTheCombatantCanAfford()
+    {
+        // Melee 2 + Melee 2 + Defend 1 = 5 AP > 4: the defend is dropped, so there are two ticks.
+        var o = Resolve(State(C("A", 0, 0), C("B", 1, 0)),
+            new Plans().Add("A", PlannedAction.Melee("B"), PlannedAction.Melee("B"), PlannedAction.Defend()),
+            new ScriptedDice(1, 1));
+
+        Assert.Equal(2, o.Ticks.Count);
+        Assert.All(o.Ticks, t => Assert.Empty(t.Effects));
+    }
+
+    [Fact]
+    public void Moves_ShareTheMovementRangeAcrossTheRound()
+    {
+        // Range 4: the first move uses 3 cells, so the second stops after 1 more.
+        var o = Resolve(State(C("A", 0, 0, move: 4)),
+            new Plans().Add("A", PlannedAction.Move(3, 0), PlannedAction.Move(6, 0)),
+            new ScriptedDice());
+
+        Assert.Equal(P(3, 0), o.Ticks[0].Movements[0].FinalPosition);
+        Assert.Equal(P(4, 0), o.Ticks[1].Movements[0].FinalPosition);
+        Assert.Equal(P(4, 0), Final(o, "A").Position);
+    }
+
+    [Fact]
+    public void BlockedSteps_DoNotUseUpTheMovementBudget()
+    {
+        // A's first move is blocked by W after 1 step, so 3 of A's 4 cells are left for the second move.
+        var o = Resolve(State(C("A", 0, 0, move: 4), C("W", 2, 0)),
+            new Plans().Add("A", PlannedAction.Move(3, 0), PlannedAction.Move(1, 3)),
+            new ScriptedDice());
+
+        Assert.True(o.Ticks[0].Movements[0].WasBlocked);
+        Assert.Equal(P(1, 0), o.Ticks[0].Movements[0].FinalPosition);
+        Assert.Equal(P(1, 3), Final(o, "A").Position);
+    }
+
+    [Fact]
+    public void ExhaustedMovementBudget_LaterMoveStaysPut()
+    {
+        var o = Resolve(State(C("A", 0, 0, move: 2)),
+            new Plans().Add("A", PlannedAction.Move(2, 0), PlannedAction.Move(4, 0)),
+            new ScriptedDice());
+
+        var second = o.Ticks[1].Movements[0];
+        Assert.Equal([P(2, 0)], second.Path);
+        Assert.Equal(P(2, 0), Final(o, "A").Position);
     }
 
     // ----- Purity -----

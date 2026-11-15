@@ -1,8 +1,10 @@
 namespace RpgGame.Rules;
 
 /// <summary>
-/// The simplest enemy AI (3B.0): each AI combatant picks one action for the round. Melee an
-/// adjacent enemy if there is one; otherwise move toward the nearest living enemy.
+/// The simplest enemy AI (3B.0, AP queues since 3B.2). Each AI combatant spends its AP on the
+/// nearest living enemy: melee it as often as it can afford if it is in reach; otherwise walk
+/// toward it (one move, up to the whole movement budget) and melee it with the AP left if the walk
+/// ends in reach. With nothing to do, it defends.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -18,8 +20,9 @@ public static class EnemyAi
     /// <param name="state">Encounter state at the start of planning.</param>
     /// <param name="teamById">Team of every combatant. Combatants missing from it are ignored as targets.</param>
     /// <param name="aiCombatantIds">Combatants to plan for, in priority order (earlier ones claim cells first).</param>
-    /// <returns>One action per living AI combatant, in <paramref name="aiCombatantIds"/> order.</returns>
-    public static Dictionary<string, PlannedAction> PlanRound(
+    /// <returns>One action queue per living AI combatant, in <paramref name="aiCombatantIds"/> order.
+    /// Every queue fits the combatant's AP budget.</returns>
+    public static Dictionary<string, IReadOnlyList<PlannedAction>> PlanRound(
         EncounterState state,
         IReadOnlyDictionary<string, string> teamById,
         IReadOnlyList<string> aiCombatantIds,
@@ -45,7 +48,7 @@ public static class EnemyAi
             .Select(c => c.Position!.Value)
             .ToHashSet();
         var reservedPaths = new List<List<GridPosition>>();
-        var plans = new Dictionary<string, PlannedAction>();
+        var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
 
         foreach (var id in aiCombatantIds)
         {
@@ -55,14 +58,14 @@ public static class EnemyAi
             // Not on the map (no position): it can't move or melee, so it just defends.
             if (self.Position is not { } from)
             {
-                plans[id] = PlannedAction.Defend();
+                plans[id] = [PlannedAction.Defend()];
                 continue;
             }
 
             var target = FindTarget(state, self, from, myTeam, teamById);
             if (target is null)
             {
-                plans[id] = PlannedAction.Defend();
+                plans[id] = [PlannedAction.Defend()];
                 blockers.Add(from);
                 continue;
             }
@@ -70,7 +73,9 @@ public static class EnemyAi
             var targetPos = target.Position!.Value;
             if (from.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
             {
-                plans[id] = PlannedAction.Melee(target.Id);
+                var attacks = new List<PlannedAction>();
+                AddMelees(attacks, target.Id, self.Profile.MaxAp, config);
+                plans[id] = attacks.Count > 0 ? attacks : [PlannedAction.Defend()];
                 blockers.Add(from);
                 continue;
             }
@@ -78,7 +83,7 @@ public static class EnemyAi
             var path = ChooseMove(state, from, targetPos, self.Profile.MovementRange, occupied, blockers, reservedPaths);
             if (path is null)
             {
-                plans[id] = PlannedAction.Defend(); // boxed in
+                plans[id] = [PlannedAction.Defend()]; // boxed in
                 blockers.Add(from);
                 continue;
             }
@@ -87,10 +92,22 @@ public static class EnemyAi
             reservedPaths.Add(path);
             occupied.Add(destination);
             blockers.Add(destination);
-            plans[id] = PlannedAction.Move(destination.X, destination.Y);
+            var queue = new List<PlannedAction> { PlannedAction.Move(destination.X, destination.Y) };
+            // Strike with what's left if the walk ends in reach (the target may still step away).
+            if (destination.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
+                AddMelees(queue, target.Id, self.Profile.MaxAp - config.MoveApCost, config);
+            plans[id] = queue;
         }
 
         return plans;
+    }
+
+    /// <summary>Appends as many melee attacks on <paramref name="targetId"/> as <paramref name="apLeft"/> pays for.</summary>
+    private static void AddMelees(List<PlannedAction> queue, string targetId, int apLeft, RulesConfig config)
+    {
+        if (config.MeleeApCost <= 0) { queue.Add(PlannedAction.Melee(targetId)); return; }
+        for (; apLeft >= config.MeleeApCost; apLeft -= config.MeleeApCost)
+            queue.Add(PlannedAction.Melee(targetId));
     }
 
     /// <summary>Nearest living enemy on the map; ties go to the lowest HP, then to state order.</summary>

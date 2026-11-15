@@ -98,7 +98,7 @@ public class PlanningServiceTests
 
     /// <summary>One player combatant whose stored profile has the given movement range, standing at (0, 0).</summary>
     private static async Task<(PlanningService Service, Mock<IRedisGameState> Redis, string JoinCode, string CombatantId)> SetupMover(
-        AppDbContext db, int movementRange)
+        AppDbContext db, int movementRange, int? maxAp = null)
     {
         var sessionId = Guid.NewGuid();
         var encounterId = Guid.NewGuid();
@@ -108,7 +108,7 @@ public class PlanningServiceTests
         db.EncounterCombatants.Add(new EncounterCombatant
         {
             Id = combatantId, EncounterId = encounterId, UserId = "user-1", CharacterName = "Mover",
-            CombatantType = "player", Profile = TestProfiles.Values(move: movementRange),
+            CombatantType = "player", Profile = TestProfiles.Values(move: movementRange, ap: maxAp),
         });
         await db.SaveChangesAsync();
 
@@ -121,6 +121,81 @@ public class PlanningServiceTests
     }
 
     private static PlannedActionArray MoveTo(int x, int y) => new([new("move", new PositionDto(x, y), null)]);
+
+    private static PlannedActionEntry MoveEntry(int x, int y) => new("move", new PositionDto(x, y), null);
+    private static readonly PlannedActionEntry DefendEntry = new("defend", null, null);
+
+    // ----- Action queues (3B.2) -----
+
+    [Fact]
+    public async Task PlanAction_AcceptsAQueueThatFitsTheApBudget()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, id) = await SetupMover(db, 6, maxAp: 4);
+        string? stored = null;
+        redis.Setup(r => r.SetPlannedActionAsync(It.IsAny<string>(), id, It.IsAny<string>()))
+            .Callback<string, string, string>((_, _, json) => stored = json)
+            .Returns(Task.CompletedTask);
+
+        var queue = new PlannedActionArray([MoveEntry(2, 0), MoveEntry(2, 2), DefendEntry, DefendEntry]);
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", queue)).Success);
+        Assert.Contains("\"actions\":[", stored);
+        Assert.Equal(4, System.Text.Json.JsonDocument.Parse(stored!).RootElement.GetProperty("actions").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task PlanAction_RejectsAQueueOverTheApBudget()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, _) = await SetupMover(db, 6, maxAp: 3);
+
+        var queue = new PlannedActionArray([MoveEntry(1, 0), DefendEntry, DefendEntry, DefendEntry]);
+        var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", queue));
+        Assert.True(ex.IsActionRejected);
+        Assert.Contains("Not enough AP", ex.Message);
+        redis.Verify(r => r.SetPlannedActionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(6, true)]
+    [InlineData(5, false)]
+    public async Task PlanAction_ChainedMoves_ShareTheMovementRange(int range, bool accepted)
+    {
+        // (0,0) → (3,0) → (3,3) walks 6 cells, although (3,3) is only 3 from the start.
+        await using var db = CreateDb();
+        var (service, _, joinCode, _) = await SetupMover(db, range);
+        var queue = new PlannedActionArray([MoveEntry(3, 0), MoveEntry(3, 3)]);
+
+        if (accepted)
+            Assert.True((await service.PlanActionAsync(joinCode, "user-1", queue)).Success);
+        else
+            Assert.Contains($"maximum range ({range} squares)",
+                (await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", queue))).Message);
+    }
+
+    [Fact]
+    public async Task PlanAction_EmptyQueue_ClearsThePlan()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, id) = await SetupMover(db, 6);
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", new PlannedActionArray([]))).Success);
+        redis.Verify(r => r.ClearPlannedActionAsync(It.IsAny<string>(), id), Times.Once);
+        redis.Verify(r => r.SetPlannedActionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PlanAction_ProfileWithoutMaxAp_UsesTheDefaultBudget()
+    {
+        // Profiles stored before 3B.2 have no MaxAp: 4 AP.
+        await using var db = CreateDb();
+        var (service, _, joinCode, _) = await SetupMover(db, 6, maxAp: null);
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1",
+            new PlannedActionArray([DefendEntry, DefendEntry, DefendEntry, DefendEntry]))).Success);
+        await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1",
+            new PlannedActionArray([DefendEntry, DefendEntry, DefendEntry, DefendEntry, DefendEntry])));
+    }
 
     [Theory]
     [InlineData(4, 4, true)]

@@ -21,6 +21,7 @@ export interface CombatantDto {
   profileId: string;
   profileName: string;
   movementRange: number;
+  maxAp: number;
 }
 
 export interface EncounterEndedPayload {
@@ -66,6 +67,7 @@ export interface PlanningPhaseStartedPayload {
   roundNumber: number;
   planningTimerDurationSeconds: number;
   combatants: PlanningCombatantDto[];
+  apCosts: { [key: string]: number };
 }
 
 export interface PlanningCombatantDto {
@@ -80,6 +82,7 @@ export interface PlanningCombatantDto {
   profileId: string;
   profileName: string;
   movementRange: number;
+  maxAp: number;
 }
 
 export interface PlayerLockedInPayload {

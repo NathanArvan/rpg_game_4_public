@@ -12,10 +12,10 @@ const USER_PLAYER = 'user-player-1';
 const USER_MONSTER = 'user-gm';
 
 const COMBATANTS_DTO: CombatantDto[] = [
-  { id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, combatantType: 'player', isAiControlled: false, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4 },
-  { id: 'c2', userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, combatantType: 'player', isAiControlled: false, profileId: 'scout', profileName: 'Scout', movementRange: 8 },
-  { id: 'c3', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5 },
-  { id: 'c4', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false, profileId: 'brute', profileName: 'Brute', movementRange: 4 },
+  { id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, combatantType: 'player', isAiControlled: false, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, maxAp: 4 },
+  { id: 'c2', userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, combatantType: 'player', isAiControlled: false, profileId: 'scout', profileName: 'Scout', movementRange: 8, maxAp: 5 },
+  { id: 'c3', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5, maxAp: 4 },
+  { id: 'c4', userId: USER_MONSTER, characterId: '', characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false, profileId: 'brute', profileName: 'Brute', movementRange: 4, maxAp: 4 },
 ];
 
 const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
@@ -30,6 +30,7 @@ const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
   profileId: c.profileId,
   profileName: c.profileName,
   movementRange: c.movementRange,
+  maxAp: c.maxAp,
 }));
 
 const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {
@@ -64,6 +65,15 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       attacks: [
         { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Zara Forge shoots Goblin 1 for 3 damage' },
         { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots Isolde Blade for 2 damage' },
+      ],
+      effects: [],
+    },
+    {
+      // A second tick (3B.2): Zara closes in and strikes.
+      tickIndex: 1,
+      movements: [],
+      attacks: [
+        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 9, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage' },
       ],
       effects: [],
     },

@@ -1,0 +1,23 @@
+{
+  // Roadmap 3B.2: with 4 AP a combatant can make two 2-AP attacks. The second one sees the HP
+  // left by the first (ticks resolve in order).
+  "description": "AP: two melee attacks in one round, the second finishes the goblin",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [5, 5] },
+    { "id": "Goblin",  "hp": 10, "damage": "d4", "at": [5, 6] }
+  ],
+  "plans": {
+    "Fighter": ["melee Goblin", "melee Goblin"],
+    "Goblin":  ["defend"]
+  },
+  "dice": [
+    15, 6,   // tick 1: hit for 6 → Goblin 4
+    11, 5    // tick 2: hit for 5 → Goblin defeated
+  ],
+  "expect": {
+    "ticks": 2,
+    "hp": { "Goblin": -1 },
+    "defeated": ["Goblin"],
+    "hits": [ { "tick": 1, "attacker": "Fighter" }, { "tick": 2, "attacker": "Fighter" } ]
+  }
+}

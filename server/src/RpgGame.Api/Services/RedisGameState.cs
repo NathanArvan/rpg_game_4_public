@@ -115,6 +115,12 @@ public class RedisGameState : IRedisGameState
         await db.HashSetAsync($"encounter:{encounterId}:planned_actions", combatantId, actionJson);
     }
 
+    public async Task ClearPlannedActionAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        await db.HashDeleteAsync($"encounter:{encounterId}:planned_actions", combatantId);
+    }
+
     public async Task<Dictionary<string, string>> GetAllPlannedActionsAsync(string encounterId)
     {
         var db = _redis.GetDatabase();

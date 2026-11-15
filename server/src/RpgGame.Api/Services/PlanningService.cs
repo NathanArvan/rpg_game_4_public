@@ -4,6 +4,7 @@ using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
 using RpgGame.Infrastructure.Data;
+using RpgGame.Rules;
 using System.Text.Json;
 
 namespace RpgGame.Api.Services;
@@ -33,17 +34,10 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, combatantRef.Id))
             throw new GameActionException("You are defeated.", isActionRejected: true);
 
-        if (action.Actions.Count != 1)
-            throw new GameActionException("Action array must contain exactly 1 action.", isActionRejected: true);
+        var apSpent = await ValidateAndStorePlan(action, combatantRef.Id, activeEncounter);
 
-        var entry = action.Actions[0];
-        await ValidateActionEntry(entry, combatantRef.Id, activeEncounter);
-
-        var actionJson = JsonSerializer.Serialize(action, _jsonOptions);
-        await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantRef.Id, actionJson);
-
-        logger.LogInformation("PlanAction: user={UserId} combatant={CombatantId} action={ActionType}",
-            userId, combatantRef.Id, entry.Type);
+        logger.LogInformation("PlanAction: user={UserId} combatant={CombatantId} actions={Actions} ap={ApSpent}",
+            userId, combatantRef.Id, Describe(action), apSpent);
         return new PlanActionResult(true);
     }
 
@@ -153,6 +147,65 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         return new ForceResolveResult(gameSession.Id, true, encounterId);
     }
 
+    /// <summary>
+    /// Validates a whole action queue (3B.2) and stores it, replacing any earlier plan. An empty
+    /// queue clears the plan. Targets are checked here; the AP budget and the shared movement
+    /// budget come from <see cref="PlanValidator"/>, the same rules the resolver applies.
+    /// </summary>
+    /// <returns>AP the stored queue costs.</returns>
+    private async Task<int> ValidateAndStorePlan(
+        PlannedActionArray action,
+        string combatantId,
+        ActiveEncounterEntry activeEncounter)
+    {
+        var encounterId = activeEncounter.EncounterId;
+        if (action.Actions is not { Count: > 0 })
+        {
+            await redisState.ClearPlannedActionAsync(encounterId, combatantId);
+            return 0;
+        }
+
+        foreach (var entry in action.Actions)
+            await ValidateActionEntry(entry, combatantId, activeEncounter);
+
+        // The map only matters for moves (bounds and the starting cell).
+        var hasMove = action.Actions.Any(e => e.Type == "move");
+        var map = hasMove
+            ? await redisState.GetMapAsync(encounterId)
+                ?? throw new GameActionException("Map data not found.", isActionRejected: true)
+            : null;
+
+        // AP budget and movement range come from the combatant's combat profile (3B.1/3B.2).
+        var combatantGuid = GuidParser.TryParse(combatantId);
+        var profile = combatantGuid is null
+            ? null
+            : await db.EncounterCombatants
+                .AsNoTracking()
+                .Where(c => c.Id == combatantGuid.Value)
+                .Select(c => c.Profile)
+                .FirstOrDefaultAsync();
+
+        var queue = action.Actions.Select(e => new PlannedAction(
+            RulesWireMapping.ParseActionType(e.Type)!.Value,
+            e.TargetCell is { } cell ? new GridPosition(cell.X, cell.Y) : null,
+            e.TargetCombatantId)).ToList();
+        GridPosition? start = map is not null && map.Positions.TryGetValue(combatantId, out var current)
+            ? new GridPosition(current.X, current.Y)
+            : null;
+
+        var check = PlanValidator.Validate(start, CombatProfileMapping.ToRules(profile), queue,
+            map?.GridWidth ?? 0, map?.GridHeight ?? 0);
+        if (!check.IsValid)
+            throw new GameActionException(check.Error!, isActionRejected: true);
+
+        await redisState.SetPlannedActionAsync(encounterId, combatantId, JsonSerializer.Serialize(action, _jsonOptions));
+        return check.ApSpent;
+    }
+
+    private static string Describe(PlannedActionArray action) =>
+        action.Actions is { Count: > 0 } ? string.Join(",", action.Actions.Select(a => a.Type)) : "(cleared)";
+
+    /// <summary>Per-entry checks that don't depend on the rest of the queue.</summary>
     private async Task ValidateActionEntry(
         PlannedActionEntry entry,
         string combatantId,
@@ -163,34 +216,6 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
             case "move":
                 if (entry.TargetCell is null)
                     throw new GameActionException("Move action requires a target cell.", isActionRejected: true);
-
-                var x = entry.TargetCell.X;
-                var y = entry.TargetCell.Y;
-
-                var map = await redisState.GetMapAsync(activeEncounter.EncounterId)
-                    ?? throw new GameActionException("Map data not found.", isActionRejected: true);
-
-                if (x < 0 || x >= map.GridWidth || y < 0 || y >= map.GridHeight)
-                    throw new GameActionException(
-                        $"Target cell is out of bounds (0–{map.GridWidth - 1}, 0–{map.GridHeight - 1}).", isActionRejected: true);
-
-                if (!map.Positions.TryGetValue(combatantId, out var current))
-                    throw new GameActionException("Current position not found.", isActionRejected: true);
-
-                // Movement range comes from the combatant's combat profile (3B.1).
-                var combatantGuid = GuidParser.TryParse(combatantId);
-                var profile = combatantGuid is null
-                    ? null
-                    : await db.EncounterCombatants
-                        .AsNoTracking()
-                        .Where(c => c.Id == combatantGuid.Value)
-                        .Select(c => c.Profile)
-                        .FirstOrDefaultAsync();
-                var range = CombatProfileMapping.MovementRange(profile);
-
-                var chebyshev = Math.Max(Math.Abs(x - current.X), Math.Abs(y - current.Y));
-                if (chebyshev > range)
-                    throw new GameActionException($"Move exceeds maximum range ({range} squares).", isActionRejected: true);
                 break;
 
             case "melee_attack":
@@ -255,18 +280,10 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, combatantId))
             throw new GameActionException("That combatant is defeated.", isActionRejected: true);
 
-        if (action.Actions.Count != 1)
-            throw new GameActionException("Action array must contain exactly 1 action.", isActionRejected: true);
+        var apSpent = await ValidateAndStorePlan(action, combatantId, activeEncounter);
 
-        var entry = action.Actions[0];
-        logger.LogInformation("PlanEnemyAction: validating action type={Type}", entry.Type);
-        await ValidateActionEntry(entry, combatantId, activeEncounter);
-
-        var actionJson = JsonSerializer.Serialize(action, _jsonOptions);
-        await redisState.SetPlannedActionAsync(activeEncounter.EncounterId, combatantId, actionJson);
-
-        logger.LogInformation("PlanEnemyAction: gm={GmUserId} combatant={CombatantId} action={ActionType} — stored",
-            gmUserId, combatantId, entry.Type);
+        logger.LogInformation("PlanEnemyAction: gm={GmUserId} combatant={CombatantId} actions={Actions} ap={ApSpent} — stored",
+            gmUserId, combatantId, Describe(action), apSpent);
         return new PlanActionResult(true);
     }
 

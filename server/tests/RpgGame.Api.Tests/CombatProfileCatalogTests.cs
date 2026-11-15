@@ -46,9 +46,26 @@ public class CombatProfileCatalogTests : IDisposable
         var rules = CombatProfileMapping.ToRules(snapshot);
         Assert.Equal(
             new CombatProfile(bruiser.MaxHp, bruiser.MovementRange, bruiser.Speed, bruiser.MeleeAccuracy,
-                bruiser.RangedAccuracy, bruiser.Dodge, DamageDie.Parse(bruiser.BaseDamage)),
+                bruiser.RangedAccuracy, bruiser.Dodge, DamageDie.Parse(bruiser.BaseDamage), bruiser.MaxAp),
             rules);
         Assert.NotSame(snapshot, bruiser.Snapshot());
+    }
+
+    [Fact]
+    public void ShippedProfiles_HaveApBudgets_ThatDiffer()
+    {
+        var all = TestProfiles.Catalog.All;
+        Assert.All(all, p => Assert.InRange(p.MaxAp, CombatProfileCatalog.MinAp, CombatProfileCatalog.MaxApLimit));
+        Assert.True(all.Select(p => p.MaxAp).Distinct().Count() > 1);
+        Assert.Equal(all.Select(p => p.MaxAp), all.Select(p => p.Snapshot().MaxAp!.Value));
+    }
+
+    [Fact]
+    public void StoredProfileWithoutMaxAp_GetsTheDefaultBudget()
+    {
+        var old = TestProfiles.Catalog.Find("scout")!.Snapshot();
+        old.MaxAp = null; // stored before 3B.2
+        Assert.Equal(CombatProfile.DefaultMaxAp, CombatProfileMapping.ToRules(old).MaxAp);
     }
 
     [Fact]
@@ -61,7 +78,7 @@ public class CombatProfileCatalogTests : IDisposable
         var p = Assert.Single(CombatProfileCatalog.Load(Write("""
             { "profiles": [ { "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6" } ] }
             """)));
-        Assert.Equal(("any", "", 0, 0), (p.Side, p.Description, p.MeleeAccuracy, p.RangedAccuracy));
+        Assert.Equal(("any", "", 0, 0, CombatProfile.DefaultMaxAp), (p.Side, p.Description, p.MeleeAccuracy, p.RangedAccuracy, p.MaxAp));
     }
 
     [Theory]
@@ -72,6 +89,8 @@ public class CombatProfileCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "2d6" }""", "'damage'")]
     [InlineData("""{ "id": "x", "name": "X", "side": "ally", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6" }""", "'side'")]
     [InlineData("""{ "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6" }""", "'id'")]
+    [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "ap": 0 }""", "'ap'")]
+    [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "ap": 11 }""", "'ap'")]
     public void BrokenProfile_FailsWithTheFileName(string profile, string expected)
     {
         var path = Write($$"""{ "profiles": [ {{profile}} ] }""");

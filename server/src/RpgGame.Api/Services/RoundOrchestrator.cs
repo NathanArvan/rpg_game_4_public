@@ -13,7 +13,10 @@ public class RoundOrchestrator(
     IHubContext<GameHub> hubContext,
     ILogger<RoundOrchestrator> logger) : IRoundOrchestrator
 {
-    /// <summary>How long clients get to play back a resolution before the next phase starts.</summary>
+    /// <summary>
+    /// How long clients get to play back each tick of a resolution before the next phase starts.
+    /// A round with an AP queue of n actions has n ticks (3B.2), so the wait is n times this.
+    /// </summary>
     internal TimeSpan PlaybackDelay { get; init; } = TimeSpan.FromSeconds(3);
 
     public async Task ResolveAndAdvanceAsync(Guid encounterId, Guid sessionId)
@@ -32,8 +35,8 @@ public class RoundOrchestrator(
         foreach (var defeatedId in resolution.DefeatedCombatantIds)
             await group.SendAsync(HubEvents.Events.CombatantDefeated, new CombatantDefeatedPayload(defeatedId));
 
-        if (PlaybackDelay > TimeSpan.Zero)
-            await Task.Delay(PlaybackDelay); // let clients play back before the next phase
+        if (PlaybackDelay > TimeSpan.Zero) // let clients play back every tick before the next phase
+            await Task.Delay(PlaybackDelay * Math.Max(1, resolution.Ticks.Count));
 
         var winningSide = EncounterEndCheck.Evaluate(resolution.UpdatedCombatants);
         if (winningSide is not null)
@@ -57,7 +60,8 @@ public class RoundOrchestrator(
         await StartPlanningPhaseAsync(encounterId, sessionId, new PlanningPhaseStartedPayload(
             resolution.NewRoundNumber,
             timerSeconds,
-            resolution.UpdatedCombatants));
+            resolution.UpdatedCombatants,
+            RulesWireMapping.ApCosts()));
     }
 
     public async Task StartPlanningPhaseAsync(Guid encounterId, Guid sessionId, PlanningPhaseStartedPayload payload)

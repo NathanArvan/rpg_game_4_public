@@ -83,6 +83,8 @@ public sealed class BattlePresetCatalog
             if (definition is null) Fail($"{who}: 'profile' must name a combat profile (got '{c.Profile}')");
             if (c.Hp is <= 0) Fail($"{who}: 'hp' must be at least 1");
             if (c.Move is <= 0) Fail($"{who}: 'move' must be at least 1");
+            if (c.Ap is < CombatProfileCatalog.MinAp or > CombatProfileCatalog.MaxApLimit)
+                Fail($"{who}: 'ap' must be between {CombatProfileCatalog.MinAp} and {CombatProfileCatalog.MaxApLimit}");
             if (c.Damage is not null)
             {
                 try { DamageDie.Parse(c.Damage); }
@@ -103,6 +105,7 @@ public sealed class BattlePresetCatalog
             profile.RangedAccuracy = c.RangedAccuracy ?? profile.RangedAccuracy;
             profile.Dodge = c.Dodge ?? profile.Dodge;
             profile.BaseDamage = c.Damage?.Trim() ?? profile.BaseDamage;
+            profile.MaxAp = c.Ap ?? profile.MaxAp;
 
             combatants.Add(new PresetCombatant(
                 c.Name!.Trim(), side!, profile, x, y,
@@ -138,6 +141,7 @@ public sealed class BattlePresetCatalog
         public int? MeleeAccuracy { get; set; }
         public int? RangedAccuracy { get; set; }
         public int? Dodge { get; set; }
+        public int? Ap { get; set; }
         public int[]? At { get; set; }
         public bool? Ai { get; set; }
     }

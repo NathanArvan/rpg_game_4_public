@@ -17,7 +17,8 @@ public sealed record CombatProfileDefinition(
     int MeleeAccuracy,
     int RangedAccuracy,
     int Dodge,
-    string BaseDamage)
+    string BaseDamage,
+    int MaxAp = CombatProfile.DefaultMaxAp)
 {
     /// <summary>A fresh copy of these values to store on a combatant.</summary>
     public CombatProfileValues Snapshot() => new()
@@ -31,6 +32,7 @@ public sealed record CombatProfileDefinition(
         RangedAccuracy = RangedAccuracy,
         Dodge = Dodge,
         BaseDamage = BaseDamage,
+        MaxAp = MaxAp,
     };
 }
 
@@ -51,6 +53,9 @@ public sealed class CombatProfileCatalog
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
     };
+
+    /// <summary>Allowed range for a profile's (or preset override's) AP per round.</summary>
+    public const int MinAp = 1, MaxApLimit = 10;
 
     private readonly Dictionary<string, CombatProfileDefinition> _byId;
 
@@ -116,11 +121,13 @@ public sealed class CombatProfileCatalog
         if (p.Dodge is null) Fail("'dodge' is required");
         try { DamageDie.Parse(p.Damage ?? ""); }
         catch (FormatException) { Fail("'damage' must be a die like \"d6\""); }
+        if (p.Ap is < MinAp or > MaxApLimit) Fail($"'ap' must be between {MinAp} and {MaxApLimit}");
 
         return new CombatProfileDefinition(
             p.Id!.Trim(), p.Name!.Trim(), p.Description?.Trim() ?? "", side,
             p.Hp!.Value, p.Move!.Value, p.Speed!.Value,
-            p.MeleeAccuracy ?? 0, p.RangedAccuracy ?? 0, p.Dodge!.Value, p.Damage!.Trim());
+            p.MeleeAccuracy ?? 0, p.RangedAccuracy ?? 0, p.Dodge!.Value, p.Damage!.Trim(),
+            p.Ap ?? CombatProfile.DefaultMaxAp);
     }
 
     private sealed class FileDto
@@ -141,6 +148,7 @@ public sealed class CombatProfileCatalog
         public int? RangedAccuracy { get; set; }
         public int? Dodge { get; set; }
         public string? Damage { get; set; }
+        public int? Ap { get; set; }
     }
 }
 
@@ -151,8 +159,10 @@ internal static class CombatProfileMapping
     public static CombatProfile ToRules(CombatProfileValues? v) => v is null
         ? CombatProfile.Default
         : new CombatProfile(v.MaxHp, v.MovementRange, v.Speed, v.MeleeAccuracy, v.RangedAccuracy, v.Dodge,
-            DamageDie.Parse(v.BaseDamage));
+            DamageDie.Parse(v.BaseDamage), MaxAp(v));
 
     public static int MaxHp(CombatProfileValues? v) => v?.MaxHp ?? CombatProfile.Default.MaxHp;
     public static int MovementRange(CombatProfileValues? v) => v?.MovementRange ?? CombatProfile.Default.MovementRange;
+    /// <summary>Rows from before 3B.2 have no MaxAp: they get the default.</summary>
+    public static int MaxAp(CombatProfileValues? v) => v?.MaxAp ?? CombatProfile.DefaultMaxAp;
 }

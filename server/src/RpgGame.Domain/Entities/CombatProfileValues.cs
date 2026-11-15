@@ -19,4 +19,6 @@ public class CombatProfileValues
     public int Dodge { get; set; }
     /// <summary>Damage die, e.g. "d8".</summary>
     public string BaseDamage { get; set; } = "";
+    /// <summary>Action points per round (3B.2). Null on rows stored before 3B.2: read as the default.</summary>
+    public int? MaxAp { get; set; }
 }

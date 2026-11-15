@@ -11,4 +11,5 @@ public record CombatantDto(
     bool IsAiControlled = false,
     string ProfileId = "",
     string ProfileName = "",
-    int MovementRange = 6);
+    int MovementRange = 6,
+    int MaxAp = 4);

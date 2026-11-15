@@ -48,7 +48,8 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `hp` | 20 | HP at the start of the round |
 | `maxHp` | `hp` | Max HP |
 | `speed` | 10 | Movement tiebreaker when two movers claim the same cell |
-| `move` | 6 | Movement range: max cells per move |
+| `move` | 6 | Movement range: max cells per round, shared by all of the combatant's moves |
+| `maxAp` | 4 | Action points per round. A queue costing more is cut to the actions that fit |
 | `meleeAccuracy` | 0 | Added to the d20 of this combatant's melee attacks |
 | `rangedAccuracy` | 0 | Added to the d20 of this combatant's ranged attacks |
 | `dodge` | 10 | An attack on this combatant hits when d20 + the attacker's accuracy is at least this |
@@ -64,9 +65,16 @@ tick 2 runs everyone's second action, and so on. The number of ticks equals the 
 queue. A combatant with a shorter queue idles once it runs out. Combatants you don't list
 do nothing.
 
+**Action points (3B.2).** Each action costs AP: move 1, melee 2, ranged 2, defend 1. A queue
+must fit the combatant's `maxAp`. If it doesn't, the resolver drops every action from the first
+one that doesn't fit (the server would have rejected such a plan). All of a combatant's moves in
+one round share its `move` cells: each move starts where the last one stopped, and a move stops
+early once the budget runs out. Steps a move doesn't take because it was blocked aren't counted.
+
 **`"ai"`** as a combatant's whole plan (`"Goblin": ["ai"]`) lets the enemy AI (`EnemyAi`)
-choose its action from the starting positions, the same way the server does for AI-controlled
-monsters: melee the nearest enemy if it's adjacent, otherwise walk toward it. Give combatants a
+choose its queue from the starting positions, the same way the server does for AI-controlled
+monsters: melee the nearest enemy as often as its AP allows if it's adjacent; otherwise walk
+toward it, then melee with the AP left if the walk ends next to it. Give combatants a
 `side` so the AI knows who its enemies are. Use `expect.plans` to check what it chose.
 
 | Action | Meaning |
@@ -113,7 +121,7 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `blocked` | The exact set of `{ "tick", "id" }` movers that were stopped short |
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
-| `plans` | `{ "id": "move 0,13" }`, the action the AI chose for an `"ai"` plan (same syntax as `plans`) |
+| `plans` | `{ "id": "move 0,13" }` or `{ "id": ["move 5,6", "melee Hero"] }`, the queue the AI chose for an `"ai"` plan (same syntax as `plans`). A single string means a one-action queue |
 
 When a check fails, the test lists every mismatch, for example
 `hp of B: expected 12, got 13`.
