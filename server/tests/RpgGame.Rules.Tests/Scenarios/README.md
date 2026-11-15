@@ -51,6 +51,7 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `damage` | `"d8"` | Damage die, written as `"d4"`, `"d6"`, `"d8"`, or `"1d8"` |
 | `at` | none | `[x, y]` start cell. If you leave it out, the combatant is treated as standing at (0, 0) |
 | `defeated` | false | Already defeated before this round |
+| `side` | `"party"` | Team, used only by `"ai"` plans. Any two different sides are enemies |
 
 ### `plans`
 
@@ -58,6 +59,11 @@ Each combatant has an ordered **queue** of actions. Tick 1 runs everyone's first
 tick 2 runs everyone's second action, and so on. The number of ticks equals the longest
 queue. A combatant with a shorter queue idles once it runs out. Combatants you don't list
 do nothing.
+
+**`"ai"`** as a combatant's whole plan (`"Goblin": ["ai"]`) lets the enemy AI (`EnemyAi`)
+choose its action from the starting positions, the same way the server does for AI-controlled
+monsters: melee the nearest enemy if it's adjacent, otherwise walk toward it. Give combatants a
+`side` so the AI knows who its enemies are. Use `expect.plans` to check what it chose.
 
 | Action | Meaning |
 |---|---|
@@ -103,6 +109,7 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `blocked` | The exact set of `{ "tick", "id" }` movers that were stopped short |
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
+| `plans` | `{ "id": "move 0,13" }`, the action the AI chose for an `"ai"` plan (same syntax as `plans`) |
 
 When a check fails, the test lists every mismatch, for example
 `hp of B: expected 12, got 13`.

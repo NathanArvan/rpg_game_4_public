@@ -9,6 +9,8 @@ export interface Combatant {
   maxHp: number;
   isDefeated: boolean;
   combatantType: 'player' | 'monster';
+  /** Planned and locked in by the server's enemy AI each round. */
+  isAiControlled: boolean;
 }
 
 export interface EncounterOutcome {

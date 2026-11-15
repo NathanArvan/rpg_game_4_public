@@ -24,6 +24,7 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
   currentHp: 20,
   maxHp: 20,
   combatantType: 'player',
+  isAiControlled: false,
   ...overrides,
 });
 
@@ -35,6 +36,7 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   maxHp: 20,
   isDefeated: false,
   combatantType: 'player',
+  isAiControlled: false,
   ...overrides,
 });
 
@@ -62,6 +64,21 @@ describe('EncounterState', () => {
 
       const combatants = store.selectSnapshot(EncounterState.combatants);
       expect(combatants[0].isDefeated).toBeFalse();
+    });
+  });
+
+  describe('AI flag', () => {
+    it('is kept from EncounterStarted and PlanningPhaseStarted', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'm1', combatantType: 'monster', isAiControlled: true })]));
+      expect(store.snapshot().encounter.combatants[0].isAiControlled).toBeTrue();
+
+      store.dispatch(new PlanningPhaseStarted(2, 30, [
+        makePlanningCombatantDto({ id: 'm1', combatantType: 'monster', isAiControlled: true }),
+        makePlanningCombatantDto({ id: 'c1' }),
+      ]));
+      const [monster, player] = store.snapshot().encounter.combatants;
+      expect(monster.isAiControlled).toBeTrue();
+      expect(player.isAiControlled).toBeFalse();
     });
   });
 

@@ -88,6 +88,7 @@ builder.Services.AddSingleton<IDiceRoller, RandomDice>();
 builder.Services.AddScoped<IResolutionService, ResolutionService>();
 builder.Services.AddSingleton<IPlanningTimer, PlanningTimerService>();
 builder.Services.AddScoped<IRoundOrchestrator, RoundOrchestrator>();
+builder.Services.AddScoped<IAiPlanningService, AiPlanningService>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();

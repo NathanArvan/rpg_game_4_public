@@ -5,7 +5,7 @@ namespace RpgGame.Api.Services;
 public interface IEncounterService
 {
     Task<EncounterStartedResult> StartEncounterAsync(string joinCode, string userId);
-    Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName);
+    Task<AddMonsterResult> AddMonsterAsync(string joinCode, string gmUserId, string monsterName, bool isAiControlled);
 
     /// <summary>
     /// Marks the encounter Ended, logs an "encounter_ended" GameEvent, and clears the session's live

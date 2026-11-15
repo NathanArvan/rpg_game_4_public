@@ -287,6 +287,9 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<Guid>("EncounterId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("IsAiControlled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");

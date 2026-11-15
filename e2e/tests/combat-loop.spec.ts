@@ -28,7 +28,7 @@ test('GM and player play two simultaneous rounds', async ({ browser }) => {
 
   await test.step('lobby: GM opens a session and stages a monster; player joins', async () => {
     const joinCode = await gmOpenSession(gm, `E2E Campaign ${Date.now()}`);
-    await gmAddMonster(gm, monsterName);
+    await gmAddMonster(gm, monsterName, { ai: false }); // this spec covers manual GM planning
 
     await playerCreateCharacter(player);
     characterName = await playerJoinSession(player, joinCode, displayName);

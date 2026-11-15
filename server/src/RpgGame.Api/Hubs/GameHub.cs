@@ -11,7 +11,7 @@ public class GameHub(
     IEncounterService encounterSvc,
     IPlanningService planningSvc,
     IRoundOrchestrator roundOrchestrator,
-    IPlanningTimer timerSvc,
+    IAiPlanningService aiPlanningSvc,
     ILogger<GameHub> logger) : Hub
 {
     public override Task OnConnectedAsync()
@@ -42,10 +42,7 @@ public class GameHub(
         var groupName = $"session:{r.SessionId}";
 
         await Clients.Group(groupName).SendAsync(HubEvents.Events.EncounterStarted, r.Payload);
-        await Clients.Group(groupName).SendAsync(HubEvents.Events.PlanningPhaseStarted, r.PlanningPayload);
-
-        var encounterId = Guid.Parse(r.Payload.EncounterId);
-        timerSvc.Start(encounterId, r.SessionId, r.PlanningPayload.PlanningTimerDurationSeconds);
+        await roundOrchestrator.StartPlanningPhaseAsync(Guid.Parse(r.Payload.EncounterId), r.SessionId, r.PlanningPayload);
     }
 
     public async Task PlanAction(string joinCode, PlannedActionArray plannedAction)
@@ -104,16 +101,24 @@ public class GameHub(
         }
     }
 
-    public async Task AddMonster(string joinCode, string monsterName)
+    public async Task AddMonster(string joinCode, string monsterName, bool isAiControlled)
     {
         logger.LogInformation("AddMonster hub: joinCode={JoinCode} userId={UserId} monsterName={MonsterName}", joinCode, Context.UserIdentifier, monsterName);
         try
         {
-            var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName);
+            var r = await encounterSvc.AddMonsterAsync(joinCode, Context.UserIdentifier!, monsterName, isAiControlled);
             var groupName = $"session:{r.SessionId}";
             logger.LogInformation("AddMonster hub: broadcasting MonsterAdded to group {GroupName}", groupName);
             await Clients.Group(groupName).SendAsync(HubEvents.Events.MonsterAdded,
                 new MonsterAddedPayload(r.MonsterDto, r.SpawnPosition));
+
+            // Added mid-round (monsters can only be added during planning): an AI monster plans now.
+            if (isAiControlled && !string.IsNullOrEmpty(r.EncounterId))
+            {
+                var lockIns = await aiPlanningSvc.PlanAndLockInAsync(Guid.Parse(r.EncounterId), r.MonsterDto.Id);
+                foreach (var lockIn in lockIns)
+                    await Clients.Group(groupName).SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(lockIn.CharacterName));
+            }
         }
         catch (GameActionException ex) when (ex.IsActionRejected)
         {

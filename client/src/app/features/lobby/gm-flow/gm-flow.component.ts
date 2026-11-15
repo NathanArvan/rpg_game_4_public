@@ -28,6 +28,7 @@ export class GmFlowComponent {
   gmError = '';
   encounterError = '';
   newMonsterName = '';
+  newMonsterAi = true;
   monsters$: Observable<Combatant[]>;
 
   constructor(
@@ -89,7 +90,7 @@ export class GmFlowComponent {
   async addMonster(): Promise<void> {
     const name = this.newMonsterName.trim();
     if (!name || !this.gmJoinCode) return;
-    await this.hub.addMonster(this.gmJoinCode, name);
+    await this.hub.addMonster(this.gmJoinCode, name, this.newMonsterAi);
     this.newMonsterName = '';
   }
 

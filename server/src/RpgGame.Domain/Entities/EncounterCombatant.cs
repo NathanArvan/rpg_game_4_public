@@ -8,5 +8,7 @@ public class EncounterCombatant
     public Guid? CharacterId { get; set; }
     public string CharacterName { get; set; } = "";
     public string CombatantType { get; set; } = "player"; // "player" | "monster"
+    /// <summary>Planned and locked in by the server each round (EnemyAi) instead of by a person.</summary>
+    public bool IsAiControlled { get; set; }
     public Encounter Encounter { get; set; } = null!;
 }

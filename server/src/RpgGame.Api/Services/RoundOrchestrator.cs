@@ -7,6 +7,7 @@ namespace RpgGame.Api.Services;
 public class RoundOrchestrator(
     IResolutionService resolutionSvc,
     IEncounterService encounterSvc,
+    IAiPlanningService aiPlanningSvc,
     IRedisGameState redisState,
     IPlanningTimer timer,
     IHubContext<GameHub> hubContext,
@@ -49,12 +50,24 @@ public class RoundOrchestrator(
         var nextTimerAt = DateTimeOffset.UtcNow.AddSeconds(GameConstants.PlanningTimerSeconds);
         await redisState.StartNextPlanningPhaseAsync(sessionId.ToString(), resolution.NewRoundNumber, nextTimerAt);
 
-        await group.SendAsync(HubEvents.Events.PlanningPhaseStarted, new PlanningPhaseStartedPayload(
+        await StartPlanningPhaseAsync(encounterId, sessionId, new PlanningPhaseStartedPayload(
             resolution.NewRoundNumber,
             GameConstants.PlanningTimerSeconds,
             resolution.UpdatedCombatants));
-        logger.LogInformation("RoundOrchestrator: PlanningPhaseStarted sent for round {Round}", resolution.NewRoundNumber);
+    }
 
-        timer.Start(encounterId, sessionId, GameConstants.PlanningTimerSeconds);
+    public async Task StartPlanningPhaseAsync(Guid encounterId, Guid sessionId, PlanningPhaseStartedPayload payload)
+    {
+        var group = hubContext.Clients.Group($"session:{sessionId}");
+
+        await group.SendAsync(HubEvents.Events.PlanningPhaseStarted, payload);
+        logger.LogInformation("RoundOrchestrator: PlanningPhaseStarted sent for round {Round}", payload.RoundNumber);
+
+        timer.Start(encounterId, sessionId, payload.PlanningTimerDurationSeconds);
+
+        // After PlanningPhaseStarted, which resets each client's lock-in list.
+        var aiLockIns = await aiPlanningSvc.PlanAndLockInAsync(encounterId);
+        foreach (var lockIn in aiLockIns)
+            await group.SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(lockIn.CharacterName));
     }
 }

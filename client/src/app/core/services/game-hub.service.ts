@@ -179,8 +179,8 @@ export class GameHubService {
     await this.connection.invoke(HubEvents.Methods.ForceResolve, joinCode);
   }
 
-  async addMonster(joinCode: string, name: string): Promise<void> {
-    await this.connection.invoke(HubEvents.Methods.AddMonster, joinCode, name);
+  async addMonster(joinCode: string, name: string, isAiControlled: boolean): Promise<void> {
+    await this.connection.invoke(HubEvents.Methods.AddMonster, joinCode, name, isAiControlled);
   }
 
   async planEnemyAction(joinCode: string, combatantId: string, action: PlannedActionArray): Promise<void> {

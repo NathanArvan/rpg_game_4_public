@@ -17,6 +17,7 @@ export interface CombatantDto {
   currentHp: number;
   maxHp: number;
   combatantType: string;
+  isAiControlled: boolean;
 }
 
 export interface EncounterEndedPayload {
@@ -72,6 +73,7 @@ export interface PlanningCombatantDto {
   maxHp: number;
   isDefeated: boolean;
   combatantType: string;
+  isAiControlled: boolean;
 }
 
 export interface PlayerLockedInPayload {
