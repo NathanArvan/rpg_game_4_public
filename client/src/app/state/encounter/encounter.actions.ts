@@ -65,6 +65,11 @@ export class ResolutionCompleted {
   constructor(public payload: ResolutionPayload) {}
 }
 
+export class EncounterEnded {
+  static readonly type = '[Encounter] Encounter Ended';
+  constructor(public winningSide: string, public finalRoundNumber: number) {}
+}
+
 export class ClearEncounter {
   static readonly type = '[Encounter] Clear';
 }

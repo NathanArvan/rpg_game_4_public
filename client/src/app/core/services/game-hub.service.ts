@@ -7,6 +7,7 @@ import {
   AllLockedIn,
   ClearMyPlannedAction,
   CombatantDefeated,
+  EncounterEnded,
   EncounterStarted,
   MonsterAdded,
   PlayerLockedIn,
@@ -20,6 +21,7 @@ import {
   ActionRejectedPayload,
   AllLockedInPayload,
   CombatantDefeatedPayload,
+  EncounterEndedPayload,
   EncounterStartedPayload,
   HubEvents,
   MonsterAddedPayload,
@@ -125,6 +127,16 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
     });
 
+    this.connection.on(HubEvents.Events.EncounterEnded, (payload: EncounterEndedPayload) => {
+      console.log('[hub] EncounterEnded received:', payload);
+      this.ngZone.run(() => {
+        this.store.dispatch(new EncounterEnded(payload.winningSide, payload.finalRoundNumber));
+        this.store.dispatch(new AddFeedBatch([`— Encounter over after round ${payload.finalRoundNumber}: ${
+          payload.winningSide === 'party' ? 'the party wins' : payload.winningSide === 'enemy' ? 'the enemies win' : 'draw'
+        } —`]));
+      });
+    });
+
     this.connection.on(HubEvents.Events.MonsterAdded, (payload: MonsterAddedPayload) => {
       console.log('[hub] MonsterAdded received:', payload);
       this.ngZone.run(() => this.store.dispatch(new MonsterAdded(payload)));
@@ -133,6 +145,10 @@ export class GameHubService {
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
     this.connection.onreconnected((id) => console.log('[hub] reconnected, connectionId:', id));
+  }
+
+  isConnected(): boolean {
+    return this.connection.state === HubConnectionState.Connected;
   }
 
   async connect(): Promise<void> {

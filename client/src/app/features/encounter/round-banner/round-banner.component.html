@@ -14,4 +14,7 @@
   <ng-container *ngIf="isResolving$ | async">
     <span class="phase resolving">Resolving&hellip;</span>
   </ng-container>
+  <ng-container *ngIf="outcome$ | async as outcome">
+    <span class="phase">Encounter over &mdash; Round {{ outcome.finalRoundNumber }}</span>
+  </ng-container>
 </div>

@@ -105,7 +105,7 @@ Clean Architecture with four projects:
 - **CampaignMember** — CampaignId, UserId, Role (Gm|Player); unique index on (CampaignId, UserId)
 - **GameSession** — Id, CampaignId, JoinCode (6-char alphanumeric, unique), StartedAt
 - **Character** — Id, UserId, Name, Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (D&D-style fields; unused by combat from 3B.1, removal deferred to the stats/progression decision)
-- **Encounter** — Id, GameSessionId, Status (Active|Ended), StartedAt, RoundNumber; unique-active index on GameSessionId
+- **Encounter** — Id, GameSessionId, Status (Active|Ended), StartedAt, EndedAt (nullable), RoundNumber; unique-active index on GameSessionId
 - **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`)
 - **GameEvent** — Id, EncounterId, OccurredAt, EventType (string), Payload (JSONB); append-only log
 
@@ -138,9 +138,8 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 1. **Lobby** — GM creates campaign → starts session → connects; GM can `AddMonster` (staged in Redis until the encounter starts). Players join with a character.
 2. **StartEncounter** — creates Encounter + Combatants, places players on row 0 and monsters on row 19, broadcasts `EncounterStarted` + `PlanningPhaseStarted`, starts the planning timer (`GameConstants.PlanningTimerSeconds`, currently 300s).
 3. **Planning** — each player plans one action (`move` | `melee_attack` | `ranged_attack` | `defend`) as a `PlannedActionArray` of length 1 and locks in. GM plans each monster (`PlanEnemyAction`) and locks in all enemies at once (`LockInEnemies`; unplanned monsters defend).
-4. **Resolution** — when every living combatant is locked in (or GM `ForceResolve`, or timer expiry), `ResolutionService` hands state to `RoundResolver`, which runs the tick loop (Movement → Attacks → Effects); `ResolutionService` then writes Redis + `GameEvent`s, broadcasts `ResolutionCompleted` (which carries `defeatedCombatantIds`), then the next `PlanningPhaseStarted`.
-
-**Known gap:** there is no end-of-encounter yet. `EncounterEnded` and `CombatantDefeated` exist as contracts and client handlers, but the server never broadcasts them — rounds keep cycling after one side is wiped out.
+4. **Resolution** — when every living combatant is locked in (or GM `ForceResolve`, or timer expiry), `ResolutionService` hands state to `RoundResolver`, which runs the tick loop (Movement → Attacks → Effects); `ResolutionService` then writes Redis + `GameEvent`s, and `RoundOrchestrator` broadcasts `ResolutionCompleted` (which carries `defeatedCombatantIds`) plus one `CombatantDefeated` per newly defeated combatant.
+5. **Next round or end** — after a 3s playback delay, `RoundOrchestrator` checks `EncounterEndCheck`: if one side has no living combatants (and both sides had at least one), `EncounterService.EndEncounterAsync` marks the encounter `Ended`, logs an `encounter_ended` GameEvent and deletes the session's Redis encounter state, and `EncounterEnded` (`winningSide`: `party` | `enemy` | `draw`) is broadcast. Otherwise the next `PlanningPhaseStarted` is sent and the timer restarts. Clients show a result overlay; "Return to lobby" clears encounter state, and the GM can start a new encounter in the same session.
 
 ### Real-Time (SignalR + Redis)
 - Hub at `/hubs/game`, requires `[Authorize]`
@@ -162,8 +161,7 @@ All REST controllers use the `api/` prefix directly in their `[Route]` attribute
 | `ForceResolve(joinCode)` | GM only | Resolves immediately; unplanned combatants defend |
 
 **Server → client broadcasts:**
-`PlayerPresenceChanged`, `MonsterAdded`, `EncounterStarted`, `PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `ResolutionCompleted`, `ActionRejected`
-(`CombatantDefeated` and `EncounterEnded` are defined but currently unused by the server — see Known gap above.)
+`PlayerPresenceChanged`, `MonsterAdded`, `EncounterStarted`, `PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `ResolutionCompleted`, `CombatantDefeated`, `EncounterEnded`, `ActionRejected`
 
 **Redis key patterns:**
 
@@ -214,13 +212,15 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **ICurrentUserAccessor / HttpCurrentUserAccessor** — abstracts `HttpContext.User` claims into `UserId`/`UserName`; injected into controllers instead of accessing `User` directly
 - **IRedisGameState / RedisGameState** — Singleton; encapsulates all Redis reads/writes (players, pending monsters, active encounter, map, live HP, planned actions, lock-ins, defeated set). All hub logic goes through this interface rather than touching `IConnectionMultiplexer` directly.
 - **ISessionService / SessionService** — Scoped; `JoinSession` (DB lookup, character validation, campaign member auto-join, Redis player upsert)
-- **IEncounterService / EncounterService** — Scoped; `StartEncounterAsync` (DB persist, map/HP seed, round 1 planning) and `AddMonsterAsync`
+- **IEncounterService / EncounterService** — Scoped; `StartEncounterAsync` (DB persist, map/HP seed, round 1 planning), `AddMonsterAsync`, and `EndEncounterAsync` (Ended status + GameEvent, then clears Redis encounter state)
 - **IPlanningService / PlanningService** — Scoped; `PlanAction`, `LockIn`, `ForceResolve`, `PlanEnemyAction`, `LockInEnemies`; decides when all living combatants are locked in
 - **IResolutionService / ResolutionService** — Scoped; `ResolveRoundAsync` is an **adapter** around `RpgGame.Rules.RoundResolver`: loads state from DB/Redis, maps it to `EncounterState` + plans (data-seeding defaults such as monster MaxHp 20 / fighter live here, not in Rules), calls the resolver with the injected `IDiceRoller`, maps the `RoundOutcome` to `ResolutionPayload`, then persists (GameEvents to DB before Redis mutations)
 - **ResolutionFeedFormatter** — `internal static`; feed text for attack/effect results (presentation stays in Api). Strings are pinned byte-for-byte by tests
 - **RulesWireMapping** — `internal static`; hub wire strings (`"melee_attack"`, …) ⇄ Rules enums
 - **IDiceRoller** (from Rules) — registered as a `RandomDice` singleton; tests inject `ScriptedDice`
-- **PlanningTimerService** — Singleton; per-encounter countdown (`Task.Delay` + CTS); on expiry resolves via `IHubContext<GameHub>` and starts the next round
+- **IRoundOrchestrator / RoundOrchestrator** — Scoped; `ResolveAndAdvanceAsync` is the single post-lock-in flow (cancel timer → `AllLockedIn` → resolve → `ResolutionCompleted` / `CombatantDefeated` → playback delay → `EncounterEnded` or next `PlanningPhaseStarted` + timer). Broadcasts via `IHubContext<GameHub>`, so the hub and the timer share it
+- **EncounterEndCheck** — `internal static`; decides whether a round ended the encounter and who won (sides from `CombatantType` for now)
+- **IPlanningTimer / PlanningTimerService** — Singleton; per-encounter countdown (`Task.Delay` + CTS); on expiry defaults unplanned combatants to defend and calls `RoundOrchestrator` in a fresh scope
 - **GameActionException** — custom exception with `bool IsActionRejected`; thrown by services. Hub catches `IsActionRejected: true` and sends `ActionRejected` to caller; `IsActionRejected: false` propagates as `HubException`.
 
 `GameHub` is a thin orchestrator — business logic lives in the scoped services above.
@@ -276,7 +276,7 @@ Host-run API (`dotnet watch`) listens on 5291; the Angular dev server proxy targ
 | Redis | 6379 | 6379 |
 
 ### EF Migrations
-Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 8 migrations through `MakeCharacterIdNullable`.
+Migrations live in `RpgGame.Infrastructure/Data/Migrations/`. They run automatically via `db.Database.MigrateAsync()` on API startup — no manual `dotnet ef database update` needed in Docker. 9 migrations through `AddEncounterEndedAt`.
 
 ### Branching Convention
 

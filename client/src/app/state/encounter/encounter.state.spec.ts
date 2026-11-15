@@ -5,6 +5,7 @@ import {
   AllLockedIn,
   ClearEncounter,
   CombatantDefeated,
+  EncounterEnded,
   EncounterStarted,
   PlayerLockedIn,
   PlanningPhaseStarted,
@@ -212,6 +213,27 @@ describe('EncounterState', () => {
       const state = store.snapshot().encounter;
       expect(state.roundPhase).toBe('planning');
       expect(state.resolutionTicks).toEqual([]);
+    });
+  });
+
+  describe('EncounterEnded', () => {
+    it('records the outcome and leaves the planning phase', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto()]));
+      store.dispatch(new PlanningPhaseStarted(3, 30, [makePlanningCombatantDto()]));
+      store.dispatch(new EncounterEnded('party', 3));
+
+      const state = store.snapshot().encounter;
+      expect(state.roundPhase).toBe('ended');
+      expect(state.outcome).toEqual({ winningSide: 'party', finalRoundNumber: 3 });
+      expect(state.planningTimerExpiresAt).toBeNull();
+      expect(state.active).toBeTrue();
+      expect(store.selectSnapshot(EncounterState.isPlanning)).toBeFalse();
+    });
+
+    it('is cleared by ClearEncounter', () => {
+      store.dispatch(new EncounterEnded('enemy', 2));
+      store.dispatch(new ClearEncounter());
+      expect(store.selectSnapshot(EncounterState.outcome)).toBeNull();
     });
   });
 

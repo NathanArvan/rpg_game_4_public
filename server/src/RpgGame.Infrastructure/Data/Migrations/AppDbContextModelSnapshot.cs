@@ -17,7 +17,7 @@ namespace RpgGame.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.25")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -241,6 +241,9 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("GameSessionId")
                         .HasColumnType("uuid");
@@ -498,32 +501,27 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                     b.OwnsOne("RpgGame.Domain.Entities.BaseStats", "BaseStats", b1 =>
                         {
-                            b1.Property<Guid>("CharacterId")
-                                .HasColumnType("uuid");
+                            b1.Property<Guid>("CharacterId");
 
-                            b1.Property<int>("Cha")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Cha");
 
-                            b1.Property<int>("Con")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Con");
 
-                            b1.Property<int>("Dex")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Dex");
 
-                            b1.Property<int>("Int")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Int");
 
-                            b1.Property<int>("Str")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Str");
 
-                            b1.Property<int>("Wis")
-                                .HasColumnType("integer");
+                            b1.Property<int>("Wis");
 
                             b1.HasKey("CharacterId");
 
                             b1.ToTable("Characters");
 
-                            b1.ToJson("BaseStats");
+                            b1
+                                .ToJson("BaseStats")
+                                .HasColumnType("jsonb");
 
                             b1.WithOwner()
                                 .HasForeignKey("CharacterId");

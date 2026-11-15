@@ -32,6 +32,16 @@ export class SessionState {
   }
 
   @Selector()
+  static campaignId(state: SessionStateModel): string | null {
+    return state.campaignId;
+  }
+
+  @Selector()
+  static gameSessionId(state: SessionStateModel): string | null {
+    return state.gameSessionId;
+  }
+
+  @Selector()
   static isGm(state: SessionStateModel): boolean {
     return state.isGm;
   }

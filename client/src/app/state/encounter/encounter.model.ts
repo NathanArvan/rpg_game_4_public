@@ -11,10 +11,16 @@ export interface Combatant {
   combatantType: 'player' | 'monster';
 }
 
+export interface EncounterOutcome {
+  /** 'party' | 'enemy' | 'draw' */
+  winningSide: string;
+  finalRoundNumber: number;
+}
+
 export interface EncounterStateModel {
   encounterId: string | null;
   active: boolean;
-  roundPhase: 'planning' | 'resolving' | 'between_rounds' | null;
+  roundPhase: 'planning' | 'resolving' | 'between_rounds' | 'ended' | null;
   roundNumber: number;
   combatants: Combatant[];
   myPlannedActions: PlannedActionEntry[];
@@ -23,4 +29,5 @@ export interface EncounterStateModel {
   resolutionTicks: TickResult[];
   gmSelectedEnemyId: string | null;
   enemyPlannedActions: Record<string, PlannedActionEntry>;
+  outcome: EncounterOutcome | null;
 }
