@@ -211,7 +211,9 @@ computeAbilityEffect(caster, target, ability, environment):
         return { hit: false }
 
     baseDamage = ability.baseDamage
-    statModifier = caster.relevantStat                    // Power for melee, Precision for ranged, etc.
+    statModifier = caster.profile.relevantModifier        // 0 or a combat profile value until the
+                                                          // deferred stats decision (Power/Precision
+                                                          // in the candidate stat model)
     weaponBonus = caster.equippedWeapon?.bonus ?? 0       // from items (Slice 4.2)
 
     // --- New: Environmental modifiers ---

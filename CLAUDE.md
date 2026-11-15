@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. Next roadmap slice: **3B.1 Custom Stats**. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
+Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning) is **complete and merged**. The old sequential initiative model (`MoveToken` / `DeclareAttack` / `EndTurn`) is gone. Next roadmap slice: **3B.0 Manual Testing Spike** (encounter end → simple enemy AI → one-click Quick Battle where one user commands a party against AI enemies). Then **3B.1 Combat Profiles** (hand-authored per-combatant combat values; core stats and progression are deferred until after Phase 3C). Execution order is 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4 → 3C. See `docs/roadmap/ROADMAP_STRATEGIC.md`.
 
 ## Documentation
 
@@ -104,7 +104,7 @@ Clean Architecture with four projects:
 - **Campaign** — Id, Name, CreatedAt; relations: Members[], Sessions[]
 - **CampaignMember** — CampaignId, UserId, Role (Gm|Player); unique index on (CampaignId, UserId)
 - **GameSession** — Id, CampaignId, JoinCode (6-char alphanumeric, unique), StartedAt
-- **Character** — Id, UserId, Name, Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (D&D-style stats until 3B.1)
+- **Character** — Id, UserId, Name, Race, Class, Level, BaseStats (JSONB: Str/Dex/Con/Int/Wis/Cha), MaxHp, CurrentHp (D&D-style fields; unused by combat from 3B.1, removal deferred to the stats/progression decision)
 - **Encounter** — Id, GameSessionId, Status (Active|Ended), StartedAt, RoundNumber; unique-active index on GameSessionId
 - **EncounterCombatant** — Id, EncounterId, UserId, CharacterId (nullable — null for monsters), CharacterName, CombatantType (`player` | `monster`)
 - **GameEvent** — Id, EncounterId, OccurredAt, EventType (string), Payload (JSONB); append-only log

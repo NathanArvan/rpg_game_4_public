@@ -17,7 +17,7 @@ Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
 **Phase 1 & 2** — Auth, campaigns, sessions, character CRUD, a sequential encounter loop (initiative → move → attack → end turn), a 20×20 grid, and a combat feed. All works end-to-end across multiple browser tabs. The sequential turn system will be replaced, but the infrastructure beneath it — Redis state, SignalR broadcasting, NGXS slices, the service layer pattern — carries forward.
 
-**Phase 3A** (merged April–May 2026, PRs #62–#69) — Simultaneous planning, tick-based resolution with playback, GM enemy planning, and a combat UI pass. The sequential turn system has been removed. Known gaps carried forward: no end-of-encounter detection (`EncounterEnded` is never broadcast), and the planning timer is 300s rather than the 30s default below.
+**Phase 3A** (merged April–May 2026, PRs #62–#69) — Simultaneous planning, tick-based resolution with playback, GM enemy planning, and a combat UI pass. The sequential turn system has been removed. Known gaps carried forward: no end-of-encounter detection (`EncounterEnded` is never broadcast — fixed in 3B.0), and the planning timer is 300s rather than the 30s default below.
 
 ---
 
@@ -43,27 +43,51 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 ## Phase 3B — Custom Rule System
 
-*Goal: Replace D&D 5E assumptions with the game's own stat system, abilities, and resources. Each slice replaces one legacy concept.*
+*Goal: Replace D&D 5E assumptions with the game's own combat values, abilities, and resources, so a single battle plays end-to-end. Each slice replaces one legacy concept.*
 
-### ⬜ Slice 3B.1 — Custom Stats & Character Rework
+*Scope note (November 2026):* Character stats and progression are **deferred** (see [Deferred: Character Stats & Progression](#deferred-character-stats--progression)). Phase 3B and 3C build against **combat profiles**: hand-authored bundles of derived combat values (HP, movement, accuracy, dodge, damage, AP, vision, …). The rules engine only ever consumes derived values, so whatever later produces them (six core stats, equipment, abilities, or a mix) is a mapping layer in the Api and doesn't touch `RoundResolver`. Building items, abilities, and conditions first should make it clearer what stats, if any, need to do.
 
-Delivers: Characters use six custom stats (Power, Speed, Precision, Resilience, Focus, Influence) instead of D&D ability scores. All derived values (HP, movement range, vision range, damage, dodge) flow from the new stats. Race, Class, and Level are removed or made cosmetic.
+*Execution order:* 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4. Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
+
+### ⬜ Slice 3B.0 — Manual Testing Spike
+
+*Goal: one person can start a battle in one click, command a party of several characters against preset AI enemies, and play it to a win or a loss. This is the harness for trying out every later 3B/3C feature by hand.*
+
+Delivers, as three PRs in this order (each is useful on its own):
+
+1. **Encounter end.** Closes the known 3A gap. The two copies of the post-resolution flow (`GameHub.RunResolutionAsync` and `PlanningTimerService.RunResolutionAsync`) are merged into one round-orchestration service. After each round, if one side has no living combatants, the server sets the encounter to `Ended`, cancels the timer, broadcasts `CombatantDefeated` / `EncounterEnded` (with the winning side), and does not start another planning phase. The client handles `EncounterEnded` with a result overlay (back to lobby / rematch). Applies to normal GM-run encounters too.
+2. **Simple enemy AI.** A pure `EnemyAi.Plan(state)` function in `RpgGame.Rules`: attack an adjacent enemy if there is one; otherwise move up to movement range toward the nearest living enemy, ending on a free adjacent cell when possible. Ties break deterministically so the AI can be covered by scenario tests. Combatants get an AI-controlled flag; at the start of each planning phase the server plans and locks in every AI combatant, so a round resolves as soon as the human locks in. Unflagged monsters still work the 3A way (GM plans them).
+3. **Quick Battle & multi-character control.** A lobby "⚡ Quick Battle" button calls a `StartQuickBattle(presetId)` entry point that creates the campaign, session and encounter in one step from a **battle preset**: a JSON file in the server (same combatant shape as the Rules `Scenarios/` files: name, HP, damage die, Speed, start cell, side, AI flag). Party combatants are owned by the user and need no `Character` rows; enemies are AI-controlled. The planning timer is off by default. Behind the scenes the user is the campaign GM (so debug tools like Force Resolve and Add Monster stay available), but the screen shows the player view plus a small debug panel. `PlanAction` takes an optional `combatantId` (ownership checked); `LockIn` locks all of the caller's living combatants, defaulting unplanned ones to defend. Client: select which of your characters you're planning for (token or sidebar row), see per-character plan markers, "Lock In All". Client planned-action state becomes per combatant (`Record<combatantId, PlannedActionEntry[]>`) so 3B.2's multi-action queues fit without a redesign.
+
+A new single-browser E2E test (Quick Battle → play to victory) becomes the default per-slice smoke test; the two-browser GM + player test stays for multiplayer and per-player vision.
+
+**Ongoing cost:** from here on, each slice that adds something combatants can do (AP queues, abilities, conditions, hiding) also teaches `EnemyAi` a minimal use of it, so the feature shows up in Quick Battle. Budget a small AI task in each sprint doc.
+
+Not in scope: smart AI (fleeing, focus fire, terrain), a preset editor UI, combat profiles (3B.1 extends battle presets with profile fields).
+
+### ⬜ Slice 3B.1 — Combat Profiles
+
+Delivers: Each combatant carries its own derived combat values instead of global constants and D&D class dice. Profiles extend the 3B.0 battle presets. A small set of hand-authored presets (e.g. Bruiser, Skirmisher, Scout for players; Grunt, Brute for monsters) defines `MaxHp`, `MovementRange`, `Speed` (contested-cell priority), melee/ranged `Accuracy`, `Dodge`, and `BaseDamage`. Characters and monsters each select a preset. Values that move from `RulesConfig` to per-combatant: `HitThreshold` (→ target Dodge), `AccuracyBonus`, `MovementRange`. Class-based damage dice (`CombatMath.DamageDieForClass`) are removed. Presets must differ meaningfully — Speed tiebreaks and per-player vision (3C.1) are only testable if combatants differ.
+
+Later slices add fields to the profile as they need them: `MaxAp` (3B.2), `ConditionResist` (3B.4), `VisionRange` and `Perception` (3C.1/3C.3).
+
+Not in scope: the six core stats, point-buy, character creation rework, progression. The `Character` entity's `Race`, `Class`, `Level` and D&D `BaseStats` are left in place but unused by combat (no migration until the stats decision is made).
 
 ### ⬜ Slice 3B.2 — Action Points
 
-Delivers: Each round, characters have an AP budget to spend on actions during planning. Moving, attacking, and using abilities all cost AP. Multiple actions can be planned per round. AP resets each round. The tick loop's queue length constraint lifts — this is where the multi-action architecture pays off.
+Delivers: Each round, characters have an AP budget (`MaxAp` from their combat profile) to spend on actions during planning. Moving, attacking, and using abilities all cost AP. Multiple actions can be planned per round. AP resets each round. The tick loop's queue length constraint lifts — this is where the multi-action architecture pays off.
 
 ### ⬜ Slice 3B.3 — Abilities & Cooldowns
 
-Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Environmental magic (ley points and resonance) also lands in this slice — abilities need resonance to be meaningful. See `MAGIC_SYSTEM.md` for the full design.
+Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Environmental magic (ley points and resonance) also lands in this slice — abilities need resonance to be meaningful. See `MAGIC_SYSTEM.md` for the full design. The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
 ### ⬜ Slice 3B.4 — Conditions & Status Effects
 
-Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resilience stat governs resistance. Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
+Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
 ### ⬜ Slice 3B.5 — Defeat & Incapacitation
 
-Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model (see `GAME_DESIGN.md`). Allies can stabilize incapacitated combatants.
+Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model (see `GAME_DESIGN.md`). Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
 
 ---
 
@@ -73,15 +97,17 @@ Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed
 
 ### ⬜ Slice 3C.1 — Vision Ranges & Fog of War
 
-Delivers: Each character has a vision range (derived from Focus). Cells outside range are fogged per-player. Different players see different amounts of the map. Server computes per-player visibility and filters all broadcasts per-recipient. GM always sees everything. Ley points are visible through fog.
+Delivers: Each character has a vision range (`VisionRange` on the combat profile). Cells outside range are fogged per-player. Different players see different amounts of the map. Server computes per-player visibility and filters all broadcasts per-recipient. GM always sees everything. Ley points are visible through fog.
 
 ### ⬜ Slice 3C.2 — Information Sharing
 
-Delivers: When one player sees an enemy, that information can propagate to allies based on Influence stat and campaign settings. Design decision needed — auto-share within range, manual callout (costs AP), or full share. Stale intel renders differently from fresh sightings.
+Delivers: When one player sees an enemy, that information can propagate to allies based on campaign settings. Design decision needed — auto-share within range, manual callout (costs AP), or full share. Stale intel renders differently from fresh sightings.
+
+*Stat deferral impact:* this was Influence's only combat role (share range = Influence × 2). Without stats, the model must work on its own: a fixed share range, a `ShareRange` profile value, or a callout action/ability that costs AP. The callout option fits best with AP and abilities already in place. If Influence ever returns, its job has to be justified against whatever this slice ships.
 
 ### ⬜ Slice 3C.3 — Hidden Enemies & Ambush
 
-Delivers: Enemies can be hidden until they enter a player's vision range or attack. GM sets hidden state during encounter setup. Enables genuine ambush encounters with a surprise mechanic.
+Delivers: Enemies can be hidden until they enter a player's vision range or attack. GM sets hidden state during encounter setup. Enables genuine ambush encounters with a surprise mechanic. Spotting checks, if any, use a `Perception` value on the combat profile.
 
 ---
 
@@ -92,6 +118,8 @@ Delivers: Enemies can be hidden until they enter a player's vision range or atta
 ### ⬜ Slice 3D.1 — Tier 1 AI: Instinctive Behavior
 
 Delivers: Simplest enemy AI. Attack nearest visible threat, flee when HP is low. No coordination. GM can override any AI-planned action.
+
+*After 3B.0:* the base (`EnemyAi` in Rules, AI-controlled flag, auto plan + lock-in) already exists from the manual testing spike. This slice adds fleeing, respecting per-player vision (target only what the AI's side can see), the GM override, and `behavior_tier`.
 
 ### ⬜ Slice 3D.2 — Tier 2 AI: Tactical Behavior
 
@@ -117,7 +145,9 @@ Extends 3B.3. Abilities that affect areas (cone, sphere, line). Player places a 
 
 ### ⬜ Slice 4.2 — Inventory & Equipment
 
-Characters carry and equip items that modify stats and available actions. Equipment modifies derived combat values. Consumables are usable as planned actions during combat, costing AP.
+Characters carry and equip items that modify their combat profile and available actions. Consumables are usable as planned actions during combat, costing AP.
+
+*Candidate to pull forward:* if items should inform the stats decision, run this slice after Phase 3C and before that decision. An "equipment loadout" (fixed per encounter, no persistent inventory) is enough for that purpose; persistent inventory belongs with progression.
 
 ### ⬜ Slice 4.3 — GM Manual Overrides
 
@@ -135,18 +165,34 @@ Reconnection resilience, Redis distributed locking during resolution, Redis pers
 
 ---
 
+## Deferred: Character Stats & Progression
+
+*Not scheduled. Revisit after Phase 3C (and optionally Slice 4.2) is playable.*
+
+Covers: whether characters have core stats at all, and if so which ones and how they map to combat profile values; character creation (point-buy or otherwise); ability acquisition (trees, advancement points, milestones); persistent inventory; removing D&D `Race` / `Class` / `Level` / `BaseStats` from `Character`.
+
+**Why deferred:** stats only matter through the derived values they produce, and the most important consumers of those values (AP, abilities, conditions, vision, info sharing, items) don't exist yet. Hand-authored combat profiles let a single battle be built and played first; the stat design can then be judged against real abilities and items instead of guessed in advance.
+
+**The open question — are stats needed?** The candidate six-stat model (Power, Speed, Precision, Resilience, Focus, Influence; formulas in `DESIGN_SPIKE.md` Decision 4) is kept as reference, not a commitment. Things to evaluate at decision time:
+- Several candidate stats map one-to-one onto a single derived value (Focus → vision, Influence → share range, Resilience → HP). A stat that drives one number is that number renamed, with no decision attached. Stats pay off when one stat feeds several values and forces trade-offs — Speed does this, possibly too strongly (movement, dodge, AP, contested-cell priority).
+- Stats give a common balance baseline and character identity independent of abilities and gear. Without them, identity comes entirely from loadouts.
+- **Retrofit path:** if stats are adopted, implementing them means writing a stats → combat profile function, calibrated against the hand-tuned profiles in use. Abilities and items authored against profiles may need rebalancing; keeping profile values on a consistent scale from 3B.1 onward reduces that cost.
+
+---
+
 ## Suggested Sequencing
 
 ```
-Month 1     3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
-Month 2     3B.1 Custom Stats → 3B.2 Action Points → 3B.3 Abilities & Cooldowns
-Month 3     3B.4 Conditions → 3B.5 Defeat & Incapacitation → 3C.1 Vision & Fog
-Month 4     3C.2 Info Sharing → 3C.3 Hidden Enemies → 3D.1 Tier 1 AI
-Month 5     3D.2 Tier 2 AI → 3D.3 Tier 3 AI → 3D.4 Dynamic Environments
-Month 6     Phase 4 feature depth (flexible order) + Phase 5 hardening
+Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
+Next        3B.0 Manual Testing Spike (encounter end → enemy AI → Quick Battle)
+Then        3B.1 Combat Profiles → 3B.5 Defeat & Incapacitation → 3B.2 Action Points
+Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
+Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
+Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
+Later       3D.1–3D.4 Adaptive Encounters, remaining Phase 4, Phase 5 hardening
 ```
 
-Phase 3A is the critical path — nothing else works until the simultaneous turn system is in place. After that, 3B, 3C, and 3D have lighter dependencies on each other and can be interleaved.
+Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete, replayable battle on a single battlefield with hard-coded combatants. 3D has light dependencies on 3B/3C and can be interleaved once that battle plays end-to-end.
 
 ---
 
@@ -178,13 +224,17 @@ Phase 3A is the critical path — nothing else works until the simultaneous turn
 
 **3A.1** — Remove Initiative-related fields from `EncounterCombatant` (Initiative, InitiativeRoll, DexModifier). Add `RoundNumber` to `Encounter`.
 
-**3B.1** — Rework `Character`: replace `BaseStats` JSONB shape `{ str, dex, con, int, wis, cha }` → `{ power, speed, precision, resilience, focus, influence }`. Remove or make cosmetic: `Race`, `Class`, `Level`. Add `MovementRange INT`, `VisionRange INT`.
+**3B.1** — Add a combat profile reference to `Character` (e.g. `CombatProfile` string preset key). Presets themselves can live in code/config rather than a table until there's a reason to edit them at runtime. `Race`, `Class`, `Level`, `BaseStats` are left untouched and unused by combat. Monster combatants get a preset too (staged with the monster name).
 
-**3B.3** — New table: `ability_definitions` (id, name, description, ap_cost, cooldown_rounds, range, target_type, effect JSONB, tags[]). New table: `character_abilities` (character_id, ability_definition_id). Drop or repurpose `spell_definitions` and `character_known_spells`.
+**3B.3** — New table: `ability_definitions` (id, name, description, ap_cost, cooldown_rounds, range, target_type, effect JSONB, tags[]). Loadouts: either a `character_abilities` (character_id, ability_definition_id) join table or abilities listed on the combat profile preset — pick in the sprint doc. No acquisition rules. Drop or repurpose `spell_definitions` and `character_known_spells`.
 
 **3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
+
+**3B.0** — `Encounter.Status` transitions to `Ended` (and an `EndedAt` timestamp) when one side is defeated. `EncounterCombatant` gets `Side` (`party` | `enemy`) and `IsAiControlled`; a nullable `CharacterId` on party combatants is allowed (Quick Battle combatants have no `Character` row). Battle presets live as JSON files in the server, not in the database.
+
+**Deferred (Stats & Progression)** — Rework or remove `Character.BaseStats`, `Race`, `Class`, `Level`; persistent inventory and ability acquisition.
 
 **3D.1** — Add `behavior_tier INT` to monster definitions or `encounter_combatants` (GM-overridable per encounter).
 
@@ -210,9 +260,11 @@ Phase 3A is the critical path — nothing else works until the simultaneous turn
 
 **3A.1** — Rework `session:{sessionId}:active_encounter`: remove `activeTurnCombatantId`, `initiativeOrder`. Add `roundPhase` (`planning` | `resolving` | `between_rounds`), `roundNumber`, `planningTimerExpiresAt`. New key `encounter:{encounterId}:planned_actions` (Hash): one field per combatant ID, value is JSON action array. New key `encounter:{encounterId}:locked_in` (Set): combatant IDs that have locked in.
 
-**3B.1** — Update `character:live` hash: replace `class` field with stat-derived combat values (`attackBonus`, `damageBase`, `dodgeChance`, `maxAp`).
+**3B.0** — `CombatantRef` entries in `session:{sessionId}:active_encounter` gain `side` and `isAiControlled`. `active_encounter` gains `planningTimerEnabled` (false for Quick Battle) and `endedAt`/`winningSide` once ended. `character:live` is keyed by combatant ID for party combatants without a `Character` row (as monsters already are).
 
-**3B.2** — Add `maxAp`, `currentAp` to `character:live`. Add `apCost` field to each entry in planned actions.
+**3B.1** — Update `character:live` hash: replace `class` field with the combatant's combat profile values (or the preset key, resolved on load) — `maxHp`, `movementRange`, `speed`, `accuracy`, `dodge`, `baseDamage`.
+
+**3B.2** — Add `currentAp` to `character:live` (`maxAp` comes from the profile). Add `apCost` field to each entry in planned actions.
 
 **3B.3** — Add `abilityCooldowns` JSONB to `character:live` (`{ abilityId: roundsRemaining }`). Add ley point and resonance data to `encounter:map:{encounterId}`: `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 
@@ -324,6 +376,9 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `ForceResolve(joinCode)` | Client → Server | 3A.1 | GM only |
 | `PlanEnemyAction(joinCode, combatantId, plannedAction)` | Client → Server | 3A.3 | GM only |
 | `LockInEnemies(joinCode)` | Client → Server | 3A.3 | GM only |
+| `StartQuickBattle(presetId)` | Client → Server | 3B.0 | Any signed-in user (becomes GM of a new campaign/session) |
+| `PlanAction(joinCode, plannedAction, combatantId?)` | Client → Server | 3B.0 (optional `combatantId`) | Player (owned combatant) |
+| `LockIn(joinCode)` | Client → Server | 3B.0 (locks all owned living combatants) | Player |
 
 | Broadcast | Direction | Added In | Notes |
 |---|---|---|---|
@@ -332,15 +387,35 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `AllLockedIn` | Server → Group | 3A.1 | resolution about to begin |
 | `ResolutionCompleted` | Server → Group (per-player in 3C.1) | 3A.2 | ordered resolution steps for playback; filtered per-recipient after 3C.1 |
 | `RoundStarted` | Server → Group | 3A.2 | signals next planning phase |
+| `CombatantDefeated` | Server → Group | 3B.0 | contract existed since 3A; first broadcast in 3B.0 |
+| `EncounterEnded` | Server → Group | 3B.0 | winning side; no further planning phase |
 | `VisibilityUpdated` | Server → Client | 3C.1 | per-player visible cells and revealed/hidden combatants |
 
 Removed from Phase 2: `EndTurn`, `TurnAdvanced`.
 
 ---
 
-## Stat-to-Mechanic Mapping
+## Combat Profile Values
 
-Defined in `DESIGN_SPIKE.md` Decision 4. Placeholder values used in 3A; real formulas land in 3B.1.
+What the rules engine consumes per combatant from 3B.1 on. Values are hand-authored per preset until the stats decision.
+
+| Value | Used by | Added in |
+|---|---|---|
+| `MaxHp` | HP pipeline | 3B.1 |
+| `MovementRange` | Move validation | 3B.1 |
+| `Speed` | Contested-cell priority | 3B.1 |
+| `MeleeAccuracy`, `RangedAccuracy` | Hit check | 3B.1 |
+| `Dodge` | Hit check threshold | 3B.1 |
+| `BaseDamage` | Damage pipeline | 3B.1 |
+| `MaxAp` | AP budget | 3B.2 |
+| `ConditionResist` | Condition application | 3B.4 |
+| `VisionRange` | Fog of war | 3C.1 |
+| `ShareRange` (if the chosen model needs it) | Info sharing | 3C.2 |
+| `Perception` | Spotting hidden enemies | 3C.3 |
+
+## Stat-to-Mechanic Mapping (Deferred)
+
+*Reference only — not scheduled.* The candidate six-stat model from `DESIGN_SPIKE.md` Decision 4. If adopted, each stat feeds the combat profile values above. See [Deferred: Character Stats & Progression](#deferred-character-stats--progression).
 
 | Stat | Governs |
 |---|---|
@@ -351,7 +426,7 @@ Defined in `DESIGN_SPIKE.md` Decision 4. Placeholder values used in 3A; real for
 | **Focus** | Ability resource pool, vision range (3 + Focus), perception |
 | **Influence** | Information sharing range (Influence × 2), team buff radius |
 
-Stat range: 1–10 per stat, 30-point budget across 6 stats. These formulas are a starting point for playtesting.
+Stat range: 1–10 per stat, 30-point budget across 6 stats. These formulas are a starting point, not a commitment.
 
 ---
 
@@ -368,7 +443,7 @@ Values that are not blocking decisions — build with these, adjust through play
 | Melee range | Adjacent (Chebyshev ≤ 1) | Post-movement |
 | Ranged attack range | Unlimited in 3A | Range limits tied to Precision in 3B |
 | Grid size | 20×20 | Unchanged from Phase 2 |
-| Movement range | 6 cells Chebyshev in 3A | Becomes 2 + Speed in 3B.1 |
+| Movement range | 6 cells Chebyshev in 3A | Per combatant from the combat profile in 3B.1 |
 
 Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 
@@ -381,7 +456,7 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Conflict resolution model | Phase-based macro + simultaneous within phase, wrapped in tick loop | `DESIGN_SPIKE.md` D1, `TICK_RESOLUTION.md` D1 | Learnable mental model; tick loop supports AP without structural changes |
 | Mutual kills | Enabled | `DESIGN_SPIKE.md` D2 | Natural consequence of simultaneous damage; no tiebreaker needed |
 | Healing + damage | Net calculation (all deltas summed, then applied) | `DESIGN_SPIKE.md` D3 | Never temporarily "dead"; well-predicted heal saves from lethal damage |
-| Stat system | Power, Speed, Precision, Resilience, Focus, Influence | `GAME_DESIGN.md` | Setting-agnostic; each stat mechanically relevant to simultaneous + vision systems |
+| Combat values before stats | Hand-authored combat profiles; stats & progression deferred | This roadmap (Nov 2026) | Rules engine only consumes derived values; build abilities, conditions, vision (and optionally items) first, then decide what stats need to do |
 | Resource model | AP (per round) + Cooldowns + Consumables | `GAME_DESIGN.md` | AP creates round-to-round tension; cooldowns prevent spam; consumables add session-level strategy |
 | Character progression | Abilities over classes | `GAME_DESIGN.md` | Composable; avoids rigid hierarchies; ability choice affects resolution phase timing |
 | Default action on timeout | Defend in place | `DESIGN_SPIKE.md` D5 | Least punishing; doesn't waste resources or move character |
@@ -398,7 +473,10 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Decision | Needed By | Options | Current Lean |
 |---|---|---|---|
 | Defeat model | 3B.5 | Knockout / Last stand / Bleedout | Not decided |
-| Info sharing model | 3C.2 | Auto-share within range / Manual callout (costs AP) / Full share | Not decided |
+| Info sharing model | 3C.2 | Auto-share within fixed range / Manual callout (costs AP) / Full share | Not decided; no Influence stat to lean on, which favors callout |
+| Core stats | After 3C | Six-stat model / fewer stats / no stats (profiles from abilities + gear) | Not decided — see Deferred: Character Stats & Progression |
+| Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
+| Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Not decided |
 | Unused prepared actions refund AP? | 3B.3 | Full / partial / none | No refund |
 | Multiple prepared reactions on same trigger? | 3B.3 | All fire / only first | All fire (wasted duplicates) |
 | Ranged attacks in melee penalty? | 3B+ | Penalty / no penalty | Penalty (disadvantage) |

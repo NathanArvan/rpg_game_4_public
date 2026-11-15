@@ -74,12 +74,14 @@ All damage and healing in a phase are summed into a single delta per combatant. 
 
 ### What 3A needs (placeholder values)
 
-| Value | 3A placeholder | Future replacement (3B.1+) |
-|---|---|---|
-| Movement range | Fixed: 6 cells (Chebyshev) | 2 + Speed stat |
-| Damage | Existing class-based dice (Fighter: 1d8, Rogue: 1d6, Wizard: 1d4) | baseDamage(stat) + weaponBonus + abilityModifier |
-| Hit check | `random(1–20) + 0` vs `targetDodge = 10` (flat placeholder) | `random(1–20) + attackerAccuracy(stat)` vs `targetDodge(Speed)` |
-| HP | `MaxHp` stored on character (unchanged) | 10 + (Resilience × 5) |
+> **Update (November 2026):** Character stats are deferred (see `ROADMAP_STRATEGIC.md` → Deferred: Character Stats & Progression). The 3A placeholders below are replaced in 3B.1 by per-combatant **combat profiles** — hand-authored derived values — not by stat formulas. The pipeline structure in this decision is unchanged; only the source of each input changes.
+
+| Value | 3A placeholder | 3B.1 (combat profile) | If stats are adopted later |
+|---|---|---|---|
+| Movement range | Fixed: 6 cells (Chebyshev) | `profile.MovementRange` | 2 + Speed stat |
+| Damage | Existing class-based dice (Fighter: 1d8, Rogue: 1d6, Wizard: 1d4) | `profile.BaseDamage` + weaponBonus + abilityModifier | baseDamage(stat) + weaponBonus + abilityModifier |
+| Hit check | `random(1–20) + 0` vs `targetDodge = 10` (flat placeholder) | `random(1–20) + attacker.profile.Accuracy` vs `target.profile.Dodge` | `random(1–20) + attackerAccuracy(stat)` vs `targetDodge(Speed)` |
+| HP | `MaxHp` stored on character (unchanged) | `profile.MaxHp` | 10 + (Resilience × 5) |
 
 ### Damage pipeline structure (build this now, fill in real formulas later)
 
@@ -100,9 +102,11 @@ computeDamage(attacker, target, actionType):
     return { hit: true, damage: totalDamage, isCrit }
 ```
 
-This pipeline has slots for every modifier source without implementing any of them yet. When items land, `weaponBonus` stops being zero. When abilities land, `abilityModifier` stops being zero. When stats replace classes, `baseDamage` switches from class dice to stat-based. None of these changes touch the pipeline structure.
+This pipeline has slots for every modifier source without implementing any of them yet. When items land, `weaponBonus` stops being zero. When abilities land, `abilityModifier` stops being zero. When combat profiles replace classes (3B.1), `baseDamage` switches from class dice to the profile value. None of these changes touch the pipeline structure.
 
-### Proposed stat formulas (reference for 3B.1, NOT implemented in 3A)
+### Candidate stat formulas (deferred reference — not scheduled)
+
+Kept for the deferred stats decision. Whether characters have core stats at all is open; if they do, these formulas would produce combat profile values.
 
 Stat range: 1–10 per stat, 30-point budget across 6 stats.
 
@@ -120,7 +124,7 @@ Stat range: 1–10 per stat, 30-point budget across 6 stats.
 | Max AP (per round) | 3 + floor(Speed / 3) | 5 AP |
 | Condition resistance | Resilience × 5% | 35% |
 
-These formulas are a starting point — they will be tuned during 3B.1 implementation and playtesting. The important thing is the pipeline structure, not the specific numbers.
+These formulas are a starting point, to be revisited once abilities, conditions, vision, and items exist. The important thing is the pipeline structure, not the specific numbers.
 
 ---
 
@@ -171,7 +175,7 @@ When AP lands in 3B.2, `PlannedAction` becomes a list of sub-actions (`PlannedAc
 | Melee range | Adjacent (Chebyshev ≤ 1 after movement resolves) | |
 | Ranged attack range | Unlimited for 3A | Add range limits tied to Precision stat in 3B |
 | Grid size | 20×20 (unchanged) | |
-| Movement range | 6 cells Chebyshev (unchanged) | Becomes 2 + Speed in 3B.1 |
+| Movement range | 6 cells Chebyshev (unchanged) | Per combatant from the combat profile in 3B.1 |
 
 ---
 

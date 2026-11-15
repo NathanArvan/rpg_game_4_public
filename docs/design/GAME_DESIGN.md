@@ -151,9 +151,11 @@ Reinforcement waves can be triggered by encounter state (round count, boss HP th
 
 Characters are defined by what they can do, not by a class label. The system supports character building through composable abilities rather than rigid class hierarchies.
 
-### Stats
+### Combat Values and Stats
 
-Six core stats, each with a clear mechanical identity tied to the game's systems:
+Combat runs on **derived values** — HP, movement range, Speed priority, accuracy, dodge, damage, AP, vision range, and so on. During Horizon 1 development these come from hand-authored **combat profiles** (presets such as Bruiser, Skirmisher, Scout). What should *produce* those values for a player-built character — core stats, equipment, abilities, or a mix — is deliberately undecided until abilities, conditions, per-player vision, and items are playable. See `ROADMAP_STRATEGIC.md` → Deferred: Character Stats & Progression.
+
+The candidate model, kept as a reference rather than a commitment, is six core stats:
 
 | Stat | Role |
 |------|------|
@@ -164,7 +166,9 @@ Six core stats, each with a clear mechanical identity tied to the game's systems
 | **Focus** | Vision range, spell/ability resource pool, concentration |
 | **Influence** | Information sharing range, team buff radius, NPC interactions |
 
-Every stat has mechanical weight. Speed matters because simultaneous resolution uses it as a tiebreaker for contested cells. Focus matters because per-player vision makes perception range a tactical asset. Influence matters because information sharing is a real resource when hidden information is in play.
+The intent behind this model is that every stat has mechanical weight. Speed matters because simultaneous resolution uses it as a tiebreaker for contested cells. Focus matters because per-player vision makes perception range a tactical asset. Influence matters because information sharing is a real resource when hidden information is in play.
+
+The test for adopting it: a stat should feed several values and force trade-offs. A stat that maps onto exactly one derived value (e.g. Focus → vision range) adds a name but no decision, and the derived value alone may be enough.
 
 ### Abilities Over Classes
 
