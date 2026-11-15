@@ -63,6 +63,8 @@ export interface CombatProfileDto {
   /** @format int32 */
   dodge?: number;
   baseDamage?: string | null;
+  /** @format int32 */
+  maxAp?: number;
 }
 
 export interface CreateCampaignRequest {

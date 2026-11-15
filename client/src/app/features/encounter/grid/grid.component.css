@@ -113,6 +113,10 @@
 .cell:hover { background: #d4c9a8; }
 .cell.in-range { background: #c8e6c9; }
 .cell.ghost { background: #bbdefb; }
+.ghost-step { position: absolute; top: 1px; left: 3px; font-size: 0.65em; font-weight: bold; color: #1565c0; pointer-events: none; }
+.ap-budget { font-weight: bold; color: #1565c0; padding: 4px 8px; border: 1px solid #90caf9; border-radius: 4px; background: #e3f2fd; }
+.ap-budget.ap-spent { color: #555; border-color: #ccc; background: #f5f5f5; }
+.tick-progress { font-weight: normal; margin-left: 4px; }
 .cell.enemy-ghost { background: #ffcdd2; }
 .token {
   width: 24px;

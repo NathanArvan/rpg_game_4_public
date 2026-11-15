@@ -22,7 +22,7 @@
           (click)="select(c)">
         <td>
           <strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong>
-          <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange">{{ c.profileName }}</span>
+          <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange + ' · ' + c.maxAp + ' AP'">{{ c.profileName }}</span>
         </td>
         <td>
           <span *ngIf="!c.isDefeated">{{ c.currentHp }}/{{ c.maxHp }}</span>

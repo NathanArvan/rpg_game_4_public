@@ -18,6 +18,7 @@ import {
   SetMyPlannedAction,
 } from './encounter.actions';
 import { Combatant, DEFAULT_MOVEMENT_RANGE, EncounterOutcome, EncounterStateModel } from './encounter.model';
+import { DEFAULT_AP_COSTS, DEFAULT_MAX_AP } from './plan-queue';
 import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
 import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
 
@@ -36,6 +37,7 @@ import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
     resolutionTicks: [],
     gmSelectedEnemyId: null,
     enemyPlannedActions: {},
+    apCosts: { ...DEFAULT_AP_COSTS },
     outcome: null,
   },
 })
@@ -102,8 +104,13 @@ export class EncounterState {
   }
 
   @Selector()
-  static enemyPlannedActions(state: EncounterStateModel): Record<string, PlannedActionEntry> {
+  static enemyPlannedActions(state: EncounterStateModel): Record<string, PlannedActionEntry[]> {
     return state.enemyPlannedActions;
+  }
+
+  @Selector()
+  static apCosts(state: EncounterStateModel): Record<string, number> {
+    return state.apCosts;
   }
 
   @Selector()
@@ -125,12 +132,13 @@ export class EncounterState {
       isAiControlled: c.isAiControlled ?? false,
       profileName: c.profileName ?? '',
       movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
+      maxAp: c.maxAp ?? DEFAULT_MAX_AP,
     }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
 
   @Action(PlanningPhaseStarted)
-  planningPhaseStarted(ctx: StateContext<EncounterStateModel>, { roundNumber, planningTimerDurationSeconds, combatants }: PlanningPhaseStarted) {
+  planningPhaseStarted(ctx: StateContext<EncounterStateModel>, { roundNumber, planningTimerDurationSeconds, combatants, apCosts }: PlanningPhaseStarted) {
     console.log('[encounter] PlanningPhaseStarted: round=', roundNumber, 'combatants=', combatants.length);
     // 0 seconds means no timer (Quick Battle).
     const expiresAt = planningTimerDurationSeconds > 0
@@ -148,6 +156,7 @@ export class EncounterState {
       isAiControlled: c.isAiControlled ?? false,
       profileName: c.profileName ?? '',
       movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
+      maxAp: c.maxAp ?? DEFAULT_MAX_AP,
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -159,6 +168,7 @@ export class EncounterState {
       resolutionTicks: [],
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
+      apCosts: apCosts ?? { ...DEFAULT_AP_COSTS },
     });
   }
 
@@ -245,6 +255,7 @@ export class EncounterState {
       isAiControlled: payload.monster.isAiControlled ?? false,
       profileName: payload.monster.profileName ?? '',
       movementRange: payload.monster.movementRange ?? DEFAULT_MOVEMENT_RANGE,
+      maxAp: payload.monster.maxAp ?? DEFAULT_MAX_AP,
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }
@@ -255,10 +266,10 @@ export class EncounterState {
   }
 
   @Action(GmSetEnemyPlan)
-  gmSetEnemyPlan(ctx: StateContext<EncounterStateModel>, { combatantId, action }: GmSetEnemyPlan) {
+  gmSetEnemyPlan(ctx: StateContext<EncounterStateModel>, { combatantId, actions }: GmSetEnemyPlan) {
     const state = ctx.getState();
     ctx.patchState({
-      enemyPlannedActions: { ...state.enemyPlannedActions, [combatantId]: action },
+      enemyPlannedActions: { ...state.enemyPlannedActions, [combatantId]: actions },
     });
   }
 
@@ -298,6 +309,7 @@ export class EncounterState {
       resolutionTicks: [],
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
+      apCosts: { ...DEFAULT_AP_COSTS },
       outcome: null,
     });
   }

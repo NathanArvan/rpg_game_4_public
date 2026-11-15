@@ -83,7 +83,8 @@ export class GameHubService {
       this.ngZone.run(() => this.store.dispatch(new PlanningPhaseStarted(
         payload.roundNumber,
         payload.planningTimerDurationSeconds,
-        payload.combatants
+        payload.combatants,
+        payload.apCosts
       )));
     });
 
@@ -117,7 +118,9 @@ export class GameHubService {
 
         // Add feed entries as a batch
         const feedTexts: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
+        const severalTicks = payload.ticks.length > 1;
         for (const tick of payload.ticks) {
+          if (severalTicks) feedTexts.push(`Tick ${tick.tickIndex + 1}`);
           for (const movement of tick.movements) {
             feedTexts.push(movementFeedText(movement));
           }
@@ -131,7 +134,8 @@ export class GameHubService {
 
     this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {
       console.warn('[hub] ActionRejected:', payload);
-      // No state change needed — just log. Components can add UI feedback later.
+      // Surface it in the feed so a rejected plan (e.g. over the AP budget) isn't silent.
+      this.ngZone.run(() => this.store.dispatch(new AddFeedBatch([`⚠ ${payload.reason}`])));
     });
 
     this.connection.on(HubEvents.Events.CombatantDefeated, (payload: CombatantDefeatedPayload) => {

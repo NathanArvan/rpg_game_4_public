@@ -579,6 +579,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                             b1.Property<int>("Dodge");
 
+                            b1.Property<int?>("MaxAp");
+
                             b1.Property<int>("MaxHp");
 
                             b1.Property<int>("MeleeAccuracy");

@@ -12,7 +12,7 @@ internal static class TestProfiles
     /// <summary>Stored profile values; defaults are the 3A placeholders (CombatProfile.Default).</summary>
     public static CombatProfileValues Values(
         int maxHp = 20, int move = 6, int speed = 10, int melee = 0, int ranged = 0, int dodge = 10,
-        string damage = "d8", string id = "test", string name = "Test") => new()
+        string damage = "d8", string id = "test", string name = "Test", int? ap = null) => new()
     {
         ProfileId = id,
         ProfileName = name,
@@ -23,5 +23,6 @@ internal static class TestProfiles
         RangedAccuracy = ranged,
         Dodge = dodge,
         BaseDamage = damage,
+        MaxAp = ap,
     };
 }

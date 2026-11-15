@@ -13,6 +13,7 @@ import {
   SetMyPlannedAction,
   ClearMyPlannedAction,
   SelectMyCombatant,
+  GmSetEnemyPlan,
 } from './encounter.actions';
 import { ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
@@ -29,6 +30,7 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
   profileId: 'bruiser',
   profileName: 'Bruiser',
   movementRange: 4,
+  maxAp: 4,
   ...overrides,
 });
 
@@ -44,6 +46,7 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   profileId: 'bruiser',
   profileName: 'Bruiser',
   movementRange: 4,
+  maxAp: 4,
   ...overrides,
 });
 
@@ -81,6 +84,33 @@ describe('EncounterState', () => {
 
       store.dispatch(new PlanningPhaseStarted(2, 0, [makePlanningCombatantDto({ id: 'c1', profileName: 'Scout', movementRange: 8 })]));
       expect(store.snapshot().encounter.combatants[0]).toEqual(jasmine.objectContaining({ profileName: 'Scout', movementRange: 8 }));
+    });
+  });
+
+  describe('action points (3B.2)', () => {
+    it('keeps maxAp from every combatant payload', () => {
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'c1', maxAp: 5 })]));
+      expect(store.snapshot().encounter.combatants[0].maxAp).toBe(5);
+
+      store.dispatch(new PlanningPhaseStarted(2, 0, [makePlanningCombatantDto({ id: 'c1', maxAp: 3 })]));
+      expect(store.snapshot().encounter.combatants[0].maxAp).toBe(3);
+    });
+
+    it('stores the AP costs from PlanningPhaseStarted, defaulting when none are sent', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [], { move: 2, melee_attack: 3, ranged_attack: 3, defend: 1 }));
+      expect(store.selectSnapshot(EncounterState.apCosts)['move']).toBe(2);
+
+      store.dispatch(new PlanningPhaseStarted(2, 0, []));
+      expect(store.selectSnapshot(EncounterState.apCosts)['melee_attack']).toBe(2);
+    });
+
+    it('stores GM enemy plans as queues', () => {
+      const queue = [
+        { type: 'move', targetCell: { x: 1, y: 1 }, targetCombatantId: null },
+        { type: 'melee_attack', targetCell: null, targetCombatantId: 'c1' },
+      ];
+      store.dispatch(new GmSetEnemyPlan('m1', queue));
+      expect(store.selectSnapshot(EncounterState.enemyPlannedActions)['m1']).toEqual(queue);
     });
   });
 

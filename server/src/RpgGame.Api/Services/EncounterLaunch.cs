@@ -53,6 +53,6 @@ internal static class EncounterLaunch
         return new EncounterStartedResult(
             sessionId,
             new EncounterStartedPayload(encounter.Id.ToString(), combatantDtos, mapDto),
-            new PlanningPhaseStartedPayload(1, timerSeconds, planningCombatantDtos));
+            new PlanningPhaseStartedPayload(1, timerSeconds, planningCombatantDtos, RulesWireMapping.ApCosts()));
     }
 }

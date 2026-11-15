@@ -32,8 +32,8 @@ describe('GmEnemyPlannerComponent', () => {
 
   it('labels AI monsters with an AI badge and manual ones as defending', () => {
     TestBed.inject(Store).dispatch(new PlanningPhaseStarted(1, 300, [
-      { id: 'm1', userId: 'gm', characterName: 'Goblin', currentHp: 20, maxHp: 20, isDefeated: false, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5 },
-      { id: 'm2', userId: 'gm', characterName: 'Puppet', currentHp: 20, maxHp: 20, isDefeated: false, combatantType: 'monster', isAiControlled: false, profileId: 'grunt', profileName: 'Grunt', movementRange: 5 },
+      { id: 'm1', userId: 'gm', characterName: 'Goblin', currentHp: 20, maxHp: 20, isDefeated: false, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5, maxAp: 4 },
+      { id: 'm2', userId: 'gm', characterName: 'Puppet', currentHp: 20, maxHp: 20, isDefeated: false, combatantType: 'monster', isAiControlled: false, profileId: 'grunt', profileName: 'Grunt', movementRange: 5, maxAp: 4 },
     ]));
     fixture.detectChanges();
 

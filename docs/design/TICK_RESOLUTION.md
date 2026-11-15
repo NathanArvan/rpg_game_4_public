@@ -109,12 +109,18 @@ resolve_round(all_combatants):
 
 | Action Type | Phase | AP Cost (3A placeholder) | Notes |
 |---|---|---|---|
-| Move | Movement | 1 | Path-based, Chebyshev ≤ movement range per move |
+| Move | Movement | 1 | Path-based. Since 3B.2, all of a round's moves share the combatant's movement range (see below) |
 | Melee Attack | Attack | 2 | Requires adjacency (Chebyshev ≤ 1) post-movement |
 | Ranged Attack | Attack | 2 | Requires target within range post-movement. Unlimited range in 3A. |
 | Defend | Effects | 1 | No resolution in 3A. Future: damage reduction buff. |
 | Disengage | Movement | 1 | Move without provoking reactive attacks. See Decision 5. |
 | Prepared Action | Special | Varies | Doesn't resolve at its queue position. Activates reactively. See Decision 4. |
+
+### Movement Budget per Round (3B.2) ✅
+
+**Choice: Each Move costs 1 AP, but all of a combatant's moves in one round share a budget of `MovementRange` cells.** Each queued move is measured from where the previous one ends. At resolution a move stops early once the budget runs out; steps a move didn't take because it was blocked aren't counted.
+
+Why: if each Move could go the full range, a 5-AP combatant with range 6 could cover 30 cells, more than the 20×20 map. A shared budget keeps ground covered per round the same as the single-move model and still lets the AP queue mix movement with attacks (Move → Attack → Move). As shipped: MaxAp 4–5 per profile; costs move 1, melee 2, ranged 2, defend 1 (`RulesConfig`). Queues over budget are rejected at planning (`PlanValidator`) and cut by the resolver.
 
 ### Compound Actions Are Eliminated
 
@@ -351,7 +357,7 @@ When AP lands in 3B.2, the constraint is lifted. Queue length becomes dynamic, d
 
 | Action | Phase | Notes |
 |---|---|---|
-| Move | Movement | Chebyshev ≤ 6. Path-based resolution (cell-by-cell). No reactive triggers fire in 3A, but the path infrastructure exists. |
+| Move | Movement | Chebyshev ≤ 6 (per-profile movement range since 3B.1, shared by all moves in a round since 3B.2). Path-based resolution (cell-by-cell). No reactive triggers fire in 3A, but the path infrastructure exists. |
 | Attack | Attack | Melee (adjacency) or ranged (unlimited range in 3A). Hit check with placeholder values per Design Spike Decision 4. |
 | Defend | Effects | Do nothing. Default action on timeout. No mechanical effect in 3A. |
 

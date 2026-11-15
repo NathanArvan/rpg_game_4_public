@@ -1,6 +1,7 @@
 {
   // The goblin's target is chosen from the start-of-round state. The wounded mage is just as
-  // close as the fighter, so the goblin goes for the lower HP.
+  // close as the fighter, so the goblin goes for the lower HP. With 4 AP it queues two melees;
+  // the first drops the mage, so the second is wasted (no dice).
   "description": "AI: a goblin next to two heroes attacks the wounded one",
   "combatants": [
     { "id": "Fighter", "hp": 20, "damage": "d8", "at": [4, 5] },
@@ -14,7 +15,8 @@
   },
   "dice": [15, 5],
   "expect": {
-    "plans":    { "Goblin": "melee Mage" },
+    "plans":    { "Goblin": ["melee Mage", "melee Mage"] },
+    "ticks":    2,
     "hp":       { "Mage": 0, "Fighter": 20 },
     "defeated": ["Mage"]
   }

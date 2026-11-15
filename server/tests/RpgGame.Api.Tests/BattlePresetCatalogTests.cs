@@ -59,12 +59,12 @@ public class BattlePresetCatalogTests : IDisposable
         Write("o.json", """
             { "id": "o", "name": "O", "combatants": [
                 { "name": "A", "side": "party", "profile": "bruiser", "hp": 3, "damage": "d12", "speed": 1,
-                  "move": 2, "meleeAccuracy": 5, "rangedAccuracy": -4, "dodge": 17, "at": [0, 0] },
+                  "move": 2, "meleeAccuracy": 5, "rangedAccuracy": -4, "dodge": 17, "ap": 7, "at": [0, 0] },
                 { "name": "B", "side": "enemy", "profile": "grunt", "at": [0, 1] } ] }
             """);
         var a = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants[0].Profile;
-        Assert.Equal((3, "d12", 1, 2, 5, -4, 17),
-            (a.MaxHp, a.BaseDamage, a.Speed, a.MovementRange, a.MeleeAccuracy, a.RangedAccuracy, a.Dodge));
+        Assert.Equal((3, "d12", 1, 2, 5, -4, 17, (int?)7),
+            (a.MaxHp, a.BaseDamage, a.Speed, a.MovementRange, a.MeleeAccuracy, a.RangedAccuracy, a.Dodge, a.MaxAp));
     }
 
     [Theory]
@@ -78,6 +78,7 @@ public class BattlePresetCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "hp": 5, "damage": "2d6", "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "hp": 5, "damage": "d6", "at": [1, 0] } ] }""", "'damage'")]
     [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "ally", "hp": 5, "damage": "d6", "at": [0, 0] } ] }""", "'side'")]
     [InlineData("""{ "name": "X", "combatants": [] }""", "'id'")]
+    [InlineData("""{ "id": "x", "name": "X", "combatants": [ { "name": "A", "side": "party", "profile": "scout", "ap": 0, "at": [0, 0] }, { "name": "B", "side": "enemy", "profile": "grunt", "at": [1, 0] } ] }""", "'ap'")]
     [InlineData("""{ not json""", "invalid JSON")]
     public void BrokenPreset_FailsWithTheFileName(string json, string expected)
     {

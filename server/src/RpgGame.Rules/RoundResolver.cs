@@ -29,9 +29,9 @@ public static class RoundResolver
 
         var round = new RoundContext(state, plans, dice, config);
 
-        // Ticks = longest queue. Always at least one tick, so a round with no plans still
-        // produces one (empty) tick.
-        int tickCount = Math.Max(1, plans.Count == 0 ? 0 : plans.Values.Max(q => q.Count));
+        // Ticks = longest (affordable) queue. Always at least one tick, so a round with no plans
+        // still produces one (empty) tick.
+        int tickCount = Math.Max(1, round.Plans.Count == 0 ? 0 : round.Plans.Values.Max(q => q.Count));
 
         var ticks = new List<TickOutcome>(tickCount);
         for (int tick = 0; tick < tickCount; tick++)
@@ -72,9 +72,11 @@ public static class RoundResolver
             if (!round.Positions.TryGetValue(combatantId, out var start)) continue;
 
             // Re-check the move against the rules (PlanningService also validates it): the path
-            // stops after the mover's MovementRange steps or at the grid edge, whichever comes first.
+            // stops when the mover's movement budget for the round runs out (all moves share
+            // MovementRange cells, roadmap 3B.2) or at the grid edge, whichever comes first.
             var mover = round.Combatants[combatantId];
-            var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, mover.Profile.MovementRange);
+            int cellsLeft = mover.Profile.MovementRange - round.CellsMoved.GetValueOrDefault(combatantId);
+            var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, Math.Max(0, cellsLeft));
 
             // A move to the combatant's own cell is a mover with a one-cell path: it never steps,
             // blocks like any stationary occupant, and still reports a (stay-put) result.
@@ -157,6 +159,8 @@ public static class RoundResolver
                 {
                     mover.CurrentStep++;
                     round.Positions[mover.CombatantId] = mover.FullPath[mover.CurrentStep];
+                    // Only steps actually taken use up the movement budget.
+                    round.CellsMoved[mover.CombatantId] = round.CellsMoved.GetValueOrDefault(mover.CombatantId) + 1;
                 }
             }
         }
@@ -356,6 +360,9 @@ public static class RoundResolver
         public Dictionary<string, GridPosition> Positions { get; }
         public Dictionary<string, int> Hp { get; }
 
+        /// <summary>Cells each combatant has stepped this round (the shared movement budget).</summary>
+        public Dictionary<string, int> CellsMoved { get; } = [];
+
         private readonly HashSet<string> _defeatedBefore;
         private readonly HashSet<string> _defeatedThisRoundSet = [];
         public List<string> DefeatedThisRound { get; } = [];
@@ -367,7 +374,6 @@ public static class RoundResolver
             RulesConfig config)
         {
             State = state;
-            Plans = plans;
             Dice = dice;
             Config = config;
             Combatants = state.Combatants.ToDictionary(c => c.Id);
@@ -380,6 +386,17 @@ public static class RoundResolver
             foreach (var id in plans.Keys)
                 if (!Combatants.ContainsKey(id))
                     throw new ArgumentException($"Plan given for unknown combatant '{id}'.", nameof(plans));
+
+            // Each queue is cut to the actions its combatant can afford (roadmap 3B.2).
+            // PlanningService rejects over-budget plans, so this only guards the engine.
+            // A new insertion-ordered dictionary keeps plan order.
+            var affordable = new Dictionary<string, IReadOnlyList<PlannedAction>>();
+            foreach (var (id, queue) in plans)
+            {
+                int n = PlanValidator.AffordableCount(queue, Combatants[id].Profile.MaxAp, config);
+                affordable[id] = n == queue.Count ? queue : queue.Take(n).ToList();
+            }
+            Plans = affordable;
         }
 
         /// <summary>Defeated before this round, or earlier in it.</summary>

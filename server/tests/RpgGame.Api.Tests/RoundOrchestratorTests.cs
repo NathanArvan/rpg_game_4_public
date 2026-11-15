@@ -102,7 +102,7 @@ public class RoundOrchestratorTests
         _ai.Setup(a => a.PlanAndLockInAsync(_encounterId, null))
             .ReturnsAsync([new AiLockIn("m1", "Goblin"), new AiLockIn("m2", "Orc")]);
 
-        await orchestrator.StartPlanningPhaseAsync(_encounterId, _sessionId, new PlanningPhaseStartedPayload(1, 300, []));
+        await orchestrator.StartPlanningPhaseAsync(_encounterId, _sessionId, new PlanningPhaseStartedPayload(1, 300, [], []));
 
         Assert.Equal(
             [HubEvents.Events.PlanningPhaseStarted, HubEvents.Events.PlayerLockedIn, HubEvents.Events.PlayerLockedIn],

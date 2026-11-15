@@ -1,0 +1,19 @@
+{
+  // The Api rejects over-budget plans, but the resolver also cuts any queue to what the combatant
+  // can afford. Melee (2) + Melee (2) + Move (1) = 5 > 4 AP, so the move never happens.
+  "description": "AP: an over-budget queue is cut; the third action is dropped",
+  "combatants": [
+    { "id": "Fighter", "hp": 20, "damage": "d8", "at": [5, 5] },
+    { "id": "Goblin",  "hp": 20, "damage": "d4", "at": [5, 6] }
+  ],
+  "plans": {
+    "Fighter": ["melee Goblin", "melee Goblin", "move 9,9"],
+    "Goblin":  ["defend"]
+  },
+  "dice": [2, 2],
+  "expect": {
+    "ticks": 2,
+    "positions": { "Fighter": [5, 5] },
+    "hp": { "Goblin": 20 }
+  }
+}

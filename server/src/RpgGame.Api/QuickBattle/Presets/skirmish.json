@@ -1,7 +1,7 @@
 {
   // Default preset: one of each party profile against three grunts.
   // Each combatant names a combat profile (CombatProfiles/profiles.json) and may override
-  // single values: hp, damage, speed, move, meleeAccuracy, rangedAccuracy, dodge.
+  // single values: hp, damage, speed, move, meleeAccuracy, rangedAccuracy, dodge, ap.
   "id": "skirmish",
   "name": "Skirmish",
   "description": "Three heroes against three goblins across an open field.",

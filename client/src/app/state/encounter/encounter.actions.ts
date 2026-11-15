@@ -1,3 +1,4 @@
+import { DEFAULT_AP_COSTS } from './plan-queue';
 import { CombatantDto, MonsterAddedPayload, PlanningCombatantDto, PlannedActionEntry, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 
 export class MonsterAdded {
@@ -12,7 +13,7 @@ export class GmSelectEnemy {
 
 export class GmSetEnemyPlan {
   static readonly type = '[Encounter] GM Set Enemy Plan';
-  constructor(public combatantId: string, public action: PlannedActionEntry) {}
+  constructor(public combatantId: string, public actions: PlannedActionEntry[]) {}
 }
 
 export class GmClearEnemyPlan {
@@ -33,7 +34,9 @@ export class PlanningPhaseStarted {
   constructor(
     public roundNumber: number,
     public planningTimerDurationSeconds: number,
-    public combatants: PlanningCombatantDto[]
+    public combatants: PlanningCombatantDto[],
+    /** AP cost per action type; omitted → the default costs. */
+    public apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS }
   ) {}
 }
 

@@ -13,8 +13,10 @@ export interface Combatant {
   isAiControlled: boolean;
   /** Combat profile display name, e.g. "Bruiser" (empty for combatants from before profiles). */
   profileName: string;
-  /** Max cells per move, from the combatant's combat profile. */
+  /** Max cells moved per round (shared by all of the round's moves), from the combat profile. */
   movementRange: number;
+  /** Action points per round, from the combat profile (3B.2). */
+  maxAp: number;
 }
 
 /** Movement range for a combatant whose server DTO doesn't carry one (the 3A default). */
@@ -48,6 +50,9 @@ export interface EncounterStateModel {
   planningTimerExpiresAt: string | null;
   resolutionTicks: TickResult[];
   gmSelectedEnemyId: string | null;
-  enemyPlannedActions: Record<string, PlannedActionEntry>;
+  /** GM-planned queues for monsters this round. */
+  enemyPlannedActions: Record<string, PlannedActionEntry[]>;
+  /** AP cost per action type ("move", "melee_attack", …), from the server's planning payload. */
+  apCosts: Record<string, number>;
   outcome: EncounterOutcome | null;
 }

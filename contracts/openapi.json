@@ -459,6 +459,10 @@
           "baseDamage": {
             "type": "string",
             "nullable": true
+          },
+          "maxAp": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

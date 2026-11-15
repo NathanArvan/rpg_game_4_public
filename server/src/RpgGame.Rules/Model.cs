@@ -50,6 +50,10 @@ public enum ActionType
 /// <param name="RangedAccuracy">Added to the d20 of this combatant's ranged attacks.</param>
 /// <param name="Dodge">An attack against this combatant hits when d20 + accuracy is at least this.</param>
 /// <param name="BaseDamage">Damage die rolled once per hit.</param>
+/// <param name="MaxAp">
+/// Action points to spend each round (roadmap 3B.2). Resets every round; costs come from
+/// <see cref="RulesConfig.ApCost"/>.
+/// </param>
 public sealed record CombatProfile(
     int MaxHp,
     int MovementRange,
@@ -57,9 +61,12 @@ public sealed record CombatProfile(
     int MeleeAccuracy,
     int RangedAccuracy,
     int Dodge,
-    DamageDie BaseDamage)
+    DamageDie BaseDamage,
+    int MaxAp = CombatProfile.DefaultMaxAp)
 {
-    /// <summary>The Phase 3A placeholder values: 20 HP, 6 cells, Speed 10, +0 accuracy, Dodge 10, d8.</summary>
+    public const int DefaultMaxAp = 4;
+
+    /// <summary>The placeholder values: 20 HP, 6 cells, Speed 10, +0 accuracy, Dodge 10, d8, 4 AP.</summary>
     public static CombatProfile Default { get; } = new(20, 6, 10, 0, 0, 10, DamageDie.D8);
 }
 

@@ -23,6 +23,13 @@ internal static class RulesWireMapping
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
+    /// <summary>AP cost of every action type, keyed by its wire string, for the planning payload.</summary>
+    public static Dictionary<string, int> ApCosts(RulesConfig? config = null)
+    {
+        config ??= RulesConfig.Default;
+        return Enum.GetValues<ActionType>().ToDictionary(ToWire, config.ApCost);
+    }
+
     public static string ToWire(EffectType type) => type switch
     {
         EffectType.Defend => "defend",

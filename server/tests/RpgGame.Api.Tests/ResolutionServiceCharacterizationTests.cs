@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -79,6 +80,10 @@ public partial class ResolutionServiceTests
         public void Melee(string id, string target) => _plans[id] = ActionJson("melee_attack", targetId: target);
         public void Ranged(string id, string target) => _plans[id] = ActionJson("ranged_attack", targetId: target);
         public void Defend(string id) => _plans[id] = ActionJson("defend");
+
+        /// <summary>A multi-action queue (3B.2), replacing any earlier plan for <paramref name="id"/>.</summary>
+        public void Queue(string id, params PlannedActionEntry[] actions) =>
+            _plans[id] = JsonSerializer.Serialize(new PlannedActionArray(actions), JsonOpts);
 
         public async Task<ResolutionPayload> Run(ScriptedDice dice)
         {
@@ -676,6 +681,49 @@ public partial class ResolutionServiceTests
         Assert.Empty(tick.Attacks);
         Assert.Empty(tick.Effects);
         Assert.Empty(s.CallLog.Where(l => l.StartsWith("SetHp")));
+    }
+
+    // ----- Action queues (3B.2) -----
+
+    [Fact]
+    public async Task Char_MoveThenMelee_TwoTicks_FeedAndEventsPerTick()
+    {
+        await using var s = new Scene();
+        var a = s.Monster("Goblin A", (0, 0));
+        var b = s.Monster("Goblin B", (3, 0));
+        s.Queue(a, new("move", new PositionDto(2, 0), null), new("melee_attack", null, b));
+        s.Defend(b);
+
+        var r = await s.Run(new ScriptedDice(12, 4));
+
+        Assert.Equal([0, 1], r.Ticks.Select(t => t.TickIndex));
+        var move = Assert.Single(r.Ticks[0].Movements);
+        Assert.Equal(new PositionDto(2, 0), move.FinalPosition);
+        Assert.Empty(r.Ticks[0].Attacks);
+        var atk = Assert.Single(r.Ticks[1].Attacks);
+        Assert.Equal("Goblin A strikes Goblin B for 4 damage (HP: 20 → 16)", atk.FeedText);
+        Assert.Single(r.Ticks[0].Effects); // B's defend is tick 0; its queue is then exhausted
+        Assert.Empty(r.Ticks[1].Effects);
+
+        var events = s.Db.GameEvents.ToList();
+        Assert.Single(events, e => e.EventType == "movement");
+        Assert.Single(events, e => e.EventType == "attack_hit");
+    }
+
+    [Fact]
+    public async Task Char_OverBudgetQueue_IsCutByTheResolver()
+    {
+        // Redis should never hold this (PlanningService rejects it), but the resolver still caps it:
+        // melee 2 + melee 2 + move 1 > 4 AP (default profile), so the move is dropped.
+        await using var s = new Scene();
+        var a = s.Monster("Goblin A", (0, 0));
+        var b = s.Monster("Goblin B", (1, 0));
+        s.Queue(a, new("melee_attack", null, b), new("melee_attack", null, b), new("move", new PositionDto(5, 5), null));
+
+        var r = await s.Run(new ScriptedDice(1, 1));
+
+        Assert.Equal(2, r.Ticks.Count);
+        Assert.All(r.Ticks, t => Assert.Empty(t.Movements));
     }
 
     // ----- Effects -----

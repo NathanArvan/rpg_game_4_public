@@ -64,8 +64,10 @@ public class AiPlanningServiceTests
 
     private AiPlanningService Service() => new(_db, _redis.Object, NullLogger<AiPlanningService>.Instance);
 
-    private PlannedActionEntry StoredPlan(Guid id) =>
-        Assert.Single(JsonSerializer.Deserialize<PlannedActionArray>(_storedPlans[id.ToString()], Json)!.Actions);
+    private PlannedActionEntry StoredPlan(Guid id) => Assert.Single(StoredQueue(id));
+
+    private IReadOnlyList<PlannedActionEntry> StoredQueue(Guid id) =>
+        JsonSerializer.Deserialize<PlannedActionArray>(_storedPlans[id.ToString()], Json)!.Actions;
 
     [Fact]
     public async Task AdjacentAiMonster_PlansMelee_DistantOne_PlansMove_BothLockedIn()
@@ -76,7 +78,9 @@ public class AiPlanningServiceTests
 
         var result = await Service().PlanAndLockInAsync(_encounterId);
 
-        Assert.Equal(new PlannedActionEntry("melee_attack", null, hero.ToString()), StoredPlan(adjacent));
+        // Default profile: 4 AP, so two 2-AP melees (3B.2).
+        var melee = new PlannedActionEntry("melee_attack", null, hero.ToString());
+        Assert.Equal([melee, melee], StoredQueue(adjacent));
         var move = StoredPlan(distant);
         Assert.Equal("move", move.Type);
         Assert.Equal(new PositionDto(5, 13), move.TargetCell);

@@ -8,6 +8,7 @@ import { GmClearEnemyPlan, GmSelectEnemy, GmSetEnemyPlan } from '../../../state/
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
+import { DEFAULT_AP_COSTS, apSpent, canAfford } from '../../../state/encounter/plan-queue';
 
 @Component({
   selector: 'app-gm-enemy-planner',
@@ -23,7 +24,8 @@ export class GmEnemyPlannerComponent {
   isPlanning$: Observable<boolean>;
   gmSelectedEnemyId$: Observable<string | null>;
 
-  private enemyPlannedActions: Record<string, PlannedActionEntry> = {};
+  private enemyPlannedActions: Record<string, PlannedActionEntry[]> = {};
+  private apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
 
   lockedIn = false;
 
@@ -35,14 +37,25 @@ export class GmEnemyPlannerComponent {
     store.select(EncounterState.enemyPlannedActions).subscribe(plans => {
       this.enemyPlannedActions = plans;
     });
+    store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
     // Reset lock-in when a new planning phase starts
     store.select(EncounterState.isPlanning).subscribe(planning => {
       if (planning) this.lockedIn = false;
     });
   }
 
-  getPlan(combatantId: string): PlannedActionEntry | null {
-    return this.enemyPlannedActions[combatantId] ?? null;
+  /** The monster's planned queue, or null if the GM hasn't planned it. */
+  getPlan(combatantId: string): PlannedActionEntry[] | null {
+    const queue = this.enemyPlannedActions[combatantId];
+    return queue && queue.length > 0 ? queue : null;
+  }
+
+  queueSummary(queue: PlannedActionEntry[]): string {
+    return queue.map(a => this.planSummary(a)).join(' · ');
+  }
+
+  apLabel(enemy: Combatant): string {
+    return `${apSpent(this.getPlan(enemy.id) ?? [], this.apCosts)}/${enemy.maxAp} AP`;
   }
 
   planSummary(action: PlannedActionEntry): string {
@@ -60,18 +73,19 @@ export class GmEnemyPlannerComponent {
     this.store.dispatch(new GmSelectEnemy(current === combatantId ? null : combatantId));
   }
 
-  onDefend(combatantId: string): void {
-    const action: PlannedActionEntry = { type: 'defend', targetCell: null, targetCombatantId: null };
-    this.store.dispatch(new GmSetEnemyPlan(combatantId, action));
-    this.hub.planEnemyAction(this.joinCode, combatantId, { actions: [action] });
-    // Deselect if this enemy was selected
-    const selected = this.store.selectSnapshot(EncounterState.gmSelectedEnemyId);
-    if (selected === combatantId) this.store.dispatch(new GmSelectEnemy(null));
+  /** Appends a Defend to the monster's queue if its AP allows. */
+  onDefend(enemy: Combatant): void {
+    const queue = this.getPlan(enemy.id) ?? [];
+    if (!canAfford(queue, 'defend', enemy.maxAp, this.apCosts)) return;
+    const next = [...queue, { type: 'defend', targetCell: null, targetCombatantId: null }];
+    this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
+    this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
   }
 
+  /** Clears the monster's queue here and on the server (unplanned monsters defend on lock-in). */
   onClearPlan(combatantId: string): void {
     this.store.dispatch(new GmClearEnemyPlan(combatantId));
-    // No server call needed — server defaults to defend on lock-in
+    this.hub.planEnemyAction(this.joinCode, combatantId, { actions: [] });
   }
 
   onLockInEnemies(): void {

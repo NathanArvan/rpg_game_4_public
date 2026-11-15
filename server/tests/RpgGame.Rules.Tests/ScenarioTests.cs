@@ -37,7 +37,7 @@ public partial class ScenarioTests
         var outcome = RoundResolver.Resolve(state, plans, dice, config);
 
         var failures = Check(scenario.Expect ?? new ExpectDto(), outcome);
-        CheckAiPlans(scenario.Expect?.Plans, aiPlans, failures);
+        CheckAiPlans(ExpectedAiPlans(scenario.Expect?.Plans, file), aiPlans, failures);
         if (dice.Remaining != 0)
             failures.Add($"dice: {dice.Remaining} scripted roll(s) were never used");
 
@@ -57,7 +57,7 @@ public partial class ScenarioTests
             ?? throw new InvalidDataException($"{file}: empty scenario");
     }
 
-    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, Dictionary<string, PlannedAction>, ScriptedDice, RulesConfig) Build(
+    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, Dictionary<string, IReadOnlyList<PlannedAction>>, ScriptedDice, RulesConfig) Build(
         ScenarioDto s, string file)
     {
         if (s.Combatants is not { Count: > 0 })
@@ -76,7 +76,8 @@ public partial class ScenarioTests
                 MeleeAccuracy: c.MeleeAccuracy ?? d.MeleeAccuracy,
                 RangedAccuracy: c.RangedAccuracy ?? d.RangedAccuracy,
                 Dodge: c.Dodge ?? d.Dodge,
-                BaseDamage: DamageDie.Parse(c.Damage ?? "d8"));
+                BaseDamage: DamageDie.Parse(c.Damage ?? "d8"),
+                MaxAp: c.MaxAp ?? d.MaxAp);
             return new CombatantState(
                 c.Id,
                 c.Name ?? c.Id,
@@ -112,13 +113,13 @@ public partial class ScenarioTests
         var state = new EncounterState(grid[0], grid[1], combatants);
 
         // "ai" plans are filled in by EnemyAi from the starting state, before the round resolves.
-        var aiPlans = new Dictionary<string, PlannedAction>();
+        var aiPlans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
         if (aiIds.Count > 0)
         {
             var teams = s.Combatants.ToDictionary(c => c.Id, c => c.Side ?? "party");
             aiPlans = EnemyAi.PlanRound(state, teams, aiIds, config);
             foreach (var id in aiIds)
-                plans[id] = aiPlans.TryGetValue(id, out var action) ? [action] : [];
+                plans[id] = aiPlans.TryGetValue(id, out var queue) ? queue : [];
         }
 
         return (state, plans, aiPlans, new ScriptedDice(s.Dice ?? []), config);
@@ -126,15 +127,24 @@ public partial class ScenarioTests
 
     private static bool IsAi(string text) => text.Trim().Equals("ai", StringComparison.OrdinalIgnoreCase);
 
-    private static void CheckAiPlans(Dictionary<string, string>? expected, Dictionary<string, PlannedAction> actual, List<string> failures)
-    {
-        foreach (var (id, text) in expected ?? [])
+    private static Dictionary<string, List<string>>? ExpectedAiPlans(Dictionary<string, JsonElement>? raw, string file) =>
+        raw?.ToDictionary(kv => kv.Key, kv => kv.Value.ValueKind switch
         {
-            var want = ParseAction(text, $"expect.plans.{id}");
+            JsonValueKind.String => [kv.Value.GetString()!],
+            JsonValueKind.Array => kv.Value.EnumerateArray().Select(e => e.GetString()!).ToList(),
+            _ => throw new InvalidDataException($"{file}: expect.plans.{kv.Key} must be an action string or a list of them"),
+        });
+
+    private static void CheckAiPlans(Dictionary<string, List<string>>? expected, Dictionary<string, IReadOnlyList<PlannedAction>> actual, List<string> failures)
+    {
+        foreach (var (id, texts) in expected ?? [])
+        {
+            var want = texts.Select(t => ParseAction(t, $"expect.plans.{id}")).ToList();
+            var wanted = string.Join(", ", texts.Select(t => $"\"{t}\""));
             if (!actual.TryGetValue(id, out var got))
-                failures.Add($"AI plan for {id}: expected \"{text}\", but {id} had no AI plan");
-            else if (got != want)
-                failures.Add($"AI plan for {id}: expected \"{text}\", got {Describe(got)}");
+                failures.Add($"AI plan for {id}: expected [{wanted}], but {id} had no AI plan");
+            else if (!got.SequenceEqual(want))
+                failures.Add($"AI plan for {id}: expected [{wanted}], got [{string.Join(", ", got.Select(Describe))}]");
         }
     }
 
@@ -245,6 +255,7 @@ public partial class ScenarioTests
         public int? MaxHp { get; set; }
         public int? Speed { get; set; }
         public int? Move { get; set; }
+        public int? MaxAp { get; set; }
         public int? MeleeAccuracy { get; set; }
         public int? RangedAccuracy { get; set; }
         public int? Dodge { get; set; }
@@ -268,7 +279,8 @@ public partial class ScenarioTests
         public List<TickRefDto>? Blocked { get; set; }
         public List<TickRefDto>? Hits { get; set; }
         public List<TickRefDto>? Wasted { get; set; }
-        public Dictionary<string, string>? Plans { get; set; }
+        /// <summary>AI plans: one action string, or a list of them for a multi-action queue.</summary>
+        public Dictionary<string, JsonElement>? Plans { get; set; }
     }
 
     private sealed class TickRefDto

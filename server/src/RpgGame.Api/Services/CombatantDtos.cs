@@ -19,7 +19,8 @@ internal static class CombatantDtos
         c.IsAiControlled,
         c.Profile?.ProfileId ?? "",
         c.Profile?.ProfileName ?? "",
-        CombatProfileMapping.MovementRange(c.Profile));
+        CombatProfileMapping.MovementRange(c.Profile),
+        CombatProfileMapping.MaxAp(c.Profile));
 
     public static PlanningCombatantDto Planning(EncounterCombatant c, int currentHp, bool isDefeated) => new(
         c.Id.ToString(),
@@ -32,9 +33,10 @@ internal static class CombatantDtos
         c.IsAiControlled,
         c.Profile?.ProfileId ?? "",
         c.Profile?.ProfileName ?? "",
-        CombatProfileMapping.MovementRange(c.Profile));
+        CombatProfileMapping.MovementRange(c.Profile),
+        CombatProfileMapping.MaxAp(c.Profile));
 
     public static CombatProfileDto Profile(CombatProfileDefinition p) => new(
         p.Id, p.Name, p.Description, p.Side, p.MaxHp, p.MovementRange, p.Speed,
-        p.MeleeAccuracy, p.RangedAccuracy, p.Dodge, p.BaseDamage);
+        p.MeleeAccuracy, p.RangedAccuracy, p.Dodge, p.BaseDamage, p.MaxAp);
 }

@@ -20,6 +20,8 @@ public interface IRedisGameState
 
     // Planning phase
     Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson);
+    /// <summary>Removes one combatant's plan (an empty plan from the client: "plan nothing yet").</summary>
+    Task ClearPlannedActionAsync(string encounterId, string combatantId);
     Task<Dictionary<string, string>> GetAllPlannedActionsAsync(string encounterId);
     Task<bool> HasPlannedActionAsync(string encounterId, string combatantId);
     Task ClearPlannedActionsAsync(string encounterId);

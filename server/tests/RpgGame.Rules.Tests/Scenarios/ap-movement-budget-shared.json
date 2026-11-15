@@ -1,0 +1,16 @@
+{
+  // Roadmap 3B.2: all of a round's moves share the profile's movement range. With move 4, the
+  // first move uses 3 cells, so the second stops after 1 more cell instead of reaching (3,4).
+  "description": "AP: two moves share one movement budget of 4 cells",
+  "combatants": [
+    { "id": "Scout", "hp": 12, "damage": "d4", "at": [0, 0], "move": 4 }
+  ],
+  "plans": {
+    "Scout": ["move 3,0", "move 3,4"]
+  },
+  "dice": [],
+  "expect": {
+    "ticks": 2,
+    "positions": { "Scout": [3, 1] }
+  }
+}

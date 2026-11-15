@@ -47,7 +47,7 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 *Scope note (November 2026):* Character stats and progression are **deferred** (see [Deferred: Character Stats & Progression](#deferred-character-stats--progression)). Phase 3B and 3C build against **combat profiles**: hand-authored bundles of derived combat values (HP, movement, accuracy, dodge, damage, AP, vision, …). The rules engine only ever consumes derived values, so whatever later produces them (six core stats, equipment, abilities, or a mix) is a mapping layer in the Api and doesn't touch `RoundResolver`. Building items, abilities, and conditions first should make it clearer what stats, if any, need to do.
 
-*Execution order:* 3B.0 → 3B.1 → 3B.5 → 3B.2 → 3B.3 → 3B.4. Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
+*Execution order:* 3B.0 → 3B.1 → 3B.2 → 3B.5 → 3B.3 → 3B.4 (3B.2 was pulled ahead of 3B.5 in November 2026). Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
 
 ### ✅ Slice 3B.0 — Manual Testing Spike
 
@@ -77,7 +77,9 @@ Later slices add fields to the profile as they need them: `MaxAp` (3B.2), `Condi
 
 Not in scope: the six core stats, point-buy, character creation rework, progression. The `Character` entity's `Race`, `Class`, `Level` and D&D `BaseStats` are left in place but unused by combat (no migration until the stats decision is made).
 
-### ⬜ Slice 3B.2 — Action Points
+### ✅ Slice 3B.2 — Action Points
+
+*Status: done. What shipped: `MaxAp` is a profile value (`ap` in `profiles.json`: Bruiser 4, Skirmisher 5, Scout 5, Grunt 4, Brute 4; default 4; battle presets may override it). Costs are shared constants in `RulesConfig`: move 1, melee 2, ranged 2, defend 1. **All of a round's moves share the profile's `move` cells** (each Move costs 1 AP but they can't go further in total than one move used to), so a combatant can move → attack → move without covering more ground. `PlanValidator` (Rules) checks a queue's AP total and movement budget, each move measured from where the previous queued move ends; `PlanningService` uses it to accept or reject a plan, and `RoundResolver` cuts any over-budget queue and caps each move at the cells left. An empty plan clears it. `EnemyAi` plans queues: melee as often as AP allows, or walk and then melee with the AP left. The client queues actions per combatant (append, undo, clear, AP counter, numbered move markers), plays back every tick, and labels ticks in the feed. The server's playback delay scales with the tick count. No `currentAp` in Redis and no per-entry `apCost`: AP resets every round and the server computes costs, sending the cost table in `PlanningPhaseStarted.apCosts`.*
 
 Delivers: Each round, characters have an AP budget (`MaxAp` from their combat profile) to spend on actions during planning. Moving, attacking, and using abilities all cost AP. Multiple actions can be planned per round. AP resets each round. The tick loop's queue length constraint lifts — this is where the multi-action architecture pays off.
 
@@ -190,7 +192,8 @@ Covers: whether characters have core stats at all, and if so which ones and how 
 Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Planning
 Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Quick Battle)
 Done        3B.1 Combat Profiles
-Next        3B.5 Defeat & Incapacitation → 3B.2 Action Points
+Done        3B.2 Action Points
+Next        3B.5 Defeat & Incapacitation
 Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -231,6 +234,8 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.1** (done) — `Character.CombatProfile` (string preset key, default `skirmisher`). `EncounterCombatant.Profile` (JSONB snapshot: profile id and name, MaxHp, MovementRange, Speed, MeleeAccuracy, RangedAccuracy, Dodge, BaseDamage) replaces the 3B.0 `MaxHp` / `Speed` / `DamageDie` columns. Presets live in `CombatProfiles/profiles.json`, not a table. `Race`, `Class`, `Level`, `BaseStats`, `MaxHp`, `CurrentHp` on `Character` are left untouched and unused by combat. Monsters get a preset too (staged with the monster name). Migration `AddCombatProfiles`.
 
+**3B.2** (done) — `MaxAp` added to the `EncounterCombatant.Profile` JSONB snapshot (null on older rows, read as the default 4). Migration `AddMaxAp` only updates the model snapshot.
+
 **3B.3** — New table: `ability_definitions` (id, name, description, ap_cost, cooldown_rounds, range, target_type, effect JSONB, tags[]). Loadouts: either a `character_abilities` (character_id, ability_definition_id) join table or abilities listed on the combat profile preset — pick in the sprint doc. No acquisition rules. Drop or repurpose `spell_definitions` and `character_known_spells`.
 
 **3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
@@ -269,7 +274,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.1** (done) — `character:live` hash: the `class` field is replaced by `profile` (the preset key). The values themselves are read from the Postgres snapshot on `EncounterCombatant`, not duplicated in Redis. Pending monsters gain `profile` (`{ name, isAiControlled, profile }`).
 
-**3B.2** — Add `currentAp` to `character:live` (`maxAp` comes from the profile). Add `apCost` field to each entry in planned actions.
+**3B.2** (done) — Nothing new in Redis. Planned actions are multi-entry `PlannedActionArray`s; AP is checked when a plan is submitted and resets every round, so no `currentAp` is stored, and entries carry no `apCost` (the server computes costs).
 
 **3B.3** — Add `abilityCooldowns` JSONB to `character:live` (`{ abilityId: roundsRemaining }`). Add ley point and resonance data to `encounter:map:{encounterId}`: `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 
@@ -310,13 +315,13 @@ Defined in `TICK_RESOLUTION.md`. The schema evolves across slices but is always 
 ```json
 {
   "actions": [
-    { "type": "move", "targetCell": { "x": 5, "y": 8 }, "apCost": 1 },
-    { "type": "melee_attack", "targetCombatantId": "abc-123", "apCost": 2 }
-  ],
-  "totalApSpent": 3,
-  "maxAp": 5
+    { "type": "move", "targetCell": { "x": 5, "y": 8 } },
+    { "type": "melee_attack", "targetCombatantId": "abc-123" }
+  ]
 }
 ```
+
+As shipped in 3B.2: the queue costs 1 + 2 = 3 AP, which must fit the combatant's `MaxAp`. Costs come from `RulesConfig` and are sent to clients in `PlanningPhaseStarted.apCosts`; entries don't carry them, and there's no `totalApSpent` / `maxAp` on the wire plan.
 
 **3B.3+ (prepared reactions):**
 ```json
@@ -388,7 +393,7 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 
 | Broadcast | Direction | Added In | Notes |
 |---|---|---|---|
-| `PlanningPhaseStarted` | Server → Group | 3A.1 | round number, timer, per-character available actions; adds AP info in 3B.2 |
+| `PlanningPhaseStarted` | Server → Group | 3A.1 | round number, timer, combatants (with `maxAp` and `movementRange` since 3B.1/3B.2), `apCosts` per action type (3B.2) |
 | `PlayerLockedIn` | Server → Group | 3A.1 | characterName only, no action details |
 | `AllLockedIn` | Server → Group | 3A.1 | resolution about to begin |
 | `ResolutionCompleted` | Server → Group (per-player in 3C.1) | 3A.2 | ordered resolution steps for playback; filtered per-recipient after 3C.1 |
@@ -408,12 +413,12 @@ What the rules engine consumes per combatant from 3B.1 on. Values are hand-autho
 | Value | Used by | Added in |
 |---|---|---|
 | `MaxHp` | HP pipeline | 3B.1 |
-| `MovementRange` | Move validation | 3B.1 |
+| `MovementRange` | Move validation: cells per round, shared by all moves (3B.2) | 3B.1 |
 | `Speed` | Contested-cell priority | 3B.1 |
 | `MeleeAccuracy`, `RangedAccuracy` | Hit check | 3B.1 |
 | `Dodge` | Hit check threshold (d20 + attacker accuracy ≥ target Dodge) | 3B.1 |
 | `BaseDamage` (a die, e.g. `d8`) | Damage pipeline | 3B.1 |
-| `MaxAp` | AP budget | 3B.2 |
+| `MaxAp` | AP budget (queue cost per round) | 3B.2 |
 | `ConditionResist` | Condition application | 3B.4 |
 | `VisionRange` | Fog of war | 3C.1 |
 | `ShareRange` (if the chosen model needs it) | Info sharing | 3C.2 |
