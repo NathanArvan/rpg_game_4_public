@@ -3,11 +3,16 @@
     Combat Log
     <span class="unread-badge" *ngIf="(unreadCount$ | async) as count">{{ count }}</span>
   </h3>
-  <div class="entries" *ngIf="rows$ | async as rows">
-    <div *ngFor="let row of rows; trackBy: trackRow" class="entry entry-{{ row.kind }}">
-      <span class="timestamp">{{ row.timestamp | date:'HH:mm:ss' }}</span>
-      <span class="text"><span *ngFor="let seg of row.segments" [class]="seg.style ? 'seg-' + seg.style : null">{{ seg.text }}</span></span>
-    </div>
-    <div *ngIf="!rows.length" class="empty">No events yet.</div>
+  <div class="entries" #scroller (scroll)="onScroll()">
+    <ng-container *ngIf="rows$ | async as rows">
+      <div *ngFor="let row of rows; trackBy: trackRow" class="entry entry-{{ row.kind }}">
+        <span class="timestamp">{{ row.timestamp | date:'HH:mm:ss' }}</span>
+        <span class="text"><span *ngFor="let seg of row.segments" [class]="seg.style ? 'seg-' + seg.style : null">{{ seg.text }}</span></span>
+      </div>
+      <div *ngIf="!rows.length" class="empty">No events yet.</div>
+    </ng-container>
   </div>
+  <button type="button" class="jump-latest" *ngIf="!following" (click)="jumpToLatest($event)">
+    Jump to latest<span *ngIf="newSinceScrolledUp"> ({{ newSinceScrolledUp }} new)</span> ↓
+  </button>
 </div>

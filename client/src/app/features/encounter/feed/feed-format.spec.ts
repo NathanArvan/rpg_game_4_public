@@ -11,6 +11,7 @@ describe('formatFeedLine', () => {
   const show = (segments: FeedSegment[]) => segments.map(s => s.style ? `[${s.style}]${s.text}` : s.text);
 
   it('makes round and encounter-end lines round headings, and tick lines tick headings', () => {
+    expect(formatFeedLine('— Battle Start —', sides).kind).toBe('round');
     expect(formatFeedLine('— Round 3 Resolution —', sides).kind).toBe('round');
     expect(formatFeedLine('— Encounter over after round 4: the party wins —', sides).kind).toBe('round');
     expect(formatFeedLine('Tick 2', sides).kind).toBe('tick');

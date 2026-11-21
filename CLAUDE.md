@@ -263,7 +263,7 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
 - **GmEnemyPlannerComponent** — select a monster, queue actions via grid clicks or 🛡 (AP-limited), clear, Lock In Enemies
 - **QuickBattlePanelComponent** — Quick Battle only: preset name, Force Resolve, Restart, Leave
 - **EncounterResultComponent** — overlay when `EncounterEnded` arrives: Victory/Defeat/Draw, Return to lobby, Play again (Quick Battle)
-- **FeedComponent** — timestamped combat log, newest line on top; unread badge. Lines stay plain text in `FeedState`; `feed-format.ts` (pure) styles them for display: round headings > tick headings > events, party names blue, enemy names red, damage orange, misses grey
+- **FeedComponent** — timestamped combat log, oldest line first (each encounter opens with "— Battle Start —", added when `EncounterStarted` arrives); fills the right column and scrolls inside itself, following new lines while you're at the bottom, with a "Jump to latest" button (and a count of new lines) when scrolled up; unread badge. Lines stay plain text in `FeedState`; `feed-format.ts` (pure) styles them for display: round headings > tick headings > events, party names blue, enemy names red, damage orange, misses grey
 - **EncounterPreviewComponent** (`/preview`) — offline UI sandbox seeded with mock NGXS state (no server needed); toggle GM/player and planning/resolving
 
 ### Nginx Proxy (`client/nginx.conf`)

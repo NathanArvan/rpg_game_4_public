@@ -27,7 +27,7 @@ export class FeedState {
     const entry: FeedEntry = { id: crypto.randomUUID(), text, timestamp: new Date() };
     const state = ctx.getState();
     ctx.patchState({
-      entries: [entry, ...state.entries],
+      entries: [...state.entries, entry],
       unreadCount: state.unreadCount + 1,
     });
   }
@@ -35,16 +35,15 @@ export class FeedState {
   @Action(AddFeedBatch)
   addBatch(ctx: StateContext<FeedStateModel>, { texts }: AddFeedBatch) {
     const now = new Date();
-    // Newest first throughout: a batch's last line goes on top, so lines added one beat at a time
-    // during playback read in the same order as lines added together.
-    const newEntries: FeedEntry[] = [...texts].reverse().map(text => ({
+    // Oldest first: new lines go at the bottom, in the order given.
+    const newEntries: FeedEntry[] = texts.map(text => ({
       id: crypto.randomUUID(),
       text,
       timestamp: now,
     }));
     const state = ctx.getState();
     ctx.patchState({
-      entries: [...newEntries, ...state.entries],
+      entries: [...state.entries, ...newEntries],
       unreadCount: state.unreadCount + newEntries.length,
     });
   }

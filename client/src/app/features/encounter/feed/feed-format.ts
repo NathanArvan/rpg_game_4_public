@@ -2,13 +2,17 @@
  * Splits a combat log line into styled pieces for display. Pure: the feed stores plain text
  * (what the server and playback produce); this only decides how it looks.
  *
- * - "— Round 2 Resolution —" (and "— Encounter over … —") → a round heading
+ * - "— Battle Start —", "— Round 2 Resolution —" and "— Encounter over … —" → round headings
  * - "Tick 1" → a tick heading
  * - other lines: party names blue, enemy names red, "for 5 damage (HP: 8 → 3)" /
  *   "for 5 damage — defeated!" orange, "and misses" grey
  */
 
 export type FeedLineKind = 'round' | 'tick' | 'event';
+
+/** First line of every encounter's log (added when EncounterStarted arrives). */
+export const BATTLE_START_LINE = '— Battle Start —';
+
 export type SegmentStyle = 'party' | 'enemy' | 'damage' | 'miss';
 
 export interface FeedSegment {
@@ -29,7 +33,7 @@ const DAMAGE = String.raw`for \d+ damage(?: \(HP: -?\d+ → -?\d+\)| — defeate
 const MISS = 'and misses';
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
-  if (/^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {
+  if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {
     return { kind: 'round', segments: [{ text }] };
   }
   if (/^Tick \d+$/.test(text)) return { kind: 'tick', segments: [{ text }] };

@@ -41,7 +41,7 @@ const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {
   c4: { x: 6, y: 16 },
 };
 
-/** Earlier rounds' log, oldest line first (the feed shows the newest on top). */
+/** Earlier rounds' log, oldest line first. */
 const MOCK_FEED = [
   '— Round 1 Resolution —',
   'Zara Forge moves to (8, 10)',

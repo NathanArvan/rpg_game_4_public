@@ -14,6 +14,7 @@ import {
 } from '../../state/encounter/encounter.actions';
 import { MapInitialized } from '../../state/map/map.actions';
 import { AddFeedBatch } from '../../state/feed/feed.actions';
+import { BATTLE_START_LINE } from '../../features/encounter/feed/feed-format';
 import { AuthService } from './auth.service';
 import { ResolutionPlaybackService } from './resolution-playback.service';
 import {
@@ -57,6 +58,7 @@ export class GameHubService {
       console.log('[hub] EncounterStarted received:', payload);
       this.ngZone.run(() => {
         this.store.dispatch(new EncounterStarted(payload.encounterId, payload.combatants));
+        this.store.dispatch(new AddFeedBatch([BATTLE_START_LINE]));
         if (payload.map) {
           this.store.dispatch(new MapInitialized(
             payload.encounterId,

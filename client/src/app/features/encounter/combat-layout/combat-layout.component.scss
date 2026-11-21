@@ -5,9 +5,16 @@
   overflow: hidden;
 }
 
-.col-left,
-.col-right {
+.col-left {
   overflow-y: auto;
+}
+
+// The combat log fills the column and scrolls inside itself (so its header and the
+// "Jump to latest" button stay in view).
+.col-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .col-center {
