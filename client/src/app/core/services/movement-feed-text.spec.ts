@@ -1,5 +1,5 @@
 import { MovementResult } from '../../contracts/hub-contracts.generated';
-import { movementFeedText } from './game-hub.service';
+import { movementFeedText } from './playback-timeline';
 
 describe('movementFeedText', () => {
   const base: MovementResult = {

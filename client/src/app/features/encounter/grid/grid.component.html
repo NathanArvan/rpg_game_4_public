@@ -2,38 +2,54 @@
 
     <!-- Grid -->
   <div class="grid-container">
-    <div
-      class="grid"
-      [style.grid-template-columns]="gridColumns$ | async">
+    <div class="board">
       <div
-        *ngFor="let cell of cells$ | async"
-        class="cell"
-        [attr.data-x]="cell.x"
-        [attr.data-y]="cell.y"
-        [class.in-range]="isInRange(cell)"
-        [class.ghost]="isGhostTarget(cell)"
-        [class.enemy-ghost]="isEnemyGhostTarget(cell)"
-        (click)="onCellClick(cell)">
-        <span class="ghost-step" *ngIf="!tokenAt(cell) && ghostStep(cell) as step">{{ step }}</span>
+        class="grid"
+        [style.grid-template-columns]="gridColumns$ | async">
         <div
-          *ngIf="tokenAt(cell) as combatant"
-          class="token"
-          [class.my-token]="isMine(combatant)"
-          [class.selected-token]="isSelected(combatant)"
-          [class.planned-token]="controlsSeveral && hasPlan(combatant)"
-          [class.defeated-token]="combatant.isDefeated"
-          [class.defeating-token]="isDefeating(combatant)"
-          [class.targeted-token]="isTargeted(combatant)"
-          [title]="combatant.characterName + ' (HP: ' + combatant.currentHp + '/' + combatant.maxHp + ')'">
-          {{ combatant.characterName[0] }}
+          *ngFor="let cell of cells$ | async"
+          class="cell"
+          [attr.data-x]="cell.x"
+          [attr.data-y]="cell.y"
+          [class.in-range]="isInRange(cell)"
+          [class.ghost]="isGhostTarget(cell)"
+          [class.enemy-ghost]="isEnemyGhostTarget(cell)"
+          (click)="onCellClick(cell)">
+          <span class="ghost-step" *ngIf="!tokenAt(cell) && ghostStep(cell) as step">{{ step }}</span>
         </div>
-        <!-- Damage numbers overlay -->
+      </div>
+
+      <!-- Tokens sit in their own layer so they glide between cells during playback. -->
+      <div class="token-layer">
         <div
-          *ngFor="let dmg of damageNumbersAt(cell)"
-          class="damage-number"
-          [class.damage-hit]="dmg.isHit"
-          [class.damage-miss]="!dmg.isHit">
-          {{ dmg.text }}
+          *ngFor="let token of tokens; trackBy: trackToken"
+          class="token"
+          [attr.data-x]="token.x"
+          [attr.data-y]="token.y"
+          [style.transform]="tokenTransform(token)"
+          [style.transition-duration]="tokenTransitionDurations"
+          [class.my-token]="isMine(token.combatant)"
+          [class.selected-token]="isSelected(token.combatant)"
+          [class.planned-token]="controlsSeveral && hasPlan(token.combatant)"
+          [class.defeated-token]="isShownDefeated(token.combatant)"
+          [class.targeted-token]="isTargeted(token.combatant)"
+          [title]="tokenTitle(token.combatant)"
+          (click)="onTokenClick(token)">
+          {{ token.combatant.characterName[0] }}
+          <span
+            *ngFor="let aura of aurasFor(token.combatant.id); trackBy: trackKey; let i = index"
+            class="aura aura-{{ aura.kind }}"
+            [style.inset.px]="-(3 + i * 4)"
+            [style.animation-duration.ms]="auraMs"></span>
+        </div>
+
+        <!-- Floating damage / MISS text -->
+        <div
+          *ngFor="let f of floats; trackBy: trackKey"
+          class="float"
+          [style.transform]="floatTransform(f)"
+          [style.transition-duration]="floatTransitionDuration">
+          <span class="float-text float-{{ f.kind }}" [style.animation-duration.ms]="floatMs">{{ f.text }}</span>
         </div>
       </div>
     </div>

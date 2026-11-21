@@ -35,7 +35,9 @@ export class FeedState {
   @Action(AddFeedBatch)
   addBatch(ctx: StateContext<FeedStateModel>, { texts }: AddFeedBatch) {
     const now = new Date();
-    const newEntries: FeedEntry[] = texts.map(text => ({
+    // Newest first throughout: a batch's last line goes on top, so lines added one beat at a time
+    // during playback read in the same order as lines added together.
+    const newEntries: FeedEntry[] = [...texts].reverse().map(text => ({
       id: crypto.randomUUID(),
       text,
       timestamp: now,

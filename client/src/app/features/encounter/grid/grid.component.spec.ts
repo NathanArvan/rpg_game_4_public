@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideStore, Store } from '@ngxs/store';
 import { GridComponent } from './grid.component';
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -7,6 +7,8 @@ import { MapState } from '../../../state/map/map.state';
 import { PlanningPhaseStarted, SelectMyCombatant } from '../../../state/encounter/encounter.actions';
 import { PlanningCombatantDto } from '../../../contracts/hub-contracts.generated';
 import { MapInitialized } from '../../../state/map/map.actions';
+import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
+import { PLAYBACK_TIMING } from '../../../core/services/playback-timeline';
 
 describe('GridComponent', () => {
   let fixture: ComponentFixture<GridComponent>;
@@ -138,5 +140,39 @@ describe('GridComponent', () => {
       grid.onCellClick({ x: 2, y: 0 });
       expect(grid.selectedPlan).toEqual([]);
     });
+  });
+
+  describe('resolution playback', () => {
+    const tokenCells = () => Array.from(fixture.nativeElement.querySelectorAll('.token-layer .token') as NodeListOf<HTMLElement>)
+      .map(t => `${t.textContent!.trim()[0]}@${t.dataset['x']},${t.dataset['y']}`);
+
+    it('keeps tokens that only attack on the board while the round plays back', fakeAsync(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [row('bruiser', 'Bruiser', 'player'), row('goblin', 'Goblin', 'monster')]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, goblin: { x: 2, y: 0 } }));
+      fixture.detectChanges();
+
+      TestBed.inject(ResolutionPlaybackService).receiveResolution({
+        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [],
+        ticks: [{
+          tickIndex: 0,
+          movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
+          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser' }],
+          effects: [],
+        }],
+      });
+      fixture.detectChanges();
+      expect(tokenCells()).toEqual(['B@1,0', 'G@2,0']);
+
+      tick(PLAYBACK_TIMING.maxStepMs);                 // the attack beat
+      fixture.detectChanges();
+      expect(tokenCells()).toEqual(['B@1,0', 'G@2,0']);
+      expect(fixture.nativeElement.querySelectorAll('.aura-hit').length).toBe(1);
+      expect(fixture.nativeElement.querySelectorAll('.aura-hurt').length).toBe(1);
+      expect(fixture.nativeElement.querySelector('.float-damage')?.textContent.trim()).toBe('-2');
+
+      tick(PLAYBACK_TIMING.attackMs + PLAYBACK_TIMING.floatMs);
+      fixture.detectChanges();
+      expect(tokenCells()).toEqual(['B@1,0', 'G@2,0']);  // back on the map's (final) positions
+    }));
   });
 });

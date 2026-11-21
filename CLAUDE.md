@@ -200,7 +200,9 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 - **AuthService** — register, login, getToken, getUserId (parses JWT), isLoggedIn, logout
 - **CampaignService** — createCampaign, startSession
 - **CharacterService** — getMyCharacters, createCharacter, updateCharacter, deleteCharacter
-- **GameHubService** — SignalR connection; invokes all hub methods; dispatches NGXS actions on received events (also turns `ResolutionCompleted` into feed entries)
+- **GameHubService** — SignalR connection; invokes all hub methods; dispatches NGXS actions on received events. Hands `ResolutionCompleted` to `ResolutionPlaybackService`, and holds the encounter events that arrive mid-playback (`PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `CombatantDefeated`, `EncounterEnded`, `MonsterAdded`) until playback ends
+- **ResolutionPlaybackService** — plays a round's resolution back on every screen. Commits the final state to the store at once (it stays the source of truth), then plays the beats from `playback-timeline.ts` and exposes what's been shown so far as signals: token positions, revealed HP (`hpOf`), defeats (`isDefeated`), auras and floating text; feed lines are added beat by beat. Resets on `ClearEncounter` / `EncounterStarted`
+- **playback-timeline.ts** (`core/services/`) — pure builder: `buildTimeline(payload)` turns the ticks into timed beats (per tick: one beat per movement cell → one attacks beat with auras (grey miss / green hit / red was hit), `-n` / MISS text and HP → a defeats beat; a short idle beat for quiet ticks). Durations are in `PLAYBACK_TIMING`. New animations = a new cue on `PlaybackBeat`, filled here and rendered from the service
 - **DevService** — randomUser(), randomCharacter() helpers for testing
 - **AuthInterceptor** — adds Bearer token to all HTTP requests
 
@@ -254,13 +256,13 @@ Run `contracts:hub` after adding or changing any record in `server/src/RpgGame.A
   - **GmFlowComponent** — create campaign → start session → connect → add monsters (name, combat profile, AI toggle) → start encounter
 - **CharacterComponent** (`/character`) — character list + CRUD form with a combat profile picker (via `CombatProfileService`); ⚡ Quick Create Random
 - **CombatLayoutComponent** — three columns: CombatSidebar (EncounterTracker) | RoundBanner + Grid | Feed
-- **EncounterTrackerComponent** — combatant HP table (with each combatant's profile name), lock-in checkmarks, defeated state
+- **EncounterTrackerComponent** — combatant HP table (with each combatant's profile name), lock-in checkmarks, defeated state (HP and defeats as revealed by playback)
 - **RoundBannerComponent** — round number, phase, timer, lock-in count
-- **GridComponent** — 20×20 grid; each click appends to the selected character's queue (a cell in range → move, measured from where the queued moves end; a token → melee if in reach of that spot, else ranged). The action bar shows `AP n/max`, the numbered queue, undo / clear, Defend and Lock In. AP helpers live in `state/encounter/plan-queue.ts` (mirrors `PlanValidator`). GM sees GmEnemyPlanner + ⚡ Force Resolve; plays back every resolution tick with damage numbers
+- **GridComponent** — 20×20 grid; each click appends to the selected character's queue (a cell in range → move, measured from where the queued moves end; a token → melee if in reach of that spot, else ranged). The action bar shows `AP n/max`, the numbered queue, undo / clear, Defend and Lock In. AP helpers live in `state/encounter/plan-queue.ts` (mirrors `PlanValidator`). GM sees GmEnemyPlanner + ⚡ Force Resolve. Tokens are drawn in a `.token-layer` over the cells (one element per combatant, tagged `data-x`/`data-y`) and glide with CSS transitions during playback; auras and floating text render there from `ResolutionPlaybackService`
 - **GmEnemyPlannerComponent** — select a monster, queue actions via grid clicks or 🛡 (AP-limited), clear, Lock In Enemies
 - **QuickBattlePanelComponent** — Quick Battle only: preset name, Force Resolve, Restart, Leave
 - **EncounterResultComponent** — overlay when `EncounterEnded` arrives: Victory/Defeat/Draw, Return to lobby, Play again (Quick Battle)
-- **FeedComponent** — timestamped combat log; unread badge
+- **FeedComponent** — timestamped combat log, newest line on top; unread badge
 - **EncounterPreviewComponent** (`/preview`) — offline UI sandbox seeded with mock NGXS state (no server needed); toggle GM/player and planning/resolving
 
 ### Nginx Proxy (`client/nginx.conf`)

@@ -1,7 +1,6 @@
 import { Injectable, NgZone } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
-import { MapState } from '../../state/map/map.state';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
 import {
   AllLockedIn,
@@ -12,11 +11,11 @@ import {
   MonsterAdded,
   PlayerLockedIn,
   PlanningPhaseStarted,
-  ResolutionCompleted,
 } from '../../state/encounter/encounter.actions';
-import { ApplyResolutionPositions, MapInitialized } from '../../state/map/map.actions';
+import { MapInitialized } from '../../state/map/map.actions';
 import { AddFeedBatch } from '../../state/feed/feed.actions';
 import { AuthService } from './auth.service';
+import { ResolutionPlaybackService } from './resolution-playback.service';
 import {
   ActionRejectedPayload,
   AllLockedInPayload,
@@ -25,7 +24,6 @@ import {
   EncounterStartedPayload,
   HubEvents,
   MonsterAddedPayload,
-  MovementResult,
   PlannedActionArray,
   PlayerLockedInPayload,
   PlayerPresenceChangedPayload,
@@ -35,15 +33,6 @@ import {
   ResolutionPayload,
 } from '../../contracts/hub-contracts.generated';
 
-/** Feed line for one movement result. A one-cell path that wasn't blocked means the combatant chose to stay put. */
-export function movementFeedText(movement: MovementResult): string {
-  const { x, y } = movement.finalPosition;
-  if (movement.path.length <= 1 && !movement.wasBlocked) {
-    return `${movement.combatantName} stays put at (${x}, ${y})`;
-  }
-  return `${movement.combatantName} moves to (${x}, ${y})${movement.wasBlocked ? ' (blocked)' : ''}`;
-}
-
 @Injectable({ providedIn: 'root' })
 export class GameHubService {
   private connection: HubConnection;
@@ -51,7 +40,8 @@ export class GameHubService {
   constructor(
     private store: Store,
     private auth: AuthService,
-    private ngZone: NgZone
+    private ngZone: NgZone,
+    private playback: ResolutionPlaybackService
   ) {
     this.connection = new HubConnectionBuilder()
       .withUrl('/hubs/game', { accessTokenFactory: () => this.auth.getToken() })
@@ -80,7 +70,7 @@ export class GameHubService {
 
     this.connection.on(HubEvents.Events.PlanningPhaseStarted, (payload: PlanningPhaseStartedPayload) => {
       console.log('[hub] PlanningPhaseStarted received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new PlanningPhaseStarted(
+      this.whenPlaybackDone(() => this.store.dispatch(new PlanningPhaseStarted(
         payload.roundNumber,
         payload.planningTimerDurationSeconds,
         payload.combatants,
@@ -90,46 +80,18 @@ export class GameHubService {
 
     this.connection.on(HubEvents.Events.PlayerLockedIn, (payload: PlayerLockedInPayload) => {
       console.log('[hub] PlayerLockedIn received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new PlayerLockedIn(payload.characterName)));
+      this.whenPlaybackDone(() => this.store.dispatch(new PlayerLockedIn(payload.characterName)));
     });
 
     this.connection.on(HubEvents.Events.AllLockedIn, (_payload: AllLockedInPayload) => {
       console.log('[hub] AllLockedIn received');
-      this.ngZone.run(() => this.store.dispatch(new AllLockedIn()));
+      this.whenPlaybackDone(() => this.store.dispatch(new AllLockedIn()));
     });
 
     this.connection.on(HubEvents.Events.ResolutionCompleted, (payload: ResolutionPayload) => {
       console.log('[hub] ResolutionCompleted received:', payload);
-      this.ngZone.run(() => {
-        // Update encounter state (HP, defeated, resolutionTicks) — this triggers playback animation
-        this.store.dispatch(new ResolutionCompleted(payload));
-
-        // Immediately commit final positions to MapState so they persist
-        // even if playback async timing races with PlanningPhaseStarted.
-        // Playback uses animPositions for the visual animation, so this is safe.
-        const currentPositions = this.store.selectSnapshot(MapState.positions);
-        const finalPositions = { ...currentPositions };
-        for (const tick of payload.ticks) {
-          for (const movement of tick.movements) {
-            finalPositions[movement.combatantId] = movement.finalPosition;
-          }
-        }
-        this.store.dispatch(new ApplyResolutionPositions(finalPositions));
-
-        // Add feed entries as a batch
-        const feedTexts: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
-        const severalTicks = payload.ticks.length > 1;
-        for (const tick of payload.ticks) {
-          if (severalTicks) feedTexts.push(`Tick ${tick.tickIndex + 1}`);
-          for (const movement of tick.movements) {
-            feedTexts.push(movementFeedText(movement));
-          }
-          for (const attack of tick.attacks) {
-            feedTexts.push(attack.feedText);
-          }
-        }
-        this.store.dispatch(new AddFeedBatch(feedTexts));
-      });
+      // Updates the store (HP, positions) and plays the round back tick by tick, feed included.
+      this.ngZone.run(() => this.playback.receiveResolution(payload));
     });
 
     this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {
@@ -140,12 +102,12 @@ export class GameHubService {
 
     this.connection.on(HubEvents.Events.CombatantDefeated, (payload: CombatantDefeatedPayload) => {
       console.log('[hub] CombatantDefeated received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
+      this.whenPlaybackDone(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
     });
 
     this.connection.on(HubEvents.Events.EncounterEnded, (payload: EncounterEndedPayload) => {
       console.log('[hub] EncounterEnded received:', payload);
-      this.ngZone.run(() => {
+      this.whenPlaybackDone(() => {
         this.store.dispatch(new EncounterEnded(payload.winningSide, payload.finalRoundNumber));
         this.store.dispatch(new AddFeedBatch([`— Encounter over after round ${payload.finalRoundNumber}: ${
           payload.winningSide === 'party' ? 'the party wins' : payload.winningSide === 'enemy' ? 'the enemies win' : 'draw'
@@ -155,12 +117,20 @@ export class GameHubService {
 
     this.connection.on(HubEvents.Events.MonsterAdded, (payload: MonsterAddedPayload) => {
       console.log('[hub] MonsterAdded received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new MonsterAdded(payload)));
+      this.whenPlaybackDone(() => this.store.dispatch(new MonsterAdded(payload)));
     });
 
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
     this.connection.onreconnected((id) => console.log('[hub] reconnected, connectionId:', id));
+  }
+
+  /**
+   * Encounter events that arrive while a resolution is playing back wait until it ends, so the
+   * screen doesn't jump to the next round (or the result) mid-animation.
+   */
+  private whenPlaybackDone(apply: () => void): void {
+    this.ngZone.run(() => this.playback.afterPlayback(apply));
   }
 
   isConnected(): boolean {
