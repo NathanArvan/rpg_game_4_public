@@ -54,7 +54,7 @@ public static class RoundResolver
             }).ToList(),
         };
 
-        return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList());
+        return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList(), round.Plans);
     }
 
     // ----- Phase 1: Movement -----
@@ -176,7 +176,7 @@ public static class RoundResolver
     // ----- Phase 2: Attacks -----
 
     private sealed record PendingAttack(
-        string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit);
+        string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit, AttackRoll? Roll);
 
     private static List<AttackOutcome> ResolveAttackPhase(RoundContext round, int tick)
     {
@@ -211,14 +211,15 @@ public static class RoundResolver
 
             bool hit = false, isCrit = false;
             int damage = 0;
+            AttackRoll? roll = null;
             if (wasted == WastedReason.None)
             {
-                (hit, damage, isCrit) = ComputeAttack(round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice);
+                (hit, damage, isCrit, roll) = ComputeAttack(round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice);
                 if (hit)
                     hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - damage;
             }
 
-            pending.Add(new PendingAttack(attackerId, targetId, action.Type, wasted, hit, damage, isCrit));
+            pending.Add(new PendingAttack(attackerId, targetId, action.Type, wasted, hit, damage, isCrit, roll));
         }
 
         // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3).
@@ -250,22 +251,23 @@ public static class RoundResolver
             TargetHpBefore: hpBefore.GetValueOrDefault(a.TargetId, 0),
             TargetHpAfter: round.Hp.GetValueOrDefault(a.TargetId, 0),
             TargetDefeated: defeatedThisTick.Contains(a.TargetId),
-            a.Wasted)).ToList();
+            a.Wasted,
+            a.Roll)).ToList();
     }
 
     /// <summary>
     /// Damage pipeline (DESIGN_SPIKE Decision 4). The slots exist now so items, abilities,
     /// stats and crits can fill them in later without restructuring.
     /// </summary>
-    private static (bool Hit, int Damage, bool IsCrit) ComputeAttack(
+    private static (bool Hit, int Damage, bool IsCrit, AttackRoll Roll) ComputeAttack(
         CombatantState attacker, CombatantState target, ActionType type, IDiceRoller dice)
     {
         int accuracy = type == ActionType.MeleeAttack
             ? attacker.Profile.MeleeAccuracy
             : attacker.Profile.RangedAccuracy;
-        int hitRoll = dice.RollD20() + accuracy;
-        if (hitRoll < target.Profile.Dodge)
-            return (false, 0, false);
+        var roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
+        if (roll.Total < roll.TargetDodge)
+            return (false, 0, false, roll);
 
         int baseDamage = dice.Roll(attacker.Profile.BaseDamage.Sides);
         int statModifier = 0;                                // stats (deferred)
@@ -276,7 +278,7 @@ public static class RoundResolver
         bool isCrit = false;                                 // crit system (3B+)
         if (isCrit) totalDamage *= 2;
 
-        return (true, totalDamage, isCrit);
+        return (true, totalDamage, isCrit, roll);
     }
 
     // ----- Phase 3: Effects -----

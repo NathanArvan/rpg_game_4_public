@@ -1,0 +1,48 @@
+<section class="round-timeline" *ngIf="lanes().length">
+  <h4>
+    {{ playing() ? 'Round ' + roundNumber() + ' — resolving' : 'Last round (' + roundNumber() + ')' }}
+  </h4>
+  <p class="rule">
+    Each column is one tick. Everyone's 1st action happens at the same time, then everyone's 2nd, and so on.
+    An action takes one tick, whatever its AP cost.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th *ngFor="let t of ticks()"
+            class="tick-head"
+            [class.current]="t === shownTick()"
+            [class.clickable]="!playing()"
+            [title]="playing() ? '' : 'Show what happened in tick ' + (t + 1)"
+            (click)="pickTick(t)">
+          T{{ t + 1 }}
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let lane of lanes(); trackBy: trackLane">
+        <th class="lane-name">
+          {{ lane.name }}
+          <span class="ap">{{ lane.apSpent }}/{{ lane.maxAp }} AP</span>
+        </th>
+        <td *ngFor="let slot of lane.slots"
+            class="slot"
+            [ngClass]="slotClasses(slot)"
+            [title]="slotTitle(slot)"
+            (click)="pickTick(slot.tick)">
+          <span class="icon">{{ slot.icon }}</span>
+          <span class="cost" *ngIf="slot.apCost">{{ slot.apCost }}</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="details">
+    <div class="details-title">Tick {{ shownTick() + 1 }}</div>
+    <ul>
+      <li *ngFor="let line of detailLines()">{{ line }}</li>
+    </ul>
+  </div>
+</section>

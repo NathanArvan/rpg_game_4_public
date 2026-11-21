@@ -9,7 +9,7 @@ import { MapState } from '../../state/map/map.state';
 import { Position } from '../../state/map/map.state.model';
 import { AddFeedBatch } from '../../state/feed/feed.actions';
 import {
-  AuraKind, FloatCue, PLAYBACK_TIMING, PlaybackBeat, PlaybackTiming,
+  AuraKind, FloatCue, PLAYBACK_TIMING, PlaybackBeat, PlaybackPhase, PlaybackTiming,
   buildTimeline, positionsAfterResolution, positionsBeforeResolution,
 } from './playback-timeline';
 
@@ -40,6 +40,13 @@ export class ResolutionPlaybackService {
   /** 1-based tick being played, and how many ticks the round has. */
   readonly tick = signal(0);
   readonly tickCount = signal(0);
+  /** The part of the tick being played (movement → attacks → defeats), or null when not playing. */
+  readonly phase = signal<PlaybackPhase | null>(null);
+  /**
+   * The round being played, or the last one played (kept for review until the encounter is left).
+   * Null before the first resolution.
+   */
+  readonly resolution = signal<ResolutionPayload | null>(null);
   /** Token positions so far. Only meaningful while `playing`. */
   readonly positions = signal<Record<string, Position>>({});
   /** How long tokens take to glide to a new position (0 = jump). */
@@ -90,6 +97,8 @@ export class ResolutionPlaybackService {
     this.playing.set(false);
     this.tick.set(0);
     this.tickCount.set(0);
+    this.phase.set(null);
+    this.resolution.set(null);
     this.positions.set({});
     this.moveMs.set(0);
     this.auras.set([]);
@@ -110,6 +119,8 @@ export class ResolutionPlaybackService {
     this.moveMs.set(0);
     this.tick.set(0);
     this.tickCount.set(payload.ticks.length);
+    this.phase.set(null);
+    this.resolution.set(payload);
     this.playing.set(true);
 
     this.store.dispatch(new ResolutionCompleted(payload));
@@ -130,6 +141,7 @@ export class ResolutionPlaybackService {
 
   private apply(beat: PlaybackBeat): void {
     this.tick.set(beat.tick + 1);
+    this.phase.set(beat.phase);
     if (beat.positions) {
       this.moveMs.set(beat.moveMs ?? 0);
       this.positions.update(p => ({ ...p, ...beat.positions }));
@@ -154,6 +166,7 @@ export class ResolutionPlaybackService {
     this.playing.set(false);
     this.tick.set(0);
     this.tickCount.set(0);
+    this.phase.set(null);
     this.moveMs.set(0);
     // Replay what waited, in order; stop if one of them starts another playback.
     while (this.deferred.length > 0 && !this.playing())

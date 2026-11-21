@@ -618,4 +618,40 @@ public class RoundResolverTests
         Assert.Throws<ArgumentException>(() =>
             RoundResolver.Resolve(State(C("A", 0, 0)), new Plans().Add("ghost", PlannedAction.Defend()), new ScriptedDice()));
     }
+
+    // ----- What the outcome reports (for playback) -----
+
+    [Fact]
+    public void Attack_RecordsItsHitCheck_AndAWastedAttackRollsNothing()
+    {
+        // A (melee +2) hits B (dodge 12) on 10 + 2; B's melee on C is out of reach, so it rolls nothing.
+        var o = Resolve(
+            State(C("A", 0, 0, melee: 2), C("B", 1, 0, dodge: 12), C("C", 9, 9)),
+            new Plans().Add("A", PlannedAction.Melee("B")).Add("B", PlannedAction.Melee("C")),
+            new ScriptedDice(10, 4));
+
+        var attacks = Assert.Single(o.Ticks).Attacks;
+        var hit = attacks.Single(a => a.AttackerId == "A");
+        Assert.Equal(new AttackRoll(10, 2, 12), hit.Roll);
+        Assert.Equal(12, hit.Roll!.Total);
+        Assert.True(hit.Hit);
+
+        var wasted = attacks.Single(a => a.AttackerId == "B");
+        Assert.Equal(WastedReason.OutOfMeleeReach, wasted.WastedReason);
+        Assert.Null(wasted.Roll);
+    }
+
+    [Fact]
+    public void Outcome_ReportsTheQueuesItResolved_CutToTheirAp()
+    {
+        // 4 AP: melee (2) + melee (2) fit, the defend (1) doesn't.
+        var plans = new Plans()
+            .Add("A", PlannedAction.Melee("B"), PlannedAction.Melee("B"), PlannedAction.Defend())
+            .Add("B", PlannedAction.Defend());
+        var o = Resolve(State(C("A", 0, 0, ap: 4), C("B", 1, 0, dodge: 30)), plans, new ScriptedDice(1, 1));
+
+        Assert.Equal(["A", "B"], o.ResolvedPlans.Keys);
+        Assert.Equal([ActionType.MeleeAttack, ActionType.MeleeAttack], o.ResolvedPlans["A"].Select(a => a.Type));
+        Assert.Single(o.ResolvedPlans["B"]);
+    }
 }

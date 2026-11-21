@@ -1,10 +1,19 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { Observable, interval, of } from 'rxjs';
 import { map, startWith, switchMap } from 'rxjs/operators';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { EncounterOutcome } from '../../../state/encounter/encounter.model';
+import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
+import { PlaybackPhase } from '../../../core/services/playback-timeline';
+
+const PHASE_LABELS: Record<PlaybackPhase, string> = {
+  movement: 'Movement',
+  attacks: 'Attacks',
+  defeats: 'Defeats',
+  idle: '',
+};
 
 @Component({
   selector: 'app-round-banner',
@@ -20,6 +29,14 @@ export class RoundBannerComponent {
   lockedIn$: Observable<string[]>;
   timerSeconds$: Observable<number | null>;
   outcome$: Observable<EncounterOutcome | null>;
+
+  private readonly playback = inject(ResolutionPlaybackService);
+  readonly tick = this.playback.tick;
+  readonly tickCount = this.playback.tickCount;
+  readonly phaseLabel = computed(() => {
+    const phase = this.playback.phase();
+    return phase ? PHASE_LABELS[phase] : '';
+  });
 
   constructor(private store: Store) {
     this.isPlanning$ = store.select(EncounterState.isPlanning);

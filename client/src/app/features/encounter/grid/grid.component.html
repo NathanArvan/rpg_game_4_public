@@ -95,11 +95,4 @@
     <app-gm-enemy-planner [joinCode]="joinCode"></app-gm-enemy-planner>
     <button class="force-btn" (click)="onForceResolve()">⚡ Force Resolve</button>
   </div>
-
-  <!-- Resolving indicator -->
-  <div class="resolving-banner" *ngIf="isResolving$ | async">
-    Resolving...<span class="tick-progress" *ngIf="playbackTickCount > 1"> tick {{ playbackTick }}/{{ playbackTickCount }}</span>
-  </div>
-
-
 </div>

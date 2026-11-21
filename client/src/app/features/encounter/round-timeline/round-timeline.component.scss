@@ -1,0 +1,104 @@
+.round-timeline {
+  margin: 12px 8px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e0d6bd;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+h4 {
+  margin: 0 0 4px;
+  font-size: 1em;
+}
+
+.rule {
+  margin: 0 0 8px;
+  color: #666;
+  font-size: 0.9em;
+  line-height: 1.3;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 3px;
+  width: 100%;
+}
+
+.tick-head {
+  font-size: 0.85em;
+  color: #555;
+  border-radius: 4px;
+  padding: 2px 0;
+
+  &.current { background: #ffd54f; color: #333; }
+  &.clickable { cursor: pointer; }
+}
+
+.lane-name {
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  .ap {
+    display: block;
+    font-weight: normal;
+    font-size: 0.8em;
+    color: #777;
+  }
+}
+
+.slot {
+  position: relative;
+  min-width: 30px;
+  height: 30px;
+  text-align: center;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  background: #fafafa;
+  cursor: default;
+
+  .icon { font-size: 1.05em; }
+
+  // AP cost badge
+  .cost {
+    position: absolute;
+    right: 1px;
+    bottom: 0;
+    font-size: 0.7em;
+    font-weight: bold;
+    color: #1565c0;
+  }
+
+  &.current { box-shadow: 0 0 0 2px #ffd54f; }
+  &.pending { opacity: 0.55; }
+
+  &.slot-idle { background: transparent; border-style: dashed; color: #bbb; }
+  &.slot-lost { background: #eee; color: #999; }
+
+  &.outcome-hit { border-color: #43a047; background: #e8f5e9; }
+  &.outcome-miss { border-color: #9e9e9e; background: #f5f5f5; }
+  &.outcome-wasted { border-color: #bdbdbd; border-style: dashed; color: #999; text-decoration: line-through; }
+  &.outcome-moved { border-color: #64b5f6; background: #e3f2fd; }
+  &.outcome-stayed { border-color: #64b5f6; }
+  &.outcome-blocked { border-color: #fb8c00; background: #fff3e0; }
+  &.outcome-defended { border-color: #7986cb; background: #e8eaf6; }
+}
+
+.details {
+  margin-top: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 6px;
+
+  .details-title { font-weight: 600; margin-bottom: 2px; }
+
+  ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+
+  li { margin: 2px 0; line-height: 1.3; }
+}

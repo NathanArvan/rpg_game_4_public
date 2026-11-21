@@ -293,6 +293,45 @@ public partial class ResolutionServiceTests
         var attack = Assert.Single(result.Ticks[0].Attacks);
         Assert.True(attack.Wasted);
         Assert.Contains("out of melee range", attack.FeedText);
+        Assert.Equal("out_of_melee_reach", attack.WastedReason);
+        Assert.Null(attack.Roll); // nothing is rolled for a wasted attack
+    }
+
+    [Fact]
+    public async Task ResolveRound_ReportsTheHitCheck_AndTheResolvedQueues()
+    {
+        await using var db = CreateDb();
+        var sessionId = Guid.NewGuid();
+        var attacker = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var encounterId = await SeedEncounterWithMonsters(db, sessionId, (attacker, "Goblin A"), (target, "Goblin B"));
+        var mapEntry = new MapEntry(20, 20,
+            new Dictionary<string, Position> { [attacker.ToString()] = new(0, 0), [target.ToString()] = new(1, 0) },
+            new List<string>());
+        var plannedActions = new Dictionary<string, string>
+        {
+            [attacker.ToString()] = ActionJson("melee_attack", targetId: target.ToString()),
+            [target.ToString()] = ActionJson("defend"),
+        };
+        var mockRedis = BuildMockRedis(encounterId.ToString(), sessionId.ToString(), plannedActions, mapEntry);
+        // These monsters have no stored profile, so they use the default one. A d20 of 20 hits; then the damage die.
+        var service = new ResolutionService(db, mockRedis.Object, new ScriptedDice(20, 3), NullLogger<ResolutionService>.Instance);
+
+        var result = await service.ResolveRoundAsync(encounterId);
+
+        var attack = Assert.Single(result.Ticks[0].Attacks);
+        var profile = CombatProfile.Default;
+        Assert.Equal(new AttackRollDto(20, profile.MeleeAccuracy, profile.Dodge), attack.Roll);
+        Assert.Null(attack.WastedReason);
+
+        // Plan order, each action with its AP cost.
+        Assert.Equal([attacker.ToString(), target.ToString()], result.Queues.Select(q => q.CombatantId));
+        var queue = result.Queues[0];
+        Assert.Equal("Goblin A", queue.CombatantName);
+        Assert.Equal(profile.MaxAp, queue.MaxAp);
+        var action = Assert.Single(queue.Actions);
+        Assert.Equal(new QueuedActionDto("melee_attack", 2, target.ToString(), null), action);
+        Assert.Equal(1, Assert.Single(result.Queues[1].Actions).ApCost);
     }
 
     [Fact]
