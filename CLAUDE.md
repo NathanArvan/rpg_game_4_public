@@ -12,7 +12,7 @@ Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning)
 - `docs/design/GAME_DESIGN.md` — Core rules & design philosophy; tactics-first, setting-agnostic system. Start here for any design question.
 - `docs/design/DESIGN_SPIKE.md` — Locked decisions for Phase 3A: conflict resolution model, mutual kills, HP netting, damage pipeline, placeholder stats.
 - `docs/design/TICK_RESOLUTION.md` — Tick-based resolution loop, path-based movement, action queue schema, opportunity attacks. Supersedes the single-pass phase model in DESIGN_SPIKE.
-- `docs/design/DEFEAT_AND_INCAPACITATION.md` — Slice 3B.5 proposal (decisions pending): knockout vs last stand vs bleedout at 0 HP; recommends bleedout with a Stabilize action.
+- `docs/design/DEFEAT_AND_INCAPACITATION.md` — Slice 3B.5 locked decisions: bleedout at 0 HP (Downed → Stabilize or die after 2 rounds; monsters die at 0 HP by default). Bleedout length and finishing blows to be revisited with character stats.
 - `docs/design/MAGIC_SYSTEM.md` — Environmental magic layer: ley points, resonance, magic pipeline. Defers internal character magic sources to post-playtesting.
 
 ### Workflow & Testing

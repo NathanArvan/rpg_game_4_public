@@ -1,6 +1,8 @@
 # Defeat & Incapacitation — Design Proposal (Slice 3B.5)
 
-> **Status:** Proposal — **decisions pending.** This compares three models for what happens at 0 HP and recommends one. Once the open questions at the end are answered, this becomes the locked reference for slice 3B.5, like `DESIGN_SPIKE.md` and `TICK_RESOLUTION.md` were for 3A.
+> **Status:** ✅ **Locked (Nov 2026)** — Model C, **Bleedout**, with every recommended default in §7. This is the reference for slice 3B.5, like `DESIGN_SPIKE.md` and `TICK_RESOLUTION.md` were for 3A.
+>
+> **To revisit with character stats:** how long a combatant bleeds out (`BleedoutRounds`) and how much it takes to kill a downed combatant (today: any hit) are placeholders. Once stats are designed (see the roadmap's deferred *Character Stats & Progression*), both should come from a stat such as **Hardiness**, e.g. more rounds before bleeding out, or several hits to finish off. Until then they are flat values in `RulesConfig` / the rules.
 >
 > **Replaces:** D&D death saves. **Depends on:** the tick model (`TICK_RESOLUTION.md`) and AP (3B.2). No stat dependency.
 
@@ -126,7 +128,7 @@ HP is clamped at 0 when a combatant goes down, so overkill doesn't matter.
 
 ### C.3 The countdown
 
-`BleedoutRounds = 2` (in `RulesConfig`) means **allies get two planning phases to reach them.** The round you fall in doesn't count. At the end of each later round the count drops by one, and at 0 the combatant dies.
+`BleedoutRounds = 2` (in `RulesConfig`) means **allies get two planning phases to reach them.** It's a flat value for everyone until character stats exist; then it should come from a stat such as Hardiness. The round you fall in doesn't count. At the end of each later round the count drops by one, and at 0 the combatant dies.
 
 ```
 Round 3, tick 2: Archer goes Downed                 → "bleeds out in 2 rounds"
@@ -164,7 +166,7 @@ End of round 5:   nobody stabilized them             → Archer dies
 - **Rule:** an attack can target a Downed or Stable combatant. Any hit kills them: no extra damage roll, and the normal hit check applies.
 - **Defaults:** the Tier-1 enemy AI never does this. It attacks standing targets only. A GM planning monsters manually can, which keeps the threat real without the AI being cruel.
 
-This one is a genuine judgement call; see open question 2.
+Locked as above for now; how many hits it takes is a candidate for a stat (e.g. Hardiness) later, see the status note at the top.
 
 ### C.7 Encounter end
 
@@ -221,20 +223,17 @@ A heal that nets a Downed or Stable combatant's HP above 0 brings them back to *
 - Rules scenarios: down → stabilize; down → bleed out; finishing blow vs. stabilize in the same tick; mutual down; monster dies at 0.
 - A Quick Battle preset to try it by hand: a fragile hero next to a medic-style ally facing a hard hitter.
 
-**Suggested PRs inside the slice:**
-1. Statuses, bleedout and encounter end (rules + server + minimal UI).
-2. The Stabilize action end to end.
-3. Playback, tracker and timeline polish.
+**Delivery:** one PR for the slice (statuses, bleedout, Stabilize and the UI), as each part is only testable with the others.
 
 ---
 
-## 7. Open questions (decide these to lock the doc)
+## 7. Decisions (locked)
 
-| # | Question | Recommended default |
+| # | Question | Decision |
 |---|---|---|
 | 1 | Which model? | **C. Bleedout** (Knockout later as a setting; Last Stand as a 3B.3 trait) |
-| 2 | Can attacks finish off Downed/Stable combatants? | **Yes**, any hit kills; the Tier-1 AI never does it; GMs can |
-| 3 | How long is the bleedout? | **2 rounds** (two planning phases to respond), tunable in `RulesConfig` |
+| 2 | Can attacks finish off Downed/Stable combatants? | **Yes**, any hit kills; the Tier-1 AI never does it; GMs can. *Revisit with stats (e.g. Hardiness: hits needed).* |
+| 3 | How long is the bleedout? | **2 rounds** (two planning phases to respond), tunable in `RulesConfig`. *Revisit with stats (e.g. Hardiness: more rounds).* |
 | 4 | Do monsters go down? | **No** by default (die at 0 HP); per-profile flag and per-preset override |
 | 5 | Stabilize AP cost | **2** (competes with an attack) |
 | 6 | Does a side with only Downed/Stable members lose? | **Yes**, downed counts as out |

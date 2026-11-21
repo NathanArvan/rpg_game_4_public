@@ -93,7 +93,7 @@ Delivers: Abilities and environmental effects can apply conditions (stunned, bur
 
 ### ⬜ Slice 3B.5 — Defeat & Incapacitation
 
-Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model; compared in `DEFEAT_AND_INCAPACITATION.md` (proposal: bleedout). Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
+Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model; compared in `DEFEAT_AND_INCAPACITATION.md` — **locked: bleedout**. Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
 
 ---
 
