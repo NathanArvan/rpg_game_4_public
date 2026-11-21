@@ -1,13 +1,14 @@
 .feed {
   margin-top: 16px;
   padding: 12px 16px;
-  background: #1a1a2e;
-  color: #e0e0e0;
+  background: #faf8f2;
+  color: #333;
+  border: 1px solid #e6dfcc;
   border-radius: 4px;
   overflow-y: auto;
   cursor: pointer;
 }
-h3 { margin: 0 0 8px; font-size: 0.95em; color: #aaa; display: flex; align-items: center; gap: 8px; }
+h3 { margin: 0 0 8px; font-size: 0.95em; color: #666; display: flex; align-items: center; gap: 8px; }
 .unread-badge {
   background: #e53935;
   color: white;
@@ -15,6 +16,21 @@ h3 { margin: 0 0 8px; font-size: 0.95em; color: #aaa; display: flex; align-items
   padding: 1px 7px;
   font-size: 0.8em;
 }
-.entry { padding: 3px 0; font-size: 0.9em; border-bottom: 1px solid #333; }
-.timestamp { color: #888; font-size: 0.8em; margin-right: 8px; }
-.empty { color: #555; font-style: italic; font-size: 0.9em; }
+
+/* Sizes step up: what happened < tick < round. */
+.entry { padding: 3px 0; font-size: 0.85em; border-bottom: 1px solid #ece6d6; line-height: 1.35; }
+.entry-tick { font-size: 1em; font-weight: bold; padding-top: 6px; color: #444; }
+.entry-round {
+  font-size: 1.15em;
+  font-weight: bold;
+  padding: 6px 0;
+  color: #1a237e;
+  border-bottom: 2px solid #c5cae9;
+}
+.timestamp { color: #999; font-size: 0.75rem; font-weight: normal; margin-right: 8px; }
+.empty { color: #999; font-style: italic; font-size: 0.9em; }
+
+.seg-party { color: #1565c0; font-weight: 600; }
+.seg-enemy { color: #c62828; font-weight: 600; }
+.seg-damage { color: #e65100; font-weight: 600; }
+.seg-miss { color: #888; }
