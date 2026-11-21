@@ -14,13 +14,13 @@ describe('FeedState', () => {
   });
 
   describe('AddFeedEntry', () => {
-    it('prepends the new entry to the list', () => {
+    it('appends the new entry to the end of the list', () => {
       store.dispatch(new AddFeedEntry('First event'));
       store.dispatch(new AddFeedEntry('Second event'));
 
       const entries = store.selectSnapshot(FeedState.entries);
-      expect(entries[0].text).toBe('Second event');
-      expect(entries[1].text).toBe('First event');
+      expect(entries[0].text).toBe('First event');
+      expect(entries[1].text).toBe('Second event');
     });
 
     it('increments unreadCount for each entry added', () => {
@@ -65,19 +65,19 @@ describe('FeedState', () => {
   });
 
   describe('AddFeedBatch', () => {
-    it('puts the batch in front of the list, newest (last) line first', () => {
+    it('appends the batch to the end of the list, in order', () => {
       store.dispatch(new AddFeedEntry('Existing'));
       store.dispatch(new AddFeedBatch(['Round header', 'Attack result']));
 
       const entries = store.selectSnapshot(FeedState.entries);
-      expect(entries.map(e => e.text)).toEqual(['Attack result', 'Round header', 'Existing']);
+      expect(entries.map(e => e.text)).toEqual(['Existing', 'Round header', 'Attack result']);
     });
 
     it('reads the same whether lines arrive together or one batch at a time', () => {
       store.dispatch(new AddFeedBatch(['A', 'B']));
       store.dispatch(new AddFeedBatch(['C']));
 
-      expect(store.selectSnapshot(FeedState.entries).map(e => e.text)).toEqual(['C', 'B', 'A']);
+      expect(store.selectSnapshot(FeedState.entries).map(e => e.text)).toEqual(['A', 'B', 'C']);
     });
 
     it('increments unreadCount by the batch size', () => {

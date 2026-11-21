@@ -14,6 +14,8 @@ test('Training Dummy: play a Quick Battle to victory, then play again', async ({
   // Quick Battle has no planning timer.
   await expect(page.locator('app-round-banner .timer')).toHaveCount(0);
   await expect(page.locator('app-quick-battle-panel')).toContainText('training-dummy');
+  // The log reads oldest first and opens with the battle's start.
+  await expect(feedEntries(page).first()).toContainText('Battle Start');
 
   // Hero (9,9) hits the 1-HP Dummy (9,10); the Dummy's dodge is 1, so the first hit wins.
   const result = page.locator('.result-card');

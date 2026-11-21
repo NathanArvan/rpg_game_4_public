@@ -42,8 +42,7 @@ describe('ResolutionPlaybackService', () => {
   const T = PLAYBACK_TIMING;
   const heroOf = () => store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'hero')!;
   const goblinOf = () => store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'goblin')!;
-  /** The feed oldest line first (it shows the newest on top). */
-  const feed = () => store.selectSnapshot(FeedState.entries).map(e => e.text).reverse();
+  const feed = () => store.selectSnapshot(FeedState.entries).map(e => e.text);
 
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [provideStore([EncounterState, MapState, FeedState])] });
