@@ -60,7 +60,6 @@ export class GridComponent implements OnInit {
   cells$!: Observable<Cell[]>;
   gridColumns$!: Observable<string>;
   isPlanning$!: Observable<boolean>;
-  isResolving$!: Observable<boolean>;
   timerSeconds$!: Observable<number | null>;
 
   private combatants: Combatant[] = [];
@@ -94,7 +93,6 @@ export class GridComponent implements OnInit {
     );
 
     this.isPlanning$ = this.store.select(EncounterState.isPlanning);
-    this.isResolving$ = this.store.select(EncounterState.isResolving);
 
     this.timerSeconds$ = this.store.select(EncounterState.planningTimerExpiresAt).pipe(
       map(expiresAt => {
@@ -162,15 +160,6 @@ export class GridComponent implements OnInit {
 
   private get isPlayingBack(): boolean {
     return this.playback.playing();
-  }
-
-  /** 1-based tick being played back, and how many ticks the round has. */
-  get playbackTick(): number {
-    return this.playback.tick();
-  }
-
-  get playbackTickCount(): number {
-    return this.playback.tickCount();
   }
 
   /** Positions on screen: the playback's while a round plays back, otherwise the map's. */

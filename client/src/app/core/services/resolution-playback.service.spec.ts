@@ -22,17 +22,18 @@ describe('ResolutionPlaybackService', () => {
     newRoundNumber: 2,
     defeatedCombatantIds: ['goblin'],
     updatedCombatants: [],
+    queues: [],
     ticks: [
       {
         tickIndex: 0,
         movements: [{ combatantId: 'hero', combatantName: 'hero', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-        attacks: [{ attackerId: 'goblin', attackerName: 'goblin', targetId: 'hero', targetName: 'hero', attackType: 'melee_attack', hit: true, damage: 3, targetNewHp: 7, targetDefeated: false, wasted: false, feedText: 'goblin hits hero' }],
+        attacks: [{ attackerId: 'goblin', attackerName: 'goblin', targetId: 'hero', targetName: 'hero', attackType: 'melee_attack', hit: true, damage: 3, targetNewHp: 7, targetDefeated: false, wasted: false, feedText: 'goblin hits hero', roll: null, wastedReason: null }],
         effects: [],
       },
       {
         tickIndex: 1,
         movements: [],
-        attacks: [{ attackerId: 'hero', attackerName: 'hero', targetId: 'goblin', targetName: 'goblin', attackType: 'melee_attack', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, wasted: false, feedText: 'hero kills goblin' }],
+        attacks: [{ attackerId: 'hero', attackerName: 'hero', targetId: 'goblin', targetName: 'goblin', attackType: 'melee_attack', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, wasted: false, feedText: 'hero kills goblin', roll: null, wastedReason: null }],
         effects: [],
       },
     ],

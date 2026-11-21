@@ -48,7 +48,7 @@ public class RoundOrchestratorTests
 
     private void ResolutionReturns(int newRound, List<string> defeated, params PlanningCombatantDto[] combatants) =>
         _resolution.Setup(r => r.ResolveRoundAsync(_encounterId))
-            .ReturnsAsync(new ResolutionPayload([], newRound, defeated, combatants));
+            .ReturnsAsync(new ResolutionPayload([], newRound, defeated, combatants, []));
 
     [Fact]
     public async Task RoundWithBothSidesStanding_StartsNextPlanningPhase()

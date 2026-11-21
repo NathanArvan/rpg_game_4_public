@@ -21,7 +21,18 @@ export interface FloatCue {
   /** The combatant the text floats above. */
   combatantId: string;
   text: string;
-  kind: 'damage' | 'miss';
+  /** damage: red; miss: grey; wasted: grey italic, above the attacker. */
+  kind: 'damage' | 'miss' | 'wasted';
+}
+
+/** Short words for why an attack was wasted (the server's wastedReason). */
+export function wastedLabel(reason: string | null): string {
+  switch (reason) {
+    case 'target_defeated': return 'target down';
+    case 'out_of_melee_reach': return 'out of reach';
+    case 'invalid_target': return 'no target';
+    default: return 'wasted';
+  }
 }
 
 export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'idle';
@@ -54,6 +65,8 @@ export interface PlaybackTiming {
   maxStepMs: number;
   /** Hold after a tick's attacks, so auras and numbers can be read. */
   attackMs: number;
+  /** Hold for a tick whose only attacks were wasted (long enough to read the label). */
+  wastedMs: number;
   /** Hold for a tick with nothing to show (defend, idle, only wasted attacks). */
   idleMs: number;
   /** Hold while defeated tokens fade. */
@@ -69,6 +82,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   minStepMs: 150,
   maxStepMs: 300,
   attackMs: 1500,
+  wastedMs: 900,
   idleMs: 400,
   defeatMs: 600,
   auraMs: 1000,
@@ -150,15 +164,19 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
 
     // Attacks: all of this tick's attacks land together.
     pendingFeed.push(...tick.attacks.map(a => a.feedText));
-    const landed = tick.attacks.filter(a => !a.wasted);
-    if (landed.length > 0) {
+    if (tick.attacks.length > 0) {
       const auras: AuraCue[] = [];
       const addAura = (combatantId: string, kind: AuraKind) => {
         if (!auras.some(a => a.combatantId === combatantId && a.kind === kind)) auras.push({ combatantId, kind });
       };
       const floats: FloatCue[] = [];
       const hp: Record<string, number> = {};
-      for (const a of landed) {
+      for (const a of tick.attacks) {
+        if (a.wasted) {
+          // Nothing was rolled: say why above the attacker.
+          floats.push({ combatantId: a.attackerId, text: wastedLabel(a.wastedReason), kind: 'wasted' });
+          continue;
+        }
         addAura(a.attackerId, a.hit ? 'hit' : 'miss');
         if (a.hit) addAura(a.targetId, 'hurt');
         floats.push(a.hit
@@ -166,14 +184,18 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
           : { combatantId: a.targetId, text: 'MISS', kind: 'miss' });
         hp[a.targetId] = a.targetNewHp;
       }
-      beats.push({ tick: t, phase: 'attacks', durationMs: timing.attackMs, auras, floats, hp, feed: takeFeed() });
+      const anyLanded = tick.attacks.some(a => !a.wasted);
+      beats.push({
+        tick: t, phase: 'attacks', durationMs: anyLanded ? timing.attackMs : timing.wastedMs,
+        auras, floats, hp, feed: takeFeed(),
+      });
     }
 
     const defeated = [...new Set(tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId))];
     if (defeated.length > 0)
       beats.push({ tick: t, phase: 'defeats', durationMs: timing.defeatMs, defeated, feed: takeFeed() });
 
-    // Nothing visible happened this tick (defends, idles, wasted attacks): a short beat for it.
+    // Nothing visible happened this tick (defends, idles): a short beat for it.
     if (beats.length === beatsBefore)
       beats.push({ tick: t, phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
   }

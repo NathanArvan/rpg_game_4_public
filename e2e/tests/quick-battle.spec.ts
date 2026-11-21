@@ -70,4 +70,14 @@ test('Skirmish: command three heroes in one round with Lock In All, queueing two
   await expect(feedEntries(page).filter({ hasText: /Goblin \d moves to/ })).toHaveCount(3);
   await expectPlanningRound(page, 2, 15_000); // two ticks of playback
   await expect(tokenAt(page, 8, 6)).toBeVisible();
+
+  // The round timeline stays up for review: one column per tick, the Bruiser's two moves in T1 and T2.
+  const timeline = page.locator('app-round-timeline');
+  await expect(timeline.locator('h4')).toContainText('Last round (1)');
+  await expect(timeline.locator('.tick-head')).toHaveText(['T1', 'T2']);
+  const bruiser = timeline.locator('tr', { hasText: 'Bruiser' });
+  await expect(bruiser.locator('.lane-name .ap')).toHaveText('2/4 AP');
+  await expect(bruiser.locator('.slot.slot-move')).toHaveCount(2);
+  await timeline.locator('.tick-head', { hasText: 'T1' }).click();
+  await expect(timeline.locator('.details li', { hasText: 'Bruiser moves 2 cells to (8, 4)' })).toHaveCount(1);
 });

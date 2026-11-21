@@ -30,6 +30,16 @@ internal static class RulesWireMapping
         return Enum.GetValues<ActionType>().ToDictionary(ToWire, config.ApCost);
     }
 
+    /// <summary>Why an attack was wasted, as a wire string; null when it wasn't.</summary>
+    public static string? ToWire(WastedReason reason) => reason switch
+    {
+        WastedReason.None => null,
+        WastedReason.TargetDefeated => "target_defeated",
+        WastedReason.OutOfMeleeReach => "out_of_melee_reach",
+        WastedReason.InvalidTarget => "invalid_target",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
+    };
+
     public static string ToWire(EffectType type) => type switch
     {
         EffectType.Defend => "defend",

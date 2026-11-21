@@ -152,11 +152,11 @@ describe('GridComponent', () => {
       fixture.detectChanges();
 
       TestBed.inject(ResolutionPlaybackService).receiveResolution({
-        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [],
+        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [],
         ticks: [{
           tickIndex: 0,
           movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser' }],
+          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null }],
           effects: [],
         }],
       });

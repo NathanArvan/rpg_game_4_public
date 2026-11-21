@@ -13,6 +13,11 @@
   </ng-container>
   <ng-container *ngIf="isResolving$ | async">
     <span class="phase resolving">Resolving&hellip;</span>
+    <!-- Where playback is: which tick, and which part of it (each tick runs movement → attacks). -->
+    <ng-container *ngIf="tick() > 0">
+      <span class="tick">Tick {{ tick() }} of {{ tickCount() }}</span>
+      <span class="tick-phase" *ngIf="phaseLabel() as label">{{ label }}</span>
+    </ng-container>
   </ng-container>
   <ng-container *ngIf="outcome$ | async as outcome">
     <span class="phase">Encounter over &mdash; Round {{ outcome.finalRoundNumber }}</span>

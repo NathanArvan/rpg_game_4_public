@@ -241,12 +241,15 @@ describe('EncounterState', () => {
           targetDefeated: false,
           wasted: false,
           feedText: 'Sam strikes Frodo for 5 damage',
+          roll: { d20: 15, accuracy: 0, targetDodge: 10 },
+          wastedReason: null,
         }],
         effects: [],
       }],
       newRoundNumber: 2,
       defeatedCombatantIds: [],
       updatedCombatants: [],
+      queues: [],
       ...overrides,
     });
 

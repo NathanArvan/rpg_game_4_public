@@ -117,6 +117,21 @@ export interface ResolutionPayload {
   newRoundNumber: number;
   defeatedCombatantIds: string[];
   updatedCombatants: PlanningCombatantDto[];
+  queues: CombatantQueueDto[];
+}
+
+export interface CombatantQueueDto {
+  combatantId: string;
+  combatantName: string;
+  maxAp: number;
+  actions: QueuedActionDto[];
+}
+
+export interface QueuedActionDto {
+  type: string;
+  apCost: number;
+  targetCombatantId: string | null;
+  targetCell: PositionDto | null;
 }
 
 export interface TickResult {
@@ -147,6 +162,14 @@ export interface AttackResult {
   targetDefeated: boolean;
   wasted: boolean;
   feedText: string;
+  roll: AttackRollDto | null;
+  wastedReason: string | null;
+}
+
+export interface AttackRollDto {
+  d20: number;
+  accuracy: number;
+  targetDodge: number;
 }
 
 export interface EffectResult {

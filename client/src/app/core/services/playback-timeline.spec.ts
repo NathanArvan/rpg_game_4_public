@@ -8,14 +8,14 @@ const move = (id: string, path: [number, number][], wasBlocked = false): Movemen
 
 const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit, damage,
-  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, ...extra,
+  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
   ({ tickIndex, movements: [], attacks: [], effects: [], ...parts });
 
 const payload = (...ticks: TickResult[]): ResolutionPayload =>
-  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [] });
+  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [] });
 
 describe('playback timeline', () => {
   describe('positions', () => {
@@ -87,14 +87,17 @@ describe('playback timeline', () => {
     expect(beats[1].defeated).toEqual(['b']);
   });
 
-  it('gives wasted attacks a feed line but no aura, and a quiet tick a short beat', () => {
+  it('labels a wasted attack above the attacker, with no aura or HP change', () => {
     const beats = buildTimeline(payload(
-      tick(0, { attacks: [attack('a', 'b', false, 0, 10, { wasted: true, feedText: 'wasted' })] }),
+      tick(0, { attacks: [attack('a', 'b', false, 0, 10, { wasted: true, wastedReason: 'out_of_melee_reach', feedText: 'wasted' })] }),
       tick(1),
     ));
-    expect(beats.map(b => [b.tick, b.phase])).toEqual([[0, 'idle'], [1, 'idle']]);
-    expect(beats[0].auras).toBeUndefined();
+    expect(beats.map(b => [b.tick, b.phase])).toEqual([[0, 'attacks'], [1, 'idle']]);
+    expect(beats[0].durationMs).toBe(PLAYBACK_TIMING.wastedMs);
+    expect(beats[0].floats).toEqual([{ combatantId: 'a', text: 'out of reach', kind: 'wasted' }]);
+    expect(beats[0].auras).toEqual([]);
+    expect(beats[0].hp).toEqual({});
     expect(beats[0].feed).toEqual(['— Round 1 Resolution —', 'Tick 1', 'wasted']);
-    expect(beats[1].durationMs).toBe(PLAYBACK_TIMING.idleMs);
+    expect(beats[1].durationMs).toBe(PLAYBACK_TIMING.idleMs);  // a quiet tick: a short beat
   });
 });

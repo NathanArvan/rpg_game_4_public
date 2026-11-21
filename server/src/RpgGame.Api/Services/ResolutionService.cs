@@ -112,7 +112,8 @@ public class ResolutionService(
 
         logger.LogInformation("ResolveRound: COMPLETE — newRound={NewRound}, defeated={DefeatedIds}",
             newRoundNumber, string.Join(", ", outcome.DefeatedThisRound));
-        return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants);
+        return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
+            ToQueues(outcome.ResolvedPlans, records));
     }
 
     // ----- Inbound mapping -----
@@ -175,7 +176,9 @@ public class ResolutionService(
                 a.TargetId, targetName,
                 RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
                 a.TargetHpAfter, a.TargetDefeated, a.Wasted,
-                ResolutionFeedFormatter.Attack(a, attackerName, targetName));
+                ResolutionFeedFormatter.Attack(a, attackerName, targetName),
+                a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge) : null,
+                RulesWireMapping.ToWire(a.WastedReason));
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(
@@ -184,6 +187,29 @@ public class ResolutionService(
             ResolutionFeedFormatter.Effect(e, NameOf(e.CombatantId)))).ToList();
 
         return new TickResult(tick.Index, movements, attacks, effects);
+    }
+
+    /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
+    private static List<CombatantQueueDto> ToQueues(
+        IReadOnlyDictionary<string, IReadOnlyList<PlannedAction>> plans, Dictionary<string, CombatantRecord> records)
+    {
+        var config = RulesConfig.Default;
+        return plans
+            .Where(p => records.ContainsKey(p.Key))
+            .Select(p =>
+            {
+                var state = records[p.Key].State;
+                return new CombatantQueueDto(
+                    p.Key,
+                    state.Name,
+                    state.Profile.MaxAp,
+                    p.Value.Select(a => new QueuedActionDto(
+                        RulesWireMapping.ToWire(a.Type),
+                        config.ApCost(a.Type),
+                        a.TargetCombatantId,
+                        a.TargetCell is { } c ? new PositionDto(c.X, c.Y) : null)).ToList());
+            })
+            .ToList();
     }
 
     private static List<GameEvent> BuildGameEvents(Guid encounterId, List<TickResult> tickResults)
