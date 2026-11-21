@@ -3,11 +3,11 @@
     Combat Log
     <span class="unread-badge" *ngIf="(unreadCount$ | async) as count">{{ count }}</span>
   </h3>
-  <div class="entries">
-    <div *ngFor="let entry of entries$ | async" class="entry">
-      <span class="timestamp">{{ entry.timestamp | date:'HH:mm:ss' }}</span>
-      {{ entry.text }}
+  <div class="entries" *ngIf="rows$ | async as rows">
+    <div *ngFor="let row of rows; trackBy: trackRow" class="entry entry-{{ row.kind }}">
+      <span class="timestamp">{{ row.timestamp | date:'HH:mm:ss' }}</span>
+      <span class="text"><span *ngFor="let seg of row.segments" [class]="seg.style ? 'seg-' + seg.style : null">{{ seg.text }}</span></span>
     </div>
-    <div *ngIf="!(entries$ | async)?.length" class="empty">No events yet.</div>
+    <div *ngIf="!rows.length" class="empty">No events yet.</div>
   </div>
 </div>
