@@ -250,8 +250,16 @@ export class GridComponent implements OnInit {
     return this.playback.isDefeated(combatant);
   }
 
+  /** Status as shown, with bleedout rounds left (3B.5). */
+  shownStatus(combatant: Combatant) {
+    return this.playback.statusOf(combatant);
+  }
+
   tokenTitle(combatant: Combatant): string {
-    return `${combatant.characterName} (HP: ${this.playback.hpOf(combatant)}/${combatant.maxHp})`;
+    const { status, bleedoutRoundsLeft } = this.playback.statusOf(combatant);
+    const state = status === 'downed' ? ` — downed, bleeds out in ${bleedoutRoundsLeft} ${bleedoutRoundsLeft === 1 ? 'round' : 'rounds'}`
+      : status === 'stable' ? ' — stable' : status === 'dead' ? ' — dead' : '';
+    return `${combatant.characterName} (HP: ${this.playback.hpOf(combatant)}/${combatant.maxHp})${state}`;
   }
 
   onTokenClick(token: TokenView): void {
@@ -349,6 +357,18 @@ export class GridComponent implements OnInit {
     return Math.max(0, selected.movementRange - moveCellsUsed(this.positions[selected.id], this.selectedPlan));
   }
 
+  /** Whether the planner's queued moves end next to (or on top of) the target: Stabilize's reach. */
+  private endsNextTo(plannerId: string, queue: PlannedActionEntry[], target: Combatant): boolean {
+    const from = projectedPosition(this.positions[plannerId], queue);
+    const targetPos = this.positions[target.id];
+    return !!from && !!targetPos && chebyshev(from, targetPos) <= 1;
+  }
+
+  /** Downed allies of the party (3B.5), for the stabilize hint in the action bar. */
+  get downedAllies(): Combatant[] {
+    return this.combatants.filter(c => c.combatantType === 'player' && c.status === 'downed');
+  }
+
   /** Melee if the target is within reach of where the planner's queued moves end, otherwise ranged. */
   private attackTypeAgainst(plannerId: string, queue: PlannedActionEntry[], target: Combatant): string {
     const from = projectedPosition(this.positions[plannerId], queue);
@@ -369,7 +389,8 @@ export class GridComponent implements OnInit {
       const targetCombatant = this.tokenAt(cell);
 
       let action: PlannedActionEntry | null = null;
-      if (targetCombatant && targetCombatant.id !== enemy.id && !targetCombatant.isDefeated) {
+      // Anyone not dead can be attacked: a downed or stable target is finished off by a hit (3B.5).
+      if (targetCombatant && targetCombatant.id !== enemy.id && targetCombatant.status !== 'dead') {
         action = { type: this.attackTypeAgainst(enemy.id, queue, targetCombatant), targetCell: null, targetCombatantId: targetCombatant.id };
       } else if (this.isInRange(cell)) {
         action = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
@@ -390,6 +411,14 @@ export class GridComponent implements OnInit {
 
     const targetCombatant = this.tokenAt(cell);
 
+    // A downed ally: stabilize them, if the selected character's queued moves end next to them (3B.5).
+    if (targetCombatant && targetCombatant.status === 'downed' && targetCombatant.combatantType === 'player') {
+      const me = this.selected;
+      if (me && me.id !== targetCombatant.id && this.endsNextTo(me.id, this.selectedPlan, targetCombatant))
+        this.plan(me, { type: 'stabilize', targetCell: null, targetCombatantId: targetCombatant.id });
+      return;
+    }
+
     // Clicking one of your own characters picks who you're planning for.
     if (targetCombatant && this.isMine(targetCombatant)) {
       if (!targetCombatant.isDefeated) this.store.dispatch(new SelectMyCombatant(targetCombatant.id));
@@ -400,7 +429,7 @@ export class GridComponent implements OnInit {
     if (!myCombatant) return;
 
     const queue = this.selectedPlan;
-    if (targetCombatant && !targetCombatant.isDefeated) {
+    if (targetCombatant && targetCombatant.status !== 'dead') {
       const type = this.attackTypeAgainst(myCombatant.id, queue, targetCombatant);
       this.plan(myCombatant, { type, targetCell: null, targetCombatantId: targetCombatant.id });
     } else if (!targetCombatant && this.isLastMoveTarget(cell)) {

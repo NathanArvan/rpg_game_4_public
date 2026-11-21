@@ -17,6 +17,9 @@ public interface IRedisGameState
     Task SetHpAsync(string characterId, long value);
     Task<bool> IsDefeatedAsync(string encounterId, string combatantId);
     Task MarkDefeatedAsync(string encounterId, string combatantId);
+    /// <summary>Downed / stable / dead detail for a defeated combatant (3B.5); null if none was stored.</summary>
+    Task<CombatantStatusEntry?> GetStatusAsync(string encounterId, string combatantId);
+    Task SetStatusAsync(string encounterId, string combatantId, CombatantStatusEntry status);
 
     // Planning phase
     Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson);

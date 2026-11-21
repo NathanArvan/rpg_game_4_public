@@ -65,7 +65,7 @@ public class ResolutionService(
         {
             var id = c.Id.ToString();
             var final = finalStates[id];
-            return CombatantDtos.Planning(c, final.Hp, final.IsDefeated);
+            return CombatantDtos.Planning(c, final.Hp, final.Status, final.BleedoutRoundsLeft);
         }).ToList();
 
         // ----- Persist -----
@@ -90,6 +90,16 @@ public class ResolutionService(
         foreach (var combatantId in outcome.DefeatedThisRound)
             await redisState.MarkDefeatedAsync(encounterIdStr, combatantId);
 
+        // Statuses beyond standing (3B.5): write any that changed, including bleedout countdowns.
+        foreach (var final in outcome.Next.Combatants)
+        {
+            var before = records[final.Id].State;
+            if (final.Status == CombatantStatus.Standing) continue;
+            if (final.Status == before.Status && final.BleedoutRoundsLeft == before.BleedoutRoundsLeft) continue;
+            await redisState.SetStatusAsync(encounterIdStr, final.Id,
+                new CombatantStatusEntry(RulesWireMapping.ToWire(final.Status), final.BleedoutRoundsLeft));
+        }
+
         // Start from the stored map so entries the engine doesn't know about are kept as-is.
         var positions = new Dictionary<string, Position>(mapEntry.Positions);
         foreach (var final in outcome.Next.Combatants)
@@ -112,8 +122,14 @@ public class ResolutionService(
 
         logger.LogInformation("ResolveRound: COMPLETE — newRound={NewRound}, defeated={DefeatedIds}",
             newRoundNumber, string.Join(", ", outcome.DefeatedThisRound));
+        var endOfRound = outcome.EndOfRound.Select(b =>
+        {
+            var name = records.TryGetValue(b.CombatantId, out var r) ? r.State.Name : "Unknown";
+            return new BleedoutResultDto(b.CombatantId, name, b.RoundsLeft, b.Died, ResolutionFeedFormatter.Bleedout(b, name));
+        }).ToList();
+
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records));
+            ToQueues(outcome.ResolvedPlans, records), endOfRound);
     }
 
     // ----- Inbound mapping -----
@@ -178,13 +194,17 @@ public class ResolutionService(
                 a.TargetHpAfter, a.TargetDefeated, a.Wasted,
                 ResolutionFeedFormatter.Attack(a, attackerName, targetName),
                 a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge) : null,
-                RulesWireMapping.ToWire(a.WastedReason));
+                RulesWireMapping.ToWire(a.WastedReason),
+                RulesWireMapping.ToWire(a.TargetStatus),
+                a.FinishingBlow);
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(
             e.CombatantId,
             RulesWireMapping.ToWire(e.Type),
-            ResolutionFeedFormatter.Effect(e, NameOf(e.CombatantId)))).ToList();
+            ResolutionFeedFormatter.Effect(e, NameOf(e.CombatantId), e.TargetId is null ? "" : NameOf(e.TargetId)),
+            e.TargetId,
+            RulesWireMapping.ToWire(e.WastedReason))).ToList();
 
         return new TickResult(tick.Index, movements, attacks, effects);
     }

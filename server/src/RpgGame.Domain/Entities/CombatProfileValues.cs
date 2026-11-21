@@ -21,4 +21,9 @@ public class CombatProfileValues
     public string BaseDamage { get; set; } = "";
     /// <summary>Action points per round (3B.2). Null on rows stored before 3B.2: read as the default.</summary>
     public int? MaxAp { get; set; }
+    /// <summary>
+    /// Goes Downed at 0 HP instead of dying (3B.5). Null (the usual case, and rows stored before
+    /// 3B.5) means by side: party combatants go down, monsters die.
+    /// </summary>
+    public bool? CanBeDowned { get; set; }
 }

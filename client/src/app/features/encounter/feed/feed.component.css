@@ -62,3 +62,4 @@ h3 { flex-shrink: 0; margin: 0 0 8px; font-size: 0.95em; color: #666; display: f
 .seg-enemy { color: #c62828; font-weight: 600; }
 .seg-damage { color: #e65100; font-weight: 600; }
 .seg-miss { color: #888; }
+.seg-save { color: #00897b; font-weight: 600; }

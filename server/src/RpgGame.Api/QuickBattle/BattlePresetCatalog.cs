@@ -106,6 +106,7 @@ public sealed class BattlePresetCatalog
             profile.Dodge = c.Dodge ?? profile.Dodge;
             profile.BaseDamage = c.Damage?.Trim() ?? profile.BaseDamage;
             profile.MaxAp = c.Ap ?? profile.MaxAp;
+            profile.CanBeDowned = c.Downs; // null: by side (party goes down, enemies die) (3B.5)
 
             combatants.Add(new PresetCombatant(
                 c.Name!.Trim(), side!, profile, x, y,
@@ -142,6 +143,8 @@ public sealed class BattlePresetCatalog
         public int? RangedAccuracy { get; set; }
         public int? Dodge { get; set; }
         public int? Ap { get; set; }
+        /// <summary>Goes Downed at 0 HP (true) or dies (false); unset: by side (3B.5).</summary>
+        public bool? Downs { get; set; }
         public int[]? At { get; set; }
         public bool? Ai { get; set; }
     }

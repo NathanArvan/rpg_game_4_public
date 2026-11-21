@@ -12,11 +12,11 @@
   },
   "dice": [
     15, 6,   // tick 1: hit for 6 → Goblin 4
-    11, 5    // tick 2: hit for 5 → Goblin defeated
+    11, 5    // tick 2: hit for 5 → Goblin dies (monsters don't go down)
   ],
   "expect": {
     "ticks": 2,
-    "hp": { "Goblin": -1 },
+    "hp": { "Goblin": 0 },   // HP stops at 0 (3B.5)
     "defeated": ["Goblin"],
     "hits": [ { "tick": 1, "attacker": "Fighter" }, { "tick": 2, "attacker": "Fighter" } ]
   }

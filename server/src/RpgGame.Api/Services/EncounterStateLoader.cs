@@ -26,7 +26,7 @@ internal sealed record LoadedEncounter(
 
 /// <summary>
 /// Builds the rules engine's view of an encounter from Postgres (combatants and their combat
-/// profiles) and Redis (map, live HP, defeated set). Shared by resolution and AI planning so both see the same state.
+/// profiles) and Redis (map, live HP, defeated set and statuses). Shared by resolution and AI planning so both see the same state.
 /// </summary>
 internal static class EncounterStateLoader
 {
@@ -48,11 +48,25 @@ internal static class EncounterStateLoader
             var combatantId = c.Id.ToString();
             var hpKey = HpKeyFor(c);
             var currentHp = await redisState.GetCharacterHpAsync(hpKey);
-            var isDefeated = await redisState.IsDefeatedAsync(encounterIdStr, combatantId);
-            records[combatantId] = ToRecord(c, hpKey, currentHp, isDefeated, mapEntry);
+            var (status, bleedout) = await LoadStatusAsync(redisState, encounterIdStr, combatantId);
+            records[combatantId] = ToRecord(c, hpKey, currentHp, status, bleedout, mapEntry);
         }
 
         return new LoadedEncounter(encounter, mapEntry, records);
+    }
+
+    /// <summary>
+    /// Standing unless in the defeated set; then the stored status (3B.5). A defeated combatant
+    /// with no stored status (from before 3B.5) is dead.
+    /// </summary>
+    public static async Task<(CombatantStatus Status, int BleedoutRoundsLeft)> LoadStatusAsync(
+        IRedisGameState redisState, string encounterId, string combatantId)
+    {
+        if (!await redisState.IsDefeatedAsync(encounterId, combatantId)) return (CombatantStatus.Standing, 0);
+        var entry = await redisState.GetStatusAsync(encounterId, combatantId);
+        return entry is not null && RulesWireMapping.ParseStatus(entry.Status) is { } status and not CombatantStatus.Standing
+            ? (status, status == CombatantStatus.Downed ? entry.BleedoutRoundsLeft : 0)
+            : (CombatantStatus.Dead, 0);
     }
 
     /// <summary>Redis live-state key: the character ID when there is one, otherwise the combatant ID.</summary>
@@ -63,7 +77,7 @@ internal static class EncounterStateLoader
     /// before 3B.1 have none and get the default profile.
     /// </summary>
     private static CombatantRecord ToRecord(
-        EncounterCombatant c, string hpKey, int currentHp, bool isDefeated, MapEntry map)
+        EncounterCombatant c, string hpKey, int currentHp, CombatantStatus status, int bleedout, MapEntry map)
     {
         GridPosition? position = map.Positions.TryGetValue(c.Id.ToString(), out var pos)
             ? new GridPosition(pos.X, pos.Y)
@@ -73,9 +87,10 @@ internal static class EncounterStateLoader
             Id: c.Id.ToString(),
             Name: c.CharacterName,
             Hp: currentHp,
-            Profile: CombatProfileMapping.ToRules(c.Profile),
+            Profile: CombatProfileMapping.ToRules(c.Profile, c.CombatantType),
             Position: position,
-            IsDefeated: isDefeated);
+            Status: status,
+            BleedoutRoundsLeft: bleedout);
 
         return new CombatantRecord(hpKey, currentHp, c, state);
     }

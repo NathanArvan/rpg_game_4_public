@@ -577,6 +577,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
                             b1.Property<string>("BaseDamage")
                                 .IsRequired();
 
+                            b1.Property<bool?>("CanBeDowned");
+
                             b1.Property<int>("Dodge");
 
                             b1.Property<int?>("MaxAp");

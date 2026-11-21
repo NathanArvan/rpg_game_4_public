@@ -8,14 +8,14 @@ const move = (id: string, path: [number, number][], wasBlocked = false): Movemen
 
 const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit, damage,
-  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, ...extra,
+  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
   ({ tickIndex, movements: [], attacks: [], effects: [], ...parts });
 
 const payload = (...ticks: TickResult[]): ResolutionPayload =>
-  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [] });
+  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [] });
 
 describe('playback timeline', () => {
   describe('positions', () => {
@@ -82,9 +82,9 @@ describe('playback timeline', () => {
   });
 
   it('fades defeated targets after the attack that defeated them', () => {
-    const beats = buildTimeline(payload(tick(0, { attacks: [attack('a', 'b', true, 9, 0, { targetDefeated: true })] })));
+    const beats = buildTimeline(payload(tick(0, { attacks: [attack('a', 'b', true, 9, 0, { targetDefeated: true, targetStatus: 'dead' })] })));
     expect(beats.map(b => b.phase)).toEqual(['attacks', 'defeats']);
-    expect(beats[1].defeated).toEqual(['b']);
+    expect(beats[1].statuses).toEqual({ b: { status: 'dead', bleedoutRoundsLeft: 0 } });
   });
 
   it('labels a wasted attack above the attacker, with no aura or HP change', () => {
@@ -99,5 +99,62 @@ describe('playback timeline', () => {
     expect(beats[0].hp).toEqual({});
     expect(beats[0].feed).toEqual(['— Round 1 Resolution —', 'Tick 1', 'wasted']);
     expect(beats[1].durationMs).toBe(PLAYBACK_TIMING.idleMs);  // a quiet tick: a short beat
+  });
+
+  describe('bleedout (3B.5)', () => {
+    const downedRow = { id: 'hero', userId: 'me', characterName: 'hero', currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
+      isAiControlled: false, profileId: 'p', profileName: 'P', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 2 };
+
+    it('shows a hero going down: damage, then DOWN with the rounds left', () => {
+      const beats = buildTimeline({
+        ...payload(tick(0, { attacks: [attack('ogre', 'hero', true, 6, 0, { targetDefeated: true, targetStatus: 'downed' })] })),
+        updatedCombatants: [downedRow],
+      });
+      expect(beats.map(b => b.phase)).toEqual(['attacks', 'defeats']);
+      expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: '-6', kind: 'damage' }]);
+      expect(beats[1].statuses).toEqual({ hero: { status: 'downed', bleedoutRoundsLeft: 2 } });
+      expect(beats[1].floats).toEqual([{ combatantId: 'hero', text: 'DOWN', kind: 'damage' }]);
+    });
+
+    it('labels a finishing blow instead of showing 0 damage', () => {
+      const [beat] = buildTimeline(payload(tick(0, {
+        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true })],
+      })));
+      expect(beat.floats).toEqual([{ combatantId: 'hero', text: 'finished', kind: 'damage' }]);
+    });
+
+    it('plays stabilizes after the tick\'s attacks, with a teal aura on the saved ally', () => {
+      const beats = buildTimeline(payload(tick(0, { effects: [
+        { combatantId: 'knight', effectType: 'stabilize', description: 'knight stabilizes hero', targetCombatantId: 'hero', wastedReason: null },
+        { combatantId: 'medic', effectType: 'stabilize', description: "medic's stabilize on x fails", targetCombatantId: 'x', wastedReason: 'out_of_melee_reach' },
+        { combatantId: 'scout', effectType: 'defend', description: 'scout holds position', targetCombatantId: null, wastedReason: null },
+      ] })));
+      const effects = beats.find(b => b.phase === 'effects')!;
+      expect(effects.statuses).toEqual({ hero: { status: 'stable', bleedoutRoundsLeft: 0 } });
+      expect(effects.auras).toEqual([{ combatantId: 'hero', kind: 'stabilize' }]);
+      expect(effects.floats).toEqual([
+        { combatantId: 'hero', text: 'stabilized', kind: 'status' },
+        { combatantId: 'medic', text: 'out of reach', kind: 'wasted' },
+      ]);
+      expect(effects.feed).toEqual(['— Round 1 Resolution —', 'knight stabilizes hero', "medic's stabilize on x fails"]);
+    });
+
+    it('ends the round with the bleedout countdown', () => {
+      const beats = buildTimeline({
+        ...payload(tick(0)),
+        endOfRound: [
+          { combatantId: 'a', combatantName: 'a', roundsLeft: 1, died: false, feedText: 'a is bleeding out — 1 round left' },
+          { combatantId: 'b', combatantName: 'b', roundsLeft: 0, died: true, feedText: 'b bleeds out' },
+        ],
+      });
+      const last = beats[beats.length - 1];
+      expect(last.phase).toBe('bleedout');
+      expect(last.statuses).toEqual({ a: { status: 'downed', bleedoutRoundsLeft: 1 }, b: { status: 'dead', bleedoutRoundsLeft: 0 } });
+      expect(last.floats).toEqual([
+        { combatantId: 'a', text: 'bleeding: 1', kind: 'status' },
+        { combatantId: 'b', text: 'bled out', kind: 'damage' },
+      ]);
+      expect(last.feed).toEqual(['End of round', 'a is bleeding out — 1 round left', 'b bleeds out']);
+    });
   });
 });

@@ -2,14 +2,14 @@ import { Injectable, signal } from '@angular/core';
 import { Actions, ofActionDispatched, Store } from '@ngxs/store';
 import { ResolutionPayload } from '../../contracts/hub-contracts.generated';
 import { ClearEncounter, EncounterStarted, ResolutionCompleted } from '../../state/encounter/encounter.actions';
-import { Combatant } from '../../state/encounter/encounter.model';
+import { Combatant, CombatantStatus } from '../../state/encounter/encounter.model';
 import { EncounterState } from '../../state/encounter/encounter.state';
 import { ApplyResolutionPositions } from '../../state/map/map.actions';
 import { MapState } from '../../state/map/map.state';
 import { Position } from '../../state/map/map.state.model';
 import { AddFeedBatch } from '../../state/feed/feed.actions';
 import {
-  AuraKind, FloatCue, PLAYBACK_TIMING, PlaybackBeat, PlaybackPhase, PlaybackTiming,
+  AuraKind, FloatCue, PLAYBACK_TIMING, PlaybackBeat, PlaybackPhase, PlaybackTiming, StatusView,
   buildTimeline, positionsAfterResolution, positionsBeforeResolution,
 } from './playback-timeline';
 
@@ -55,7 +55,7 @@ export class ResolutionPlaybackService {
   readonly floats = signal<ActiveFloat[]>([]);
 
   private readonly hp = signal<Record<string, number>>({});
-  private readonly defeated = signal<ReadonlySet<string>>(new Set());
+  private readonly statuses = signal<Record<string, StatusView>>({});
 
   timing: PlaybackTiming = PLAYBACK_TIMING;
 
@@ -86,8 +86,15 @@ export class ResolutionPlaybackService {
     return Math.max(0, hp);
   }
 
+  /** Status to show (3B.5): what playback has revealed so far, else the store's. */
+  statusOf(c: Combatant): StatusView {
+    const shown = this.playing() ? this.statuses()[c.id] : undefined;
+    return shown ?? { status: c.status, bleedoutRoundsLeft: c.bleedoutRoundsLeft };
+  }
+
+  /** Out of the fight as far as the screen has shown: downed, stable or dead. */
   isDefeated(c: Combatant): boolean {
-    return this.playing() ? this.defeated().has(c.id) : c.isDefeated;
+    return this.statusOf(c).status !== 'standing';
   }
 
   /** Stops any playback and drops everything waiting on it. */
@@ -104,7 +111,7 @@ export class ResolutionPlaybackService {
     this.auras.set([]);
     this.floats.set([]);
     this.hp.set({});
-    this.defeated.set(new Set());
+    this.statuses.set({});
   }
 
   private start(payload: ResolutionPayload): void {
@@ -115,7 +122,8 @@ export class ResolutionPlaybackService {
     const generation = ++this.generation;
     this.positions.set(positionsBeforeResolution(positionsBefore, payload.ticks));
     this.hp.set(Object.fromEntries(combatantsBefore.map(c => [c.id, c.currentHp])));
-    this.defeated.set(new Set(combatantsBefore.filter(c => c.isDefeated).map(c => c.id)));
+    this.statuses.set(Object.fromEntries(combatantsBefore.map(c =>
+      [c.id, { status: c.status as CombatantStatus, bleedoutRoundsLeft: c.bleedoutRoundsLeft }])));
     this.moveMs.set(0);
     this.tick.set(0);
     this.tickCount.set(payload.ticks.length);
@@ -157,7 +165,7 @@ export class ResolutionPlaybackService {
       setTimeout(() => this.floats.update(list => list.filter(f => f.key !== key)), this.timing.floatMs);
     }
     if (beat.hp) this.hp.update(hp => ({ ...hp, ...beat.hp }));
-    if (beat.defeated) this.defeated.update(set => new Set([...set, ...beat.defeated!]));
+    if (beat.statuses) this.statuses.update(st => ({ ...st, ...beat.statuses }));
     if (beat.feed?.length) this.store.dispatch(new AddFeedBatch(beat.feed));
   }
 

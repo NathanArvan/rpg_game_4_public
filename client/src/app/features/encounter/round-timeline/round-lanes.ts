@@ -7,10 +7,10 @@ import { wastedLabel } from '../../../core/services/playback-timeline';
  * Pure, so it's easy to test; RoundTimelineComponent renders it.
  */
 
-export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'idle' | 'lost';
+export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'idle' | 'lost';
 
 /** What happened. 'none' = nothing to report (idle, lost). */
-export type SlotOutcome = 'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'none';
+export type SlotOutcome = 'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'none';
 
 export interface LaneSlot {
   tick: number;
@@ -38,6 +38,7 @@ const ICONS: Record<SlotKind, string> = {
   melee_attack: '⚔',
   ranged_attack: '🏹',
   defend: '🛡',
+  stabilize: '✚',
   idle: '·',
   lost: '✕',
 };
@@ -47,13 +48,16 @@ const ACTION_NAMES: Record<string, string> = {
   melee_attack: 'Melee attack',
   ranged_attack: 'Ranged attack',
   defend: 'Defend',
+  stabilize: 'Stabilize',
 };
 
 /**
  * @param order combatant ids in display order (the tracker's); queues for other ids go last.
  */
 export function buildLanes(payload: ResolutionPayload, order: string[] = []): Lane[] {
+  // Everyone's name, including combatants with no queue (e.g. a downed ally being stabilized).
   const names = new Map<string, string>();
+  for (const c of payload.updatedCombatants ?? []) names.set(c.id, c.characterName);
   for (const q of payload.queues) names.set(q.combatantId, q.combatantName);
   for (const tick of payload.ticks) {
     for (const m of tick.movements) names.set(m.combatantId, m.combatantName);
@@ -64,7 +68,7 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
   }
   const nameOf = (id: string | null) => (id && names.get(id)) || 'someone';
 
-  // The tick each combatant was defeated in: its later actions never happen.
+  // The tick each combatant fell in (went down or died): its later actions never happen.
   const defeatedIn = new Map<string, number>();
   payload.ticks.forEach((tick, i) => {
     for (const a of tick.attacks)
@@ -94,7 +98,7 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       const label = `${what} (${action.apCost} AP)`;
       const kind = action.type as SlotKind;
       const lost = () => slot(i, 'lost', action.apCost, 'none', label,
-        `${name} was defeated, so this ${lowerFirst(what)} never happens.`);
+        `${name} went down, so this ${lowerFirst(what)} never happens.`);
       if (isDown) return lost();
 
       if (kind === 'move') {
@@ -119,6 +123,15 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
             `${name}'s ${lowerFirst(what)} is wasted (${wastedLabel(a.wastedReason)}).`);
         }
         return slot(i, kind, action.apCost, a.hit ? 'hit' : 'miss', label, attackDetail(name, a));
+      }
+
+      if (kind === 'stabilize') {
+        const e = tick.effects.find(r => r.combatantId === q.combatantId && r.effectType === 'stabilize');
+        if (!e) return lost();
+        if (e.wastedReason) return slot(i, kind, action.apCost, 'wasted', label,
+          `${name}'s stabilize on ${nameOf(e.targetCombatantId)} is wasted (${wastedLabel(e.wastedReason)}).`);
+        return slot(i, kind, action.apCost, 'stabilized', label,
+          `${name} stabilizes ${nameOf(e.targetCombatantId)}: no longer bleeding out.`);
       }
 
       // defend
@@ -156,6 +169,8 @@ function actionLabel(type: string, targetName: string | null, cell: { x: number;
 export function attackDetail(name: string, a: AttackResult): string {
   const roll = a.roll ? `rolled ${a.roll.d20} + ${a.roll.accuracy} = ${a.roll.d20 + a.roll.accuracy} vs dodge ${a.roll.targetDodge}, ` : '';
   if (!a.hit) return `${name} → ${a.targetName}: ${roll}miss.`;
-  const after = a.targetDefeated ? `${a.targetName} is defeated` : `${a.targetName} now ${Math.max(0, a.targetNewHp)} HP`;
+  if (a.finishingBlow) return `${name} → ${a.targetName}: ${roll}hit, finishing them off.`;
+  const after = !a.targetDefeated ? `${a.targetName} now ${Math.max(0, a.targetNewHp)} HP`
+    : a.targetStatus === 'downed' ? `${a.targetName} goes down` : `${a.targetName} is defeated`;
   return `${name} → ${a.targetName}: ${roll}hit for ${a.damage} (${after}).`;
 }

@@ -83,6 +83,8 @@ export interface PlanningCombatantDto {
   profileName: string;
   movementRange: number;
   maxAp: number;
+  status: string;
+  bleedoutRoundsLeft: number;
 }
 
 export interface PlayerLockedInPayload {
@@ -118,6 +120,15 @@ export interface ResolutionPayload {
   defeatedCombatantIds: string[];
   updatedCombatants: PlanningCombatantDto[];
   queues: CombatantQueueDto[];
+  endOfRound: BleedoutResultDto[];
+}
+
+export interface BleedoutResultDto {
+  combatantId: string;
+  combatantName: string;
+  roundsLeft: number;
+  died: boolean;
+  feedText: string;
 }
 
 export interface CombatantQueueDto {
@@ -164,6 +175,8 @@ export interface AttackResult {
   feedText: string;
   roll: AttackRollDto | null;
   wastedReason: string | null;
+  targetStatus: string;
+  finishingBlow: boolean;
 }
 
 export interface AttackRollDto {
@@ -176,6 +189,8 @@ export interface EffectResult {
   combatantId: string;
   effectType: string;
   description: string;
+  targetCombatantId: string | null;
+  wastedReason: string | null;
 }
 
 export const HubEvents = {

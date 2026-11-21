@@ -32,7 +32,18 @@ public partial class ResolutionServiceTests
         private readonly Dictionary<string, string> _plans = []; // insertion order = Redis order
         private readonly Dictionary<string, int> _hpByKey = [];
         private readonly HashSet<string> _preDefeated = [];
+        private readonly Dictionary<string, CombatantStatusEntry> _statuses = [];
         public Dictionary<string, string> HpKeys { get; } = [];
+
+        /// <summary>Starts the round with this combatant downed (3B.5), at 0 HP with the given rounds left.</summary>
+        public void StartDowned(string id, int roundsLeft)
+        {
+            _preDefeated.Add(id);
+            _hpByKey[HpKeys[id]] = 0;
+            _statuses[id] = new CombatantStatusEntry("downed", roundsLeft);
+        }
+
+        public void Stabilize(string id, string target) => _plans[id] = ActionJson("stabilize", targetId: target);
 
         public string Monster(string name, (int x, int y)? at, int hp = 20, bool defeated = false)
         {
@@ -96,11 +107,16 @@ public partial class ResolutionServiceTests
 
             var map = new MapEntry(20, 20, new Dictionary<string, Position>(_positions), ["fog-a"]);
             Redis = BuildMockRedis(EncounterId.ToString(), SessionId.ToString(), _plans, map, _hpByKey, _preDefeated);
+            foreach (var (id, status) in _statuses)
+                Redis.Setup(r => r.GetStatusAsync(EncounterId.ToString(), id)).ReturnsAsync(status);
             Redis.Setup(r => r.SetHpAsync(It.IsAny<string>(), It.IsAny<long>()))
                 .Callback<string, long>((k, v) => CallLog.Add($"SetHp {k}={v} events={Db.GameEvents.Count()}"))
                 .Returns(Task.CompletedTask);
             Redis.Setup(r => r.MarkDefeatedAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .Callback<string, string>((_, id) => CallLog.Add($"MarkDefeated {id} events={Db.GameEvents.Count()}"))
+                .Returns(Task.CompletedTask);
+            Redis.Setup(r => r.SetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CombatantStatusEntry>()))
+                .Callback<string, string, CombatantStatusEntry>((_, id, st) => CallLog.Add($"SetStatus {id}={st.Status} events={Db.GameEvents.Count()}"))
                 .Returns(Task.CompletedTask);
             Redis.Setup(r => r.SetMapAsync(It.IsAny<string>(), It.IsAny<MapEntry>()))
                 .Callback<string, MapEntry>((_, _) => CallLog.Add($"SetMap events={Db.GameEvents.Count()}"))
@@ -173,13 +189,14 @@ public partial class ResolutionServiceTests
         var atk = SingleAttack(r);
         Assert.Equal("Goblin A strikes Goblin B for 8 damage — defeated!", atk.FeedText);
         Assert.True(atk.TargetDefeated);
-        Assert.Equal(-5, atk.TargetNewHp); // HP is not clamped at 0
+        Assert.Equal(0, atk.TargetNewHp); // HP stops at 0 (3B.5)
         Assert.Equal([b], r.DefeatedCombatantIds);
-        s.Redis.Verify(x => x.SetHpAsync(s.HpKeys[b], -5), Times.Once);
+        s.Redis.Verify(x => x.SetHpAsync(s.HpKeys[b], 0), Times.Once);
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), b, new CombatantStatusEntry("dead", 0)), Times.Once);
         s.Redis.Verify(x => x.MarkDefeatedAsync(s.EncounterId.ToString(), b), Times.Once);
         var updated = r.UpdatedCombatants.Single(c => c.Id == b);
         Assert.True(updated.IsDefeated);
-        Assert.Equal(-5, updated.CurrentHp);
+        Assert.Equal(0, updated.CurrentHp);
     }
 
     [Fact]
@@ -802,7 +819,7 @@ public partial class ResolutionServiceTests
 
         // DB GameEvents saved (3 rows) before any Redis mutation.
         Assert.Equal(
-            [$"SetHp {s.HpKeys[b]}=-1 events=3", $"MarkDefeated {b} events=3", "SetMap events=3"],
+            [$"SetHp {s.HpKeys[b]}=0 events=3", $"MarkDefeated {b} events=3", $"SetStatus {b}=dead events=3", "SetMap events=3"],
             s.CallLog);
 
         var events = s.Db.GameEvents.ToList();
@@ -810,7 +827,7 @@ public partial class ResolutionServiceTests
         var mvEvt = Assert.Single(events, e => e.EventType == "movement");
         Assert.Equal($"{{\"combatantId\":\"{c}\",\"finalPosition\":{{\"x\":6,\"y\":5}},\"wasBlocked\":false}}", mvEvt.Payload);
         var hitEvt = Assert.Single(events, e => e.EventType == "attack_hit");
-        Assert.Equal($"{{\"attackerId\":\"{a}\",\"targetId\":\"{b}\",\"damage\":4,\"targetNewHp\":-1}}", hitEvt.Payload);
+        Assert.Equal($"{{\"attackerId\":\"{a}\",\"targetId\":\"{b}\",\"damage\":4,\"targetNewHp\":0}}", hitEvt.Payload);
         var missEvt = Assert.Single(events, e => e.EventType == "attack_miss");
         Assert.Equal($"{{\"attackerId\":\"{d}\",\"targetId\":\"{a}\",\"damage\":0,\"targetNewHp\":20}}", missEvt.Payload);
 
@@ -860,5 +877,85 @@ public partial class ResolutionServiceTests
         var r = await s.Run(new ScriptedDice());
 
         Assert.Equal([c, a], Assert.Single(r.Ticks).Movements.Select(m => m.CombatantId));
+    }
+
+    // ----- Bleedout (3B.5) -----
+
+    [Fact]
+    public async Task Char_PlayerDroppedToZero_GoesDown_WithTwoRoundsLeft()
+    {
+        await using var s = new Scene();
+        var hero = s.Player("Frodo", (0, 0), hp: 3);
+        var goblin = s.Monster("Goblin", (1, 0));
+        s.Melee(goblin, hero);
+
+        var r = await s.Run(new ScriptedDice(15, 5));
+
+        var atk = SingleAttack(r);
+        Assert.Equal("Goblin strikes Frodo for 5 damage — goes down!", atk.FeedText);
+        Assert.Equal("downed", atk.TargetStatus);
+        Assert.Equal(0, atk.TargetNewHp);
+        Assert.Equal([hero], r.DefeatedCombatantIds);
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), hero, new CombatantStatusEntry("downed", 2)), Times.Once);
+        var updated = r.UpdatedCombatants.Single(c => c.Id == hero);
+        Assert.Equal(("downed", 2, true), (updated.Status, updated.BleedoutRoundsLeft, updated.IsDefeated));
+        Assert.Empty(r.EndOfRound);
+    }
+
+    [Fact]
+    public async Task Char_Stabilize_AndBleedOut_FeedAndPersistence()
+    {
+        await using var s = new Scene();
+        var saved = s.Player("Sam", (0, 1));
+        var lost = s.Player("Pippin", (9, 9));
+        var medic = s.Player("Merry", (0, 0));
+        s.StartDowned(saved, roundsLeft: 1);
+        s.StartDowned(lost, roundsLeft: 1);
+        s.Stabilize(medic, saved);
+
+        var r = await s.Run(new ScriptedDice());
+
+        var effect = Assert.Single(r.Ticks[0].Effects);
+        Assert.Equal(("stabilize", saved, null, "Merry stabilizes Sam"),
+            (effect.EffectType, effect.TargetCombatantId, effect.WastedReason, effect.Description));
+
+        var bleed = Assert.Single(r.EndOfRound);
+        Assert.Equal((lost, "Pippin", 0, true, "Pippin bleeds out"), (bleed.CombatantId, bleed.CombatantName, bleed.RoundsLeft, bleed.Died, bleed.FeedText));
+
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), saved, new CombatantStatusEntry("stable", 0)), Times.Once);
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), lost, new CombatantStatusEntry("dead", 0)), Times.Once);
+        Assert.Equal("stable", r.UpdatedCombatants.Single(c => c.Id == saved).Status);
+        Assert.Equal("dead", r.UpdatedCombatants.Single(c => c.Id == lost).Status);
+        Assert.Empty(r.DefeatedCombatantIds); // both were already out of the fight
+    }
+
+    [Fact]
+    public async Task Char_FinishingBlow_OnDowned_RollsToHitOnly()
+    {
+        await using var s = new Scene();
+        var hero = s.Player("Frodo", (0, 1));
+        var goblin = s.Monster("Goblin", (0, 0));
+        s.StartDowned(hero, roundsLeft: 2);
+        s.Melee(goblin, hero);
+
+        var r = await s.Run(new ScriptedDice(15)); // the d20 only
+
+        var atk = SingleAttack(r);
+        Assert.Equal("Goblin strikes Frodo — finished off!", atk.FeedText);
+        Assert.Equal(("dead", true), (atk.TargetStatus, atk.FinishingBlow));
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), hero, new CombatantStatusEntry("dead", 0)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Char_BleedingOut_FeedCountsDown()
+    {
+        await using var s = new Scene();
+        var hero = s.Player("Frodo", (0, 1));
+        s.StartDowned(hero, roundsLeft: 2);
+
+        var r = await s.Run(new ScriptedDice());
+
+        Assert.Equal("Frodo is bleeding out — 1 round left", Assert.Single(r.EndOfRound).FeedText);
+        s.Redis.Verify(x => x.SetStatusAsync(s.EncounterId.ToString(), hero, new CombatantStatusEntry("downed", 1)), Times.Once);
     }
 }

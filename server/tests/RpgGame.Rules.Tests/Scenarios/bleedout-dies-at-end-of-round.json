@@ -1,0 +1,16 @@
+{
+  // 3B.5: nobody reached the Downed hero in time: with 1 round left at the start of the round,
+  // the end-of-round countdown reaches 0 and they die. A stabilize from too far away is wasted.
+  "description": "Bleedout: the countdown runs out at the end of the round; a stabilize out of reach is wasted",
+  "combatants": [
+    { "id": "Archer", "hp": 0, "downs": true, "status": "downed", "bleedout": 1, "at": [5, 5] },
+    { "id": "Knight", "hp": 20, "downs": true, "at": [5, 9] }
+  ],
+  "plans": {
+    "Knight": ["stabilize Archer"]
+  },
+  "expect": {
+    "status": { "Archer": "dead" },
+    "bleedout": { "Archer": 0 }
+  }
+}

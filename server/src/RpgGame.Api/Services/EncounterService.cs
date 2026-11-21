@@ -161,7 +161,7 @@ public class EncounterService(
                 IsAiControlled = isAiControlled,
                 Profile = profile.Snapshot(),
             };
-            var tempDto = CombatantDtos.Planning(staged, profile.MaxHp, false);
+            var tempDto = CombatantDtos.Planning(staged, profile.MaxHp);
             logger.LogInformation("AddMonster: no active encounter — staged pending monster '{Name}'", trimmedName);
             return new AddMonsterResult(gameSession.Id, "", tempDto, new PositionDto(0, 0));
         }
@@ -222,7 +222,7 @@ public class EncounterService(
 
         logger.LogInformation("AddMonster: Redis updated — map, HP seeded, encounter combatants updated");
 
-        var monsterDto = CombatantDtos.Planning(monster, profile.MaxHp, false);
+        var monsterDto = CombatantDtos.Planning(monster, profile.MaxHp);
         var spawnDto = new PositionDto(spawnPos.X, spawnPos.Y);
 
         logger.LogInformation("AddMonster: complete, returning MonsterAdded result");

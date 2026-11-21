@@ -1,0 +1,21 @@
+{
+  // 3B.5: in one tick, Attacks resolve before Effects. A finishing blow on a Downed hero (any
+  // hit kills: d20 only, no damage roll) lands before the ally's stabilize, which is then wasted.
+  "description": "Bleedout: a finishing blow lands before a same-tick stabilize",
+  "combatants": [
+    { "id": "Archer", "hp": 0, "downs": true, "status": "downed", "bleedout": 2, "at": [5, 5] },
+    { "id": "Knight", "hp": 20, "downs": true, "at": [5, 6] },
+    { "id": "Ogre",   "hp": 30, "at": [4, 5] }
+  ],
+  "plans": {
+    "Knight": ["stabilize Archer"],
+    "Ogre":   ["melee Archer"]
+  },
+  "dice": [
+    12       // Ogre's hit check only: a hit, so the Archer dies
+  ],
+  "expect": {
+    "status": { "Archer": "dead", "Knight": "standing" },
+    "hits": [ { "tick": 1, "attacker": "Ogre" } ]
+  }
+}

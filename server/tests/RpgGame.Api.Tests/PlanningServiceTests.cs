@@ -548,6 +548,14 @@ public class PlanningServiceTests
         public readonly Dictionary<string, string> Plans = [];
         public readonly HashSet<string> Locked = [];
         public readonly HashSet<string> Defeated = [];
+        public readonly Dictionary<string, CombatantStatusEntry> Statuses = [];
+
+        /// <summary>Puts a combatant out of the fight with a status ("downed", "stable", "dead") (3B.5).</summary>
+        public void SetStatus(string id, string status)
+        {
+            Defeated.Add(id);
+            Statuses[id] = new CombatantStatusEntry(status, status == "downed" ? 2 : 0);
+        }
 
         public PartyFixture()
         {
@@ -571,6 +579,7 @@ public class PlanningServiceTests
                 [Bruiser] = new(8, 2), [Scout] = new(12, 2), [Goblin] = new(8, 14),
             }, []));
             Redis.Setup(r => r.IsDefeatedAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Defeated.Contains(id));
+            Redis.Setup(r => r.GetStatusAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Statuses.GetValueOrDefault(id));
             Redis.Setup(r => r.HasPlannedActionAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Plans.ContainsKey(id));
             Redis.Setup(r => r.SetPlannedActionAsync(EncounterId, It.IsAny<string>(), It.IsAny<string>()))
                 .Callback<string, string, string>((_, id, json) => Plans[id] = json).Returns(Task.CompletedTask);
@@ -585,6 +594,55 @@ public class PlanningServiceTests
     }
 
     private static PlannedActionArray Move(int x, int y) => new([new PlannedActionEntry("move", new PositionDto(x, y), null)]);
+    private static PlannedActionArray Targeting(string type, string target) => new([new PlannedActionEntry(type, null, target)]);
+
+    // ----- Stabilize and finishing blows (3B.5) -----
+
+    [Fact]
+    public async Task Stabilize_ADownedAlly_IsStored()
+    {
+        var f = new PartyFixture();
+        f.SetStatus(f.Scout, "downed");
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("stabilize", f.Scout), f.Bruiser);
+        Assert.Contains("stabilize", f.Plans[f.Bruiser]);
+    }
+
+    [Theory]
+    [InlineData(null, "Only a downed ally")]      // standing
+    [InlineData("stable", "Only a downed ally")]
+    [InlineData("dead", "Only a downed ally")]
+    public async Task Stabilize_SomeoneNotBleedingOut_IsRejected(string? status, string message)
+    {
+        var f = new PartyFixture();
+        if (status is not null) f.SetStatus(f.Scout, status);
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("stabilize", f.Scout), f.Bruiser));
+        Assert.Contains(message, ex.Message);
+    }
+
+    [Fact]
+    public async Task Stabilize_AnEnemy_IsRejected()
+    {
+        var f = new PartyFixture();
+        f.SetStatus(f.Goblin, "downed");
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("stabilize", f.Goblin), f.Bruiser));
+        Assert.Contains("only stabilize an ally", ex.Message);
+    }
+
+    [Fact]
+    public async Task Attack_OnADownedTarget_IsAllowed_ButNotOnTheDead()
+    {
+        var f = new PartyFixture();
+        f.SetStatus(f.Goblin, "downed");
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("ranged_attack", f.Goblin), f.Bruiser);
+        Assert.Contains("ranged_attack", f.Plans[f.Bruiser]);
+
+        f.SetStatus(f.Goblin, "dead");
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("ranged_attack", f.Goblin), f.Scout));
+        Assert.Contains("already defeated", ex.Message);
+    }
 
     [Fact]
     public async Task PlanAction_ForOneOfSeveralOwnedCharacters_StoresItUnderThatCharacter()

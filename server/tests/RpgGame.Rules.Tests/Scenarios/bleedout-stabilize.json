@@ -1,0 +1,18 @@
+{
+  // 3B.5: an ally moves next to a Downed hero (tick 1) and stabilizes them (tick 2, Effects
+  // phase). Stable = out of the fight but no longer dying.
+  "description": "Bleedout: move, then Stabilize an adjacent Downed ally",
+  "combatants": [
+    { "id": "Archer", "hp": 0, "downs": true, "status": "downed", "bleedout": 1, "at": [5, 5] },
+    { "id": "Knight", "hp": 20, "downs": true, "at": [5, 8] }
+  ],
+  "plans": {
+    "Knight": ["move 5,6", "stabilize Archer"]
+  },
+  "expect": {
+    "ticks": 2,
+    "positions": { "Knight": [5, 6] },
+    "status": { "Archer": "stable", "Knight": "standing" },
+    "bleedout": { "Archer": 0 }
+  }
+}

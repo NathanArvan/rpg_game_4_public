@@ -1,4 +1,5 @@
 import { MovementResult, PositionDto, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model';
 
 /**
  * Turns a round's resolution (ticks from the server) into a timeline of beats for the client to
@@ -9,8 +10,14 @@ import { MovementResult, PositionDto, ResolutionPayload, TickResult } from '../.
  * from the service's state.
  */
 
-/** Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. */
-export type AuraKind = 'miss' | 'hit' | 'hurt';
+/** Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized (3B.5). */
+export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize';
+
+/** A combatant's status as shown (3B.5). */
+export interface StatusView {
+  status: CombatantStatus;
+  bleedoutRoundsLeft: number;
+}
 
 export interface AuraCue {
   combatantId: string;
@@ -21,8 +28,8 @@ export interface FloatCue {
   /** The combatant the text floats above. */
   combatantId: string;
   text: string;
-  /** damage: red; miss: grey; wasted: grey italic, above the attacker. */
-  kind: 'damage' | 'miss' | 'wasted';
+  /** damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized / bleeding (3B.5). */
+  kind: 'damage' | 'miss' | 'wasted' | 'status';
 }
 
 /** Short words for why an attack was wasted (the server's wastedReason). */
@@ -31,11 +38,12 @@ export function wastedLabel(reason: string | null): string {
     case 'target_defeated': return 'target down';
     case 'out_of_melee_reach': return 'out of reach';
     case 'invalid_target': return 'no target';
+    case 'target_not_downed': return 'not bleeding out';
     default: return 'wasted';
   }
 }
 
-export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'idle';
+export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'effects' | 'bleedout' | 'idle';
 
 export interface PlaybackBeat {
   /** 0-based tick this beat belongs to. */
@@ -51,8 +59,8 @@ export interface PlaybackBeat {
   floats?: FloatCue[];
   /** HP revealed at this beat. */
   hp?: Record<string, number>;
-  /** Combatants shown as defeated from this beat on. */
-  defeated?: string[];
+  /** Statuses that change at this beat (going down, dying, stabilized, bleeding out) (3B.5). */
+  statuses?: Record<string, StatusView>;
   /** Feed lines added at this beat. */
   feed?: string[];
 }
@@ -71,6 +79,10 @@ export interface PlaybackTiming {
   idleMs: number;
   /** Hold while defeated tokens fade. */
   defeatMs: number;
+  /** Hold after a tick's stabilizes (3B.5). */
+  effectMs: number;
+  /** Hold for the end-of-round bleedout step (3B.5). */
+  bleedoutMs: number;
   /** How long an aura glows. */
   auraMs: number;
   /** How long floating damage / MISS text lingers (it may outlast its beat). */
@@ -85,6 +97,8 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   wastedMs: 900,
   idleMs: 400,
   defeatMs: 600,
+  effectMs: 1200,
+  bleedoutMs: 1500,
   auraMs: 1000,
   floatMs: 2500,
 };
@@ -128,13 +142,16 @@ export function positionsAfterResolution(
 }
 
 /**
- * The beats of a round, in order. Each tick plays as: movement steps → attacks → defeats.
+ * The beats of a round, in order. Each tick plays as: movement steps → attacks → defeats →
+ * effects (stabilize); after the last tick, the end-of-round bleedout step (3B.5).
  * Attacks within a tick are simultaneous (the rules net their damage together), so they share
  * one beat; the next tick's actions only start after it.
  */
 export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming = PLAYBACK_TIMING): PlaybackBeat[] {
   const beats: PlaybackBeat[] = [];
   const severalTicks = payload.ticks.length > 1;
+  // Bleedout rounds for anyone downed this round come from the server's end-of-round rows.
+  const finalBleedout = new Map((payload.updatedCombatants ?? []).map(c => [c.id, c.bleedoutRoundsLeft ?? 0]));
   // Feed lines wait for the next beat, so they appear when the thing they describe happens.
   let pendingFeed: string[] = [`— Round ${payload.newRoundNumber - 1} Resolution —`];
   const takeFeed = (): string[] | undefined => {
@@ -179,9 +196,9 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
         }
         addAura(a.attackerId, a.hit ? 'hit' : 'miss');
         if (a.hit) addAura(a.targetId, 'hurt');
-        floats.push(a.hit
-          ? { combatantId: a.targetId, text: `-${a.damage}`, kind: 'damage' }
-          : { combatantId: a.targetId, text: 'MISS', kind: 'miss' });
+        if (!a.hit) floats.push({ combatantId: a.targetId, text: 'MISS', kind: 'miss' });
+        else if (a.finishingBlow) floats.push({ combatantId: a.targetId, text: 'finished', kind: 'damage' });
+        else floats.push({ combatantId: a.targetId, text: `-${a.damage}`, kind: 'damage' });
         hp[a.targetId] = a.targetNewHp;
       }
       const anyLanded = tick.attacks.some(a => !a.wasted);
@@ -191,16 +208,59 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
       });
     }
 
-    const defeated = [...new Set(tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId))];
-    if (defeated.length > 0)
-      beats.push({ tick: t, phase: 'defeats', durationMs: timing.defeatMs, defeated, feed: takeFeed() });
+    // Who fell this tick: Downed (bleeding out) or dead.
+    const fell: Record<string, StatusView> = {};
+    const downFloats: FloatCue[] = [];
+    for (const a of tick.attacks.filter(a => a.targetDefeated)) {
+      const status = toStatus(a.targetStatus, true);
+      fell[a.targetId] = { status, bleedoutRoundsLeft: status === 'downed' ? finalBleedout.get(a.targetId) ?? 0 : 0 };
+      if (status === 'downed') downFloats.push({ combatantId: a.targetId, text: 'DOWN', kind: 'damage' });
+    }
+    if (Object.keys(fell).length > 0)
+      beats.push({ tick: t, phase: 'defeats', durationMs: timing.defeatMs, statuses: fell, floats: downFloats, feed: takeFeed() });
+
+    // Effects: stabilizes (defends have nothing to show yet).
+    const stabilizes = tick.effects.filter(e => e.effectType === 'stabilize');
+    if (stabilizes.length > 0) {
+      pendingFeed.push(...stabilizes.map(e => e.description));
+      const statuses: Record<string, StatusView> = {};
+      const auras: AuraCue[] = [];
+      const floats: FloatCue[] = [];
+      for (const e of stabilizes) {
+        if (e.wastedReason || !e.targetCombatantId) {
+          floats.push({ combatantId: e.combatantId, text: wastedLabel(e.wastedReason), kind: 'wasted' });
+          continue;
+        }
+        statuses[e.targetCombatantId] = { status: 'stable', bleedoutRoundsLeft: 0 };
+        auras.push({ combatantId: e.targetCombatantId, kind: 'stabilize' });
+        floats.push({ combatantId: e.targetCombatantId, text: 'stabilized', kind: 'status' });
+      }
+      beats.push({ tick: t, phase: 'effects', durationMs: timing.effectMs, statuses, auras, floats, feed: takeFeed() });
+    }
 
     // Nothing visible happened this tick (defends, idles): a short beat for it.
     if (beats.length === beatsBefore)
       beats.push({ tick: t, phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
   }
 
+  const lastTick = Math.max(0, payload.ticks.length - 1);
+
+  // End of round: bleedout countdowns tick, and anyone at 0 dies (3B.5).
+  const bleeding = payload.endOfRound ?? [];
+  if (bleeding.length > 0) {
+    pendingFeed.push('End of round', ...bleeding.map(b => b.feedText));
+    const statuses: Record<string, StatusView> = {};
+    const floats: FloatCue[] = [];
+    for (const b of bleeding) {
+      statuses[b.combatantId] = b.died ? { status: 'dead', bleedoutRoundsLeft: 0 } : { status: 'downed', bleedoutRoundsLeft: b.roundsLeft };
+      floats.push(b.died
+        ? { combatantId: b.combatantId, text: 'bled out', kind: 'damage' }
+        : { combatantId: b.combatantId, text: `bleeding: ${b.roundsLeft}`, kind: 'status' });
+    }
+    beats.push({ tick: lastTick, phase: 'bleedout', durationMs: timing.bleedoutMs, statuses, floats, feed: takeFeed() });
+  }
+
   if (pendingFeed.length > 0)
-    beats.push({ tick: Math.max(0, payload.ticks.length - 1), phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
+    beats.push({ tick: lastTick, phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
   return beats;
 }

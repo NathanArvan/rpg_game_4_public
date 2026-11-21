@@ -1,3 +1,4 @@
+using RpgGame.Rules;
 using RpgGame.Api.CombatProfiles;
 using RpgGame.Api.Contracts.CombatProfiles;
 using RpgGame.Api.Contracts.Hub;
@@ -22,19 +23,22 @@ internal static class CombatantDtos
         CombatProfileMapping.MovementRange(c.Profile),
         CombatProfileMapping.MaxAp(c.Profile));
 
-    public static PlanningCombatantDto Planning(EncounterCombatant c, int currentHp, bool isDefeated) => new(
+    public static PlanningCombatantDto Planning(
+        EncounterCombatant c, int currentHp, CombatantStatus status = CombatantStatus.Standing, int bleedoutRoundsLeft = 0) => new(
         c.Id.ToString(),
         c.UserId,
         c.CharacterName,
         currentHp,
         CombatProfileMapping.MaxHp(c.Profile),
-        isDefeated,
+        status != CombatantStatus.Standing,
         c.CombatantType,
         c.IsAiControlled,
         c.Profile?.ProfileId ?? "",
         c.Profile?.ProfileName ?? "",
         CombatProfileMapping.MovementRange(c.Profile),
-        CombatProfileMapping.MaxAp(c.Profile));
+        CombatProfileMapping.MaxAp(c.Profile),
+        RulesWireMapping.ToWire(status),
+        bleedoutRoundsLeft);
 
     public static CombatProfileDto Profile(CombatProfileDefinition p) => new(
         p.Id, p.Name, p.Description, p.Side, p.MaxHp, p.MovementRange, p.Speed,

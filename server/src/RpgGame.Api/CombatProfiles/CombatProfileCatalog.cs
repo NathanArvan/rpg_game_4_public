@@ -156,10 +156,18 @@ public sealed class CombatProfileCatalog
 internal static class CombatProfileMapping
 {
     /// <summary>Rows from before 3B.1 have no profile: they get the 3A placeholder values.</summary>
-    public static CombatProfile ToRules(CombatProfileValues? v) => v is null
+    /// <param name="combatantType">"player" or "monster": decides <see cref="CanBeDowned"/> unless the values override it.</param>
+    public static CombatProfile ToRules(CombatProfileValues? v, string combatantType = "monster") => (v is null
         ? CombatProfile.Default
         : new CombatProfile(v.MaxHp, v.MovementRange, v.Speed, v.MeleeAccuracy, v.RangedAccuracy, v.Dodge,
-            DamageDie.Parse(v.BaseDamage), MaxAp(v));
+            DamageDie.Parse(v.BaseDamage), MaxAp(v))) with { CanBeDowned = CanBeDowned(v, combatantType) };
+
+    /// <summary>
+    /// Goes Downed at 0 HP instead of dying (3B.5): party combatants do and monsters don't, unless
+    /// the stored values (from a battle preset's "downs") say otherwise.
+    /// </summary>
+    public static bool CanBeDowned(CombatProfileValues? v, string combatantType) =>
+        v?.CanBeDowned ?? combatantType == "player";
 
     public static int MaxHp(CombatProfileValues? v) => v?.MaxHp ?? CombatProfile.Default.MaxHp;
     public static int MovementRange(CombatProfileValues? v) => v?.MovementRange ?? CombatProfile.Default.MovementRange;

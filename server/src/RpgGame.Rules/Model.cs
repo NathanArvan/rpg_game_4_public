@@ -37,6 +37,22 @@ public enum ActionType
     MeleeAttack,
     RangedAttack,
     Defend,
+    /// <summary>Stops an adjacent Downed combatant bleeding out (3B.5). Resolves in the Effects phase.</summary>
+    Stabilize,
+}
+
+/// <summary>
+/// Where a combatant stands in the fight (3B.5, docs/design/DEFEAT_AND_INCAPACITATION.md).
+/// Anyone not <see cref="Standing"/> is out of the fight: they can't act.
+/// </summary>
+public enum CombatantStatus
+{
+    Standing,
+    /// <summary>At 0 HP and bleeding out: dies when <see cref="CombatantState.BleedoutRoundsLeft"/> runs out.</summary>
+    Downed,
+    /// <summary>At 0 HP but stabilized: out of this fight, no longer dying.</summary>
+    Stable,
+    Dead,
 }
 
 /// <summary>
@@ -54,6 +70,10 @@ public enum ActionType
 /// Action points to spend each round (roadmap 3B.2). Resets every round; costs come from
 /// <see cref="RulesConfig.ApCost"/>.
 /// </param>
+/// <param name="CanBeDowned">
+/// At 0 HP this combatant goes Downed (and can be stabilized) instead of dying outright (3B.5).
+/// True for party profiles; monsters die at 0 HP unless a preset says otherwise.
+/// </param>
 public sealed record CombatProfile(
     int MaxHp,
     int MovementRange,
@@ -62,7 +82,8 @@ public sealed record CombatProfile(
     int RangedAccuracy,
     int Dodge,
     DamageDie BaseDamage,
-    int MaxAp = CombatProfile.DefaultMaxAp)
+    int MaxAp = CombatProfile.DefaultMaxAp,
+    bool CanBeDowned = false)
 {
     public const int DefaultMaxAp = 4;
 
@@ -74,16 +95,22 @@ public sealed record CombatProfile(
 /// Current cell, or null if the combatant has no map position. Such a combatant isn't on the map:
 /// it can't move, can't make or receive melee attacks, and doesn't block anyone.
 /// </param>
+/// <param name="Status">Standing, Downed, Stable or Dead (3B.5).</param>
+/// <param name="BleedoutRoundsLeft">While Downed: end-of-round countdowns left before dying. 0 otherwise.</param>
 public sealed record CombatantState(
     string Id,
     string Name,
     int Hp,
     CombatProfile Profile,
     GridPosition? Position,
-    bool IsDefeated)
+    CombatantStatus Status = CombatantStatus.Standing,
+    int BleedoutRoundsLeft = 0)
 {
     public int MaxHp => Profile.MaxHp;
     public int Speed => Profile.Speed;
+
+    /// <summary>Out of the fight: Downed, Stable or Dead. Such a combatant can't act.</summary>
+    public bool IsDefeated => Status != CombatantStatus.Standing;
 }
 
 public sealed record EncounterState(
@@ -92,7 +119,7 @@ public sealed record EncounterState(
     IReadOnlyList<CombatantState> Combatants);
 
 /// <param name="TargetCell">Set for <see cref="ActionType.Move"/>.</param>
-/// <param name="TargetCombatantId">Set for attacks.</param>
+/// <param name="TargetCombatantId">Set for attacks and Stabilize.</param>
 public sealed record PlannedAction(
     ActionType Type,
     GridPosition? TargetCell = null,
@@ -102,4 +129,5 @@ public sealed record PlannedAction(
     public static PlannedAction Melee(string targetId) => new(ActionType.MeleeAttack, TargetCombatantId: targetId);
     public static PlannedAction Ranged(string targetId) => new(ActionType.RangedAttack, TargetCombatantId: targetId);
     public static PlannedAction Defend() => new(ActionType.Defend);
+    public static PlannedAction Stabilize(string targetId) => new(ActionType.Stabilize, TargetCombatantId: targetId);
 }

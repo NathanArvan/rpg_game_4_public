@@ -11,6 +11,7 @@ internal static class RulesWireMapping
         "melee_attack" => ActionType.MeleeAttack,
         "ranged_attack" => ActionType.RangedAttack,
         "defend" => ActionType.Defend,
+        "stabilize" => ActionType.Stabilize,
         _ => null,
     };
 
@@ -20,7 +21,27 @@ internal static class RulesWireMapping
         ActionType.MeleeAttack => "melee_attack",
         ActionType.RangedAttack => "ranged_attack",
         ActionType.Defend => "defend",
+        ActionType.Stabilize => "stabilize",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
+    };
+
+    /// <summary>Statuses on the wire and in Redis: "standing", "downed", "stable", "dead" (3B.5).</summary>
+    public static string ToWire(CombatantStatus status) => status switch
+    {
+        CombatantStatus.Standing => "standing",
+        CombatantStatus.Downed => "downed",
+        CombatantStatus.Stable => "stable",
+        CombatantStatus.Dead => "dead",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
+
+    public static CombatantStatus? ParseStatus(string? wire) => wire switch
+    {
+        "standing" => CombatantStatus.Standing,
+        "downed" => CombatantStatus.Downed,
+        "stable" => CombatantStatus.Stable,
+        "dead" => CombatantStatus.Dead,
+        _ => null,
     };
 
     /// <summary>AP cost of every action type, keyed by its wire string, for the planning payload.</summary>
@@ -37,12 +58,14 @@ internal static class RulesWireMapping
         WastedReason.TargetDefeated => "target_defeated",
         WastedReason.OutOfMeleeReach => "out_of_melee_reach",
         WastedReason.InvalidTarget => "invalid_target",
+        WastedReason.TargetNotDowned => "target_not_downed",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 
     public static string ToWire(EffectType type) => type switch
     {
         EffectType.Defend => "defend",
+        EffectType.Stabilize => "stabilize",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 }

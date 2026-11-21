@@ -17,7 +17,7 @@ import {
   SelectMyCombatant,
   SetMyPlannedAction,
 } from './encounter.actions';
-import { Combatant, DEFAULT_MOVEMENT_RANGE, EncounterOutcome, EncounterStateModel } from './encounter.model';
+import { Combatant, DEFAULT_MOVEMENT_RANGE, EncounterOutcome, EncounterStateModel, toStatus } from './encounter.model';
 import { DEFAULT_AP_COSTS, DEFAULT_MAX_AP } from './plan-queue';
 import { CombatantDto, PlannedActionEntry, PlanningCombatantDto, TickResult } from '../../contracts/hub-contracts.generated';
 import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
@@ -128,6 +128,8 @@ export class EncounterState {
     const mapped: Combatant[] = combatants.map((c: CombatantDto) => ({
       ...c,
       isDefeated: false,
+      status: 'standing' as const,
+      bleedoutRoundsLeft: 0,
       combatantType: c.combatantType as 'player' | 'monster',
       isAiControlled: c.isAiControlled ?? false,
       profileName: c.profileName ?? '',
@@ -152,6 +154,8 @@ export class EncounterState {
       currentHp: c.currentHp,
       maxHp: c.maxHp,
       isDefeated: c.isDefeated,
+      status: toStatus(c.status, c.isDefeated),
+      bleedoutRoundsLeft: c.bleedoutRoundsLeft ?? 0,
       combatantType: c.combatantType as 'player' | 'monster',
       isAiControlled: c.isAiControlled ?? false,
       profileName: c.profileName ?? '',
@@ -188,11 +192,19 @@ export class EncounterState {
       }
     }
 
-    const combatants: Combatant[] = state.combatants.map(c => ({
-      ...c,
-      currentHp: hpMap.has(c.id) ? hpMap.get(c.id)! : c.currentHp,
-      isDefeated: c.isDefeated || defeatedSet.has(c.id),
-    }));
+    // The server's end-of-round rows carry the statuses (3B.5): downed, stable, dead, rounds left.
+    const updated = new Map((payload.updatedCombatants ?? []).map(u => [u.id, u]));
+    const combatants: Combatant[] = state.combatants.map(c => {
+      const u = updated.get(c.id);
+      const isDefeated = u ? u.isDefeated : c.isDefeated || defeatedSet.has(c.id);
+      return {
+        ...c,
+        currentHp: u ? u.currentHp : hpMap.has(c.id) ? hpMap.get(c.id)! : c.currentHp,
+        isDefeated,
+        status: u ? toStatus(u.status, u.isDefeated) : isDefeated && c.status === 'standing' ? 'dead' : c.status,
+        bleedoutRoundsLeft: u ? u.bleedoutRoundsLeft ?? 0 : c.bleedoutRoundsLeft,
+      };
+    });
 
     ctx.patchState({
       roundPhase: 'resolving',
@@ -235,7 +247,7 @@ export class EncounterState {
   combatantDefeated(ctx: StateContext<EncounterStateModel>, { combatantId }: CombatantDefeated) {
     const state = ctx.getState();
     const combatants = state.combatants.map(c =>
-      c.id === combatantId ? { ...c, isDefeated: true } : c
+      c.id === combatantId ? { ...c, isDefeated: true, status: c.status === 'standing' ? 'dead' as const : c.status } : c
     );
     ctx.patchState({ combatants });
   }
@@ -251,6 +263,8 @@ export class EncounterState {
       currentHp: payload.monster.currentHp,
       maxHp: payload.monster.maxHp,
       isDefeated: payload.monster.isDefeated,
+      status: toStatus(payload.monster.status, payload.monster.isDefeated),
+      bleedoutRoundsLeft: payload.monster.bleedoutRoundsLeft ?? 0,
       combatantType: 'monster',
       isAiControlled: payload.monster.isAiControlled ?? false,
       profileName: payload.monster.profileName ?? '',

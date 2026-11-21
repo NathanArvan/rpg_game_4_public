@@ -1,5 +1,14 @@
 import { PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
 
+/** Where a combatant stands in the fight (3B.5). Anyone not standing is out of the fight. */
+export type CombatantStatus = 'standing' | 'downed' | 'stable' | 'dead';
+
+export function toStatus(wire: string | null | undefined, isDefeated = false): CombatantStatus {
+  return wire === 'standing' || wire === 'downed' || wire === 'stable' || wire === 'dead'
+    ? wire
+    : isDefeated ? 'dead' : 'standing';
+}
+
 export interface Combatant {
   id: string;
   userId: string;
@@ -7,7 +16,11 @@ export interface Combatant {
   characterName: string;
   currentHp: number;
   maxHp: number;
+  /** Out of the fight: downed, stable or dead. */
   isDefeated: boolean;
+  status: CombatantStatus;
+  /** While downed: rounds left before bleeding out. */
+  bleedoutRoundsLeft: number;
   combatantType: 'player' | 'monster';
   /** Planned and locked in by the server's enemy AI each round. */
   isAiControlled: boolean;

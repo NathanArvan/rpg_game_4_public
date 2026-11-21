@@ -522,11 +522,11 @@ public partial class ResolutionServiceTests
         var payload = await service.ResolveRoundAsync(encounterId);
 
         var attack = Assert.Single(payload.Ticks[0].Attacks);
-        Assert.Equal((true, 11, -1), (attack.Hit, attack.Damage, attack.TargetNewHp));
+        Assert.Equal((true, 11, 0), (attack.Hit, attack.Damage, attack.TargetNewHp)); // HP stops at 0
         var scout = payload.UpdatedCombatants.Single(c => c.Id == scoutId.ToString());
         Assert.Equal((7, 12), (scout.CurrentHp, scout.MaxHp)); // MaxHp from the profile, not the current HP
         Assert.True(payload.UpdatedCombatants.Single(c => c.Id == goblinId.ToString()).IsAiControlled);
-        redis.Verify(r => r.SetHpAsync(goblinId.ToString(), -1), Times.Once);
+        redis.Verify(r => r.SetHpAsync(goblinId.ToString(), 0), Times.Once);
         Assert.Equal([goblinId.ToString()], payload.DefeatedCombatantIds);
     }
 }

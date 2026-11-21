@@ -91,9 +91,12 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
-### ⬜ Slice 3B.5 — Defeat & Incapacitation
+### ✅ Slice 3B.5 — Defeat & Incapacitation
 
-Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model (see `GAME_DESIGN.md`). Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
+*Status: done. What shipped (`DEFEAT_AND_INCAPACITATION.md`, locked on bleedout): at 0 HP a party combatant goes **Downed** with `BleedoutRounds` (2) left; monsters die (side default, preset override `"downs"`). HP stops at 0. A new action, **Stabilize** (2 AP, adjacent, Effects phase), makes a Downed ally **Stable**. Bleedout counts down at end of round (not in the round they fell) and kills at 0. Attacks can finish off someone already down at the start of the round (any hit kills, no damage roll); an attack on someone who fell earlier the same round is wasted. The enemy AI never finishes anyone off. A side with no standing combatants loses. Statuses live in Redis (`encounter:{id}:status`) alongside the `defeated` set ("out of the fight"). Client: DOWN (n) / STABLE / DEAD in the tracker, token looks with a bleedout badge, click a downed ally to stabilize, playback beats for going down, stabilizing and the end-of-round countdown. Quick Battle preset **Rescue** to try it. Bleedout length and hits-to-kill to be revisited with character stats (e.g. Hardiness).*
+
+
+Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed — knockout, last stand, or bleedout model; compared in `DEFEAT_AND_INCAPACITATION.md` — **locked: bleedout**. Allies can stabilize incapacitated combatants. The encounter-end check from 3B.0 is updated so "no combatants left standing" accounts for incapacitated-but-not-dead combatants. No stat dependency. Runs right after 3B.1.
 
 ---
 
@@ -193,8 +196,8 @@ Done        3A.1 Planning Phase → 3A.2 Resolution Engine → 3A.3 GM Enemy Pla
 Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Quick Battle)
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
-Next        3B.5 Defeat & Incapacitation
-Then        3B.3 Abilities & Cooldowns → 3B.4 Conditions
+Done        3B.5 Defeat & Incapacitation
+Next        3B.3 Abilities & Cooldowns → 3B.4 Conditions
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
 Later       3D.1–3D.4 Adaptive Encounters, remaining Phase 4, Phase 5 hardening

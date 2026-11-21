@@ -15,25 +15,26 @@ describe('ResolutionPlaybackService', () => {
 
   const row = (id: string, currentHp = 10): PlanningCombatantDto =>
     ({ id, userId: 'me', characterName: id, currentHp, maxHp: 10, isDefeated: false, combatantType: 'player', isAiControlled: false,
-       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4 });
+       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0 });
 
   // Hero walks one cell and then strikes; the Goblin stands still and strikes back (and dies in tick 2).
   const resolution: ResolutionPayload = {
     newRoundNumber: 2,
     defeatedCombatantIds: ['goblin'],
     updatedCombatants: [],
+    endOfRound: [],
     queues: [],
     ticks: [
       {
         tickIndex: 0,
         movements: [{ combatantId: 'hero', combatantName: 'hero', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-        attacks: [{ attackerId: 'goblin', attackerName: 'goblin', targetId: 'hero', targetName: 'hero', attackType: 'melee_attack', hit: true, damage: 3, targetNewHp: 7, targetDefeated: false, wasted: false, feedText: 'goblin hits hero', roll: null, wastedReason: null }],
+        attacks: [{ attackerId: 'goblin', attackerName: 'goblin', targetId: 'hero', targetName: 'hero', attackType: 'melee_attack', hit: true, damage: 3, targetNewHp: 7, targetDefeated: false, wasted: false, feedText: 'goblin hits hero', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false }],
         effects: [],
       },
       {
         tickIndex: 1,
         movements: [],
-        attacks: [{ attackerId: 'hero', attackerName: 'hero', targetId: 'goblin', targetName: 'goblin', attackType: 'melee_attack', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, wasted: false, feedText: 'hero kills goblin', roll: null, wastedReason: null }],
+        attacks: [{ attackerId: 'hero', attackerName: 'hero', targetId: 'goblin', targetName: 'goblin', attackType: 'melee_attack', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, wasted: false, feedText: 'hero kills goblin', roll: null, wastedReason: null, targetStatus: 'dead', finishingBlow: false }],
         effects: [],
       },
     ],

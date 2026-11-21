@@ -15,3 +15,10 @@ public record ActiveEncounterEntry(
     bool PlanningTimerEnabled = true);
 public record Position(int X, int Y);
 public record MapEntry(int GridWidth, int GridHeight, Dictionary<string, Position> Positions, List<string> FogOfWar);
+
+/// <summary>
+/// A combatant's status beyond standing (3B.5): "downed" (with bleedout rounds left), "stable"
+/// or "dead". Stored in <c>encounter:{id}:status</c>; anyone in the <c>defeated</c> set without
+/// an entry here (encounters from before 3B.5) is dead.
+/// </summary>
+public record CombatantStatusEntry(string Status, int BleedoutRoundsLeft);
