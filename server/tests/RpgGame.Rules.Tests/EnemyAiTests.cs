@@ -5,7 +5,7 @@ namespace RpgGame.Rules.Tests;
 public class EnemyAiTests
 {
     private static CombatantState C(string id, int x, int y, int hp = 20, bool defeated = false, int move = 6, int ap = CombatProfile.DefaultMaxAp) =>
-        new(id, id, hp, CombatProfile.Default with { MovementRange = move, MaxAp = ap }, new GridPosition(x, y), defeated);
+        new(id, id, hp, CombatProfile.Default with { MovementRange = move, MaxAp = ap }, new GridPosition(x, y), defeated ? CombatantStatus.Dead : CombatantStatus.Standing);
 
     private static PlannedAction[] Q(params PlannedAction[] queue) => queue;
 
@@ -18,7 +18,7 @@ public class EnemyAiTests
         return EnemyAi.PlanRound(state, teams, ai);
     }
 
-    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null, false);
+    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null);
 
     [Fact]
     public void AiWithNoMapPosition_Defends()
@@ -227,5 +227,16 @@ public class EnemyAiTests
             var self = combatants.Single(c => c.Id == id);
             Assert.True(PlanValidator.Validate(self.Position, self.Profile, queue, 20, 20).IsValid, id);
         }
+    }
+
+    [Fact]
+    public void IgnoresDownedHeroes_AndGoesForTheStandingOne()
+    {
+        // The downed hero is adjacent, the standing one further off: the AI doesn't finish anyone off (3B.5).
+        var downed = C("downedHero", 5, 6, hp: 0) with { Status = CombatantStatus.Downed, BleedoutRoundsLeft = 2 };
+        var plans = Plan(C("goblin", 5, 5), downed, C("hero", 5, 9));
+
+        Assert.DoesNotContain(plans["goblin"], a => a.TargetCombatantId == "downedHero");
+        Assert.Equal(ActionType.Move, plans["goblin"][0].Type);
     }
 }

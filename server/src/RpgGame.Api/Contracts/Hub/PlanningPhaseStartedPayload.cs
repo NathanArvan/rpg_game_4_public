@@ -7,6 +7,9 @@ public record PlanningPhaseStartedPayload(
     IReadOnlyList<PlanningCombatantDto> Combatants,
     Dictionary<string, int> ApCosts);
 
+/// <param name="IsDefeated">Out of the fight: downed, stable or dead.</param>
+/// <param name="Status">"standing", "downed", "stable" or "dead" (3B.5).</param>
+/// <param name="BleedoutRoundsLeft">While downed: rounds left before bleeding out.</param>
 public record PlanningCombatantDto(
     string Id,
     string UserId,
@@ -19,4 +22,6 @@ public record PlanningCombatantDto(
     string ProfileId = "",
     string ProfileName = "",
     int MovementRange = 6,
-    int MaxAp = 4);
+    int MaxAp = 4,
+    string Status = "standing",
+    int BleedoutRoundsLeft = 0);

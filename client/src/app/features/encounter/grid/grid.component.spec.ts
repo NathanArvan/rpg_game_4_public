@@ -19,7 +19,7 @@ describe('GridComponent', () => {
   // Quick Battle: the user's ID is on every row, but only the "player" rows are theirs to plan.
   const row = (id: string, name: string, combatantType: string, isDefeated = false, movementRange = 6, maxAp = 4): PlanningCombatantDto =>
     ({ id, userId: 'me', characterName: name, currentHp: 10, maxHp: 10, isDefeated, combatantType, isAiControlled: combatantType === 'monster',
-       profileId: 'test', profileName: 'Test', movementRange, maxAp });
+       profileId: 'test', profileName: 'Test', movementRange, maxAp, status: 'standing', bleedoutRoundsLeft: 0 });
 
   beforeEach(async () => {
     hub.planAction.calls.reset();
@@ -142,6 +142,41 @@ describe('GridComponent', () => {
     });
   });
 
+  describe('bleedout (3B.5)', () => {
+    const downed = (r: PlanningCombatantDto): PlanningCombatantDto =>
+      ({ ...r, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2 });
+
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('bruiser', 'Bruiser', 'player'),
+        downed(row('scout', 'Scout', 'player')),
+        downed(row('goblin', 'Goblin', 'monster')),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, scout: { x: 3, y: 0 }, goblin: { x: 9, y: 9 } }));
+    });
+
+    it('clicking a downed ally queues Stabilize only once the queued moves end next to them', () => {
+      grid.onCellClick({ x: 3, y: 0 });                 // too far: nothing
+      expect(grid.selectedPlan).toEqual([]);
+
+      grid.onCellClick({ x: 2, y: 0 });                 // move next to the scout
+      grid.onCellClick({ x: 3, y: 0 });                 // now: stabilize
+      expect(grid.selectedPlan.map(a => [a.type, a.targetCombatantId])).toEqual([['move', null], ['stabilize', 'scout']]);
+      expect(grid.apUsed).toBe(3);
+      expect(grid.plannedActionSummary).toBe('1. Move to (2, 0) → 2. Stabilize Scout');
+    });
+
+    it('a downed ally is not selectable for planning, and shows the stabilize hint', () => {
+      expect(grid.myCombatants.map(c => c.id)).toEqual(['bruiser']);
+      expect(grid.downedAllies.map(c => c.id)).toEqual(['scout']);
+    });
+
+    it('clicking a downed enemy plans an attack on it (a finishing blow)', () => {
+      grid.onCellClick({ x: 9, y: 9 });
+      expect(grid.selectedPlan.map(a => [a.type, a.targetCombatantId])).toEqual([['ranged_attack', 'goblin']]);
+    });
+  });
+
   describe('resolution playback', () => {
     const tokenCells = () => Array.from(fixture.nativeElement.querySelectorAll('.token-layer .token') as NodeListOf<HTMLElement>)
       .map(t => `${t.textContent!.trim()[0]}@${t.dataset['x']},${t.dataset['y']}`);
@@ -152,11 +187,11 @@ describe('GridComponent', () => {
       fixture.detectChanges();
 
       TestBed.inject(ResolutionPlaybackService).receiveResolution({
-        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [],
+        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [],
         ticks: [{
           tickIndex: 0,
           movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null }],
+          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false }],
           effects: [],
         }],
       });

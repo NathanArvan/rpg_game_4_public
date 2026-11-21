@@ -31,11 +31,14 @@
           [class.my-token]="isMine(token.combatant)"
           [class.selected-token]="isSelected(token.combatant)"
           [class.planned-token]="controlsSeveral && hasPlan(token.combatant)"
-          [class.defeated-token]="isShownDefeated(token.combatant)"
+          [class.defeated-token]="shownStatus(token.combatant).status === 'dead'"
+          [class.downed-token]="shownStatus(token.combatant).status === 'downed'"
+          [class.stable-token]="shownStatus(token.combatant).status === 'stable'"
           [class.targeted-token]="isTargeted(token.combatant)"
           [title]="tokenTitle(token.combatant)"
           (click)="onTokenClick(token)">
           {{ token.combatant.characterName[0] }}
+          <span class="bleed-badge" *ngIf="shownStatus(token.combatant).status === 'downed'">{{ shownStatus(token.combatant).bleedoutRoundsLeft }}</span>
           <span
             *ngFor="let aura of aurasFor(token.combatant.id); trackBy: trackKey; let i = index"
             class="aura aura-{{ aura.kind }}"
@@ -79,6 +82,10 @@
         (click)="onLockIn()">
         {{ lockInLabel }}
       </button>
+    </div>
+    <div class="stabilize-hint" *ngIf="downedAllies.length && !lockedIn">
+      ✚ {{ downedAllies[0].characterName }}{{ downedAllies.length > 1 ? ' and others are' : ' is' }} bleeding out:
+      queue a move next to them, then click them to stabilize (2 AP).
     </div>
     <div class="planned-action-display" *ngIf="selectedPlan.length">
       Planned: <strong>{{ plannedActionSummary }}</strong>

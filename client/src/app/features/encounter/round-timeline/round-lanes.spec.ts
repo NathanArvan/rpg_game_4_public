@@ -5,7 +5,7 @@ const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): 
   combatantId: id, combatantName: id, maxAp,
   actions: actions.map(([type, apCost, target]) => ({
     type, apCost,
-    targetCombatantId: type.endsWith('attack') ? target ?? null : null,
+    targetCombatantId: type.endsWith('attack') || type === 'stabilize' ? target ?? null : null,
     targetCell: type === 'move' ? { x: 1, y: 0 } : null,
   })),
 });
@@ -13,14 +13,14 @@ const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): 
 const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
   hit: true, damage: 4, targetNewHp: 6, targetDefeated: false, wasted: false, feedText: '',
-  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, ...extra,
+  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
   ({ tickIndex, movements: [], attacks: [], effects: [], ...parts });
 
 const payload = (queues: CombatantQueueDto[], ...ticks: TickResult[]): ResolutionPayload =>
-  ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [] });
+  ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [] });
 
 describe('buildLanes', () => {
   it('puts action i of every queue in column i: both first attacks, then both second attacks', () => {
@@ -63,7 +63,7 @@ describe('buildLanes', () => {
       tick(0, {
         movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'C' }],
         attacks: [attack('B', 'C', { wasted: true, hit: false, roll: null, wastedReason: 'out_of_melee_reach' })],
-        effects: [{ combatantId: 'C', effectType: 'defend', description: '' }],
+        effects: [{ combatantId: 'C', effectType: 'defend', description: '', targetCombatantId: null, wastedReason: null }],
       }),
     ));
 
@@ -76,19 +76,39 @@ describe('buildLanes', () => {
   it('shows a used-up queue as idle and the actions of a defeated combatant as lost', () => {
     const lanes = buildLanes(payload(
       [q('A', 4, ['melee_attack', 2, 'B']), q('B', 4, ['melee_attack', 2, 'A'], ['melee_attack', 2, 'A'])],
-      tick(0, { attacks: [attack('A', 'B', { targetNewHp: 0, targetDefeated: true }), attack('B', 'A')] }),
+      tick(0, { attacks: [attack('A', 'B', { targetNewHp: 0, targetDefeated: true, targetStatus: 'dead' }), attack('B', 'A')] }),
       tick(1),
     ));
 
     expect(lanes[0].slots[1]).toEqual(jasmine.objectContaining({ kind: 'idle', apCost: 0 }));
     // B still struck in tick 1 (attacks in a tick are simultaneous), but its tick-2 attack is lost.
     expect(lanes[1].slots.map(s => s.kind)).toEqual(['melee_attack', 'lost']);
-    expect(lanes[1].slots[1].detail).toBe('B was defeated, so this melee attack on A never happens.');
+    expect(lanes[1].slots[1].detail).toBe('B went down, so this melee attack on A never happens.');
     expect(lanes[0].slots[0].detail).toBe('A → B: rolled 13 + 3 = 16 vs dodge 12, hit for 4 (B is defeated).');
   });
 
   it('orders lanes like the tracker', () => {
     const lanes = buildLanes(payload([q('A', 4, ['defend', 1]), q('B', 4, ['defend', 1]), q('X', 4, ['defend', 1])], tick(0)), ['B', 'A']);
     expect(lanes.map(l => l.combatantId)).toEqual(['B', 'A', 'X']);
+  });
+
+  it('shows stabilizes, saved or wasted (3B.5)', () => {
+    // A and B have no queue (downed combatants can't plan): their names come from the end-of-round rows.
+    const row = (id: string) => ({ id, userId: '', characterName: id, currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
+      isAiControlled: false, profileId: '', profileName: '', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 1 });
+    const lanes = buildLanes({
+      ...payload(
+        [q('K', 4, ['stabilize', 2, 'A']), q('M', 4, ['stabilize', 2, 'B'])],
+        tick(0, { effects: [
+          { combatantId: 'K', effectType: 'stabilize', description: '', targetCombatantId: 'A', wastedReason: null },
+          { combatantId: 'M', effectType: 'stabilize', description: '', targetCombatantId: 'B', wastedReason: 'target_not_downed' },
+        ] }),
+      ),
+      updatedCombatants: [row('A'), row('B')],
+    });
+    expect(lanes.map(l => [l.slots[0].kind, l.slots[0].outcome, l.slots[0].icon])).toEqual([
+      ['stabilize', 'stabilized', '✚'], ['stabilize', 'wasted', '✚'],
+    ]);
+    expect(lanes[1].slots[0].detail).toBe("M's stabilize on B is wasted (not bleeding out).");
   });
 });

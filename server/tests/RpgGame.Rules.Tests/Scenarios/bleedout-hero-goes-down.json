@@ -1,0 +1,24 @@
+{
+  // 3B.5: a combatant that can be downed goes Downed at 0 HP instead of dying, with
+  // BleedoutRounds (2) left. The round it falls in doesn't count down. Its tick-2 attack is lost.
+  "description": "Bleedout: a hero dropped to 0 HP goes Downed with 2 rounds left; a monster dies",
+  "combatants": [
+    { "id": "Hero",   "hp": 4, "downs": true, "damage": "d8", "at": [5, 5] },
+    { "id": "Goblin", "hp": 3, "damage": "d6", "at": [5, 6] }
+  ],
+  "plans": {
+    "Hero":   ["melee Goblin", "melee Goblin"],
+    "Goblin": ["melee Hero"]
+  },
+  "dice": [
+    15, 3,   // tick 1: Hero hits for 3 → Goblin 0 (dies)
+    15, 6    // tick 1: Goblin hits for 6 → Hero 0 (Downed); mutual: both fall in the same tick
+  ],
+  "expect": {
+    "ticks": 2,
+    "hp": { "Hero": 0, "Goblin": 0 },
+    "status": { "Hero": "downed", "Goblin": "dead" },
+    "bleedout": { "Hero": 2 },
+    "defeated": ["Hero", "Goblin"]
+  }
+}

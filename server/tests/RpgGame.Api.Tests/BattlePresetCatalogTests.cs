@@ -1,3 +1,4 @@
+using RpgGame.Api.CombatProfiles;
 using RpgGame.Api.QuickBattle;
 
 namespace RpgGame.Api.Tests;
@@ -22,6 +23,7 @@ public class BattlePresetCatalogTests : IDisposable
         var catalog = BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog);
         Assert.Contains(catalog.All, p => p.Id == "skirmish");
         Assert.Contains(catalog.All, p => p.Id == "training-dummy");
+        Assert.Contains(catalog.All, p => p.Id == "rescue");
         Assert.Equal("skirmish", catalog.All[0].Id); // default in the menu
     }
 
@@ -65,6 +67,23 @@ public class BattlePresetCatalogTests : IDisposable
         var a = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants[0].Profile;
         Assert.Equal((3, "d12", 1, 2, 5, -4, 17, (int?)7),
             (a.MaxHp, a.BaseDamage, a.Speed, a.MovementRange, a.MeleeAccuracy, a.RangedAccuracy, a.Dodge, a.MaxAp));
+    }
+
+    [Fact]
+    public void Downs_OverridesTheSideDefault()
+    {
+        // 3B.5: unset means by side (party goes down, enemies die); "downs" overrides per combatant.
+        Write("d.json", """
+            { "id": "d", "name": "D", "combatants": [
+                { "name": "Hero", "side": "party", "profile": "scout", "at": [0, 0] },
+                { "name": "Boss", "side": "enemy", "profile": "brute", "downs": true, "at": [0, 1] },
+                { "name": "Mook", "side": "enemy", "profile": "grunt", "at": [0, 2] } ] }
+            """);
+        var combatants = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants;
+        Assert.Equal([null, true, null], combatants.Select(c => c.Profile.CanBeDowned));
+        Assert.True(CombatProfileMapping.CanBeDowned(combatants[0].Profile, "player"));
+        Assert.True(CombatProfileMapping.CanBeDowned(combatants[1].Profile, "monster"));
+        Assert.False(CombatProfileMapping.CanBeDowned(combatants[2].Profile, "monster"));
     }
 
     [Theory]

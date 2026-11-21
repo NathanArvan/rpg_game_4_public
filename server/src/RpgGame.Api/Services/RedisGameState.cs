@@ -107,6 +107,22 @@ public class RedisGameState : IRedisGameState
         await db.SetAddAsync($"encounter:{encounterId}:defeated", combatantId);
     }
 
+    // Stored as "downed:2", "stable:0" or "dead:0" (status:bleedout rounds left).
+    public async Task<CombatantStatusEntry?> GetStatusAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        var value = await db.HashGetAsync($"encounter:{encounterId}:status", combatantId);
+        if (value.IsNullOrEmpty) return null;
+        var parts = value.ToString().Split(':');
+        return new CombatantStatusEntry(parts[0], parts.Length > 1 && int.TryParse(parts[1], out var n) ? n : 0);
+    }
+
+    public async Task SetStatusAsync(string encounterId, string combatantId, CombatantStatusEntry status)
+    {
+        var db = _redis.GetDatabase();
+        await db.HashSetAsync($"encounter:{encounterId}:status", combatantId, $"{status.Status}:{status.BleedoutRoundsLeft}");
+    }
+
     // --- Planning phase ---
 
     public async Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson)

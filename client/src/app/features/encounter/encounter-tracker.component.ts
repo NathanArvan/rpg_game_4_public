@@ -44,6 +44,11 @@ export class EncounterTrackerComponent {
     return this.playback.isDefeated(combatant);
   }
 
+  /** Standing, downed (with rounds left), stable or dead, as revealed by playback (3B.5). */
+  statusOf(combatant: Combatant) {
+    return this.playback.statusOf(combatant);
+  }
+
   isMine(combatant: Combatant): boolean {
     return isControlledBy(combatant, this.auth.getUserId());
   }

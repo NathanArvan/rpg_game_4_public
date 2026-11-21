@@ -32,6 +32,8 @@ const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
   profileName: c.profileName,
   movementRange: c.movementRange,
   maxAp: c.maxAp,
+  status: 'standing',
+  bleedoutRoundsLeft: 0,
 }));
 
 const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {
@@ -64,6 +66,7 @@ const MOCK_RESOLUTION: ResolutionPayload = {
   newRoundNumber: 4,
   defeatedCombatantIds: [],
   updatedCombatants: PLANNING_COMBATANTS,
+  endOfRound: [],
   queues: [
     { combatantId: 'c1', combatantName: 'Zara Forge', maxAp: 4, actions: [
       { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 12 } },
@@ -93,8 +96,8 @@ const MOCK_RESOLUTION: ResolutionPayload = {
         { combatantId: 'c4', combatantName: 'Goblin 2', path: [{ x: 6, y: 16 }, { x: 6, y: 15 }, { x: 6, y: 14 }], finalPosition: { x: 6, y: 14 }, wasBlocked: false, blockedByCombatantId: null },
       ],
       attacks: [
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: false, damage: 0, targetNewHp: 17, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 }, wastedReason: null },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 }, wastedReason: null },
+        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: false, damage: 0, targetNewHp: 17, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false },
+        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false },
       ],
       effects: [],
     },
@@ -102,10 +105,10 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       tickIndex: 1,
       movements: [],
       attacks: [
-        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null },
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c4', targetName: 'Goblin 2', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 }, wastedReason: null },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 }, wastedReason: null },
-        { attackerId: 'c4', attackerName: 'Goblin 2', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", roll: null, wastedReason: 'out_of_melee_reach' },
+        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false },
+        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c4', targetName: 'Goblin 2', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false },
+        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false },
+        { attackerId: 'c4', attackerName: 'Goblin 2', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", roll: null, wastedReason: 'out_of_melee_reach', targetStatus: 'standing', finishingBlow: false },
       ],
       effects: [],
     },
@@ -114,9 +117,9 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       movements: [],
       attacks: [],
       effects: [
-        { combatantId: 'c1', effectType: 'defend', description: 'Zara Forge defends' },
-        { combatantId: 'c2', effectType: 'defend', description: 'Isolde Blade defends' },
-        { combatantId: 'c4', effectType: 'defend', description: 'Goblin 2 defends' },
+        { combatantId: 'c1', effectType: 'defend', description: 'Zara Forge defends', targetCombatantId: null, wastedReason: null },
+        { combatantId: 'c2', effectType: 'defend', description: 'Isolde Blade defends', targetCombatantId: null, wastedReason: null },
+        { combatantId: 'c4', effectType: 'defend', description: 'Goblin 2 defends', targetCombatantId: null, wastedReason: null },
       ],
     },
   ],

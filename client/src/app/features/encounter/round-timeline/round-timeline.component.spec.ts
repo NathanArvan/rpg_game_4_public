@@ -17,18 +17,18 @@ describe('RoundTimelineComponent', () => {
 
   const row = (id: string): PlanningCombatantDto =>
     ({ id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false, combatantType: 'player', isAiControlled: false,
-       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4 });
+       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0 });
 
   const hit = (attackerId: string, targetId: string, d20: number): AttackResult => ({
     attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit: true, damage: 2,
     targetNewHp: 8, targetDefeated: false, wasted: false, feedText: `${attackerId} hits ${targetId}`,
-    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null,
+    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false,
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.
   const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null });
   const resolution: ResolutionPayload = {
-    newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [],
+    newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [],
     queues: [
       { combatantId: 'goblin', combatantName: 'goblin', maxAp: 4, actions: [melee('hero'), melee('hero')] },
       { combatantId: 'hero', combatantName: 'hero', maxAp: 4, actions: [melee('goblin'), melee('goblin')] },

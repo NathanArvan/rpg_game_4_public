@@ -5,7 +5,19 @@ public record ResolutionPayload(
     int NewRoundNumber,
     IReadOnlyList<string> DefeatedCombatantIds,
     IReadOnlyList<PlanningCombatantDto> UpdatedCombatants,
-    IReadOnlyList<CombatantQueueDto> Queues);
+    IReadOnlyList<CombatantQueueDto> Queues,
+    IReadOnlyList<BleedoutResultDto> EndOfRound);
+
+/// <summary>
+/// End of round for a combatant who was already downed when it started (3B.5): one bleedout
+/// round fewer, or dead if none are left.
+/// </summary>
+public record BleedoutResultDto(
+    string CombatantId,
+    string CombatantName,
+    int RoundsLeft,
+    bool Died,
+    string FeedText);
 
 /// <summary>
 /// The action queue a combatant resolved this round (cut to what its AP covers). Action i
@@ -50,7 +62,9 @@ public record AttackResult(
     bool Wasted,
     string FeedText,
     AttackRollDto? Roll,
-    string? WastedReason);
+    string? WastedReason,
+    string TargetStatus,
+    bool FinishingBlow);
 
 /// <summary>The hit check: hit when D20 + Accuracy ≥ TargetDodge. Null on a wasted attack.</summary>
 public record AttackRollDto(
@@ -58,7 +72,11 @@ public record AttackRollDto(
     int Accuracy,
     int TargetDodge);
 
+/// <param name="TargetCombatantId">Stabilize: who was being stabilized.</param>
+/// <param name="WastedReason">Stabilize: why it did nothing ("target_not_downed", "out_of_melee_reach", …), or null.</param>
 public record EffectResult(
     string CombatantId,
     string EffectType,
-    string Description);
+    string Description,
+    string? TargetCombatantId,
+    string? WastedReason);

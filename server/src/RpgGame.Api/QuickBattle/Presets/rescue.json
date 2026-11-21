@@ -1,0 +1,15 @@
+{
+  // 3B.5 bleedout. The Archer (1 HP, dodge 1) stands next to an Ogre, so the Ogre's first hit
+  // drops them in round 1. The Knight is next to the Archer: in round 2, click the downed Archer
+  // to queue Stabilize. Leave them and they bleed out after two rounds.
+  // Used by the rescue E2E test, so keep round 1 certain: any Ogre hit downs the Archer.
+  "id": "rescue",
+  "name": "Rescue",
+  "description": "Your Archer will go down next to an Ogre. Stabilize them with the Knight before they bleed out.",
+  "order": 4,
+  "combatants": [
+    { "name": "Knight", "side": "party", "profile": "bruiser", "hp": 30, "at": [8, 9] },
+    { "name": "Archer", "side": "party", "profile": "scout",   "hp": 1, "dodge": 1, "at": [9, 10] },
+    { "name": "Ogre",   "side": "enemy", "profile": "brute",   "hp": 30, "at": [9, 11] }
+  ]
+}

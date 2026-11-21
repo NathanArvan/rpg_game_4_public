@@ -45,4 +45,17 @@ describe('formatFeedLine', () => {
   it('leaves lines with no known names plain', () => {
     expect(formatFeedLine('⚠ Not enough AP', new Map()).segments).toEqual([{ text: '⚠ Not enough AP' }]);
   });
+
+  it('highlights going down, finishing blows, bleeding out and stabilizing (3B.5)', () => {
+    expect(show(formatFeedLine('Goblin 1 strikes Zara Forge for 6 damage — goes down!', sides).segments).pop())
+      .toBe('[damage]for 6 damage — goes down!');
+    expect(show(formatFeedLine('Goblin 1 strikes Zara Forge — finished off!', sides).segments).pop())
+      .toBe('[damage]— finished off!');
+    expect(show(formatFeedLine('Zara Forge bleeds out', sides).segments)).toEqual(['[party]Zara Forge', ' ', '[damage]bleeds out']);
+    expect(show(formatFeedLine('Zara Forge is bleeding out — 1 round left', sides).segments).pop())
+      .toBe('[damage]is bleeding out — 1 round left');
+    expect(show(formatFeedLine('Goblin 12 stabilizes Goblin 1', sides).segments))
+      .toEqual(['[enemy]Goblin 12', ' ', '[save]stabilizes', ' ', '[enemy]Goblin 1']);
+    expect(formatFeedLine('End of round', sides).kind).toBe('tick');
+  });
 });

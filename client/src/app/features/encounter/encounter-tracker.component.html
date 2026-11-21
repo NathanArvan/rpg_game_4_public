@@ -16,19 +16,27 @@
     </thead>
     <tbody>
       <tr *ngFor="let c of combatants$ | async"
-          [class.defeated]="isShownDefeated(c)"
+          [class.defeated]="statusOf(c).status === 'dead'"
+          [class.out]="isShownDefeated(c)"
           [class.mine]="isMine(c)"
           [class.selected]="isMine(c) && isSelected(c)"
           (click)="select(c)">
         <td>
-          <strong [class.strikethrough]="isShownDefeated(c)">{{ c.characterName }}</strong>
+          <strong [class.strikethrough]="statusOf(c).status === 'dead'">{{ c.characterName }}</strong>
           <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange + ' · ' + c.maxAp + ' AP'">{{ c.profileName }}</span>
         </td>
         <td>
-          <span *ngIf="!isShownDefeated(c)">{{ hpOf(c) }}/{{ c.maxHp }}</span>
+          <span *ngIf="statusOf(c).status !== 'dead'">{{ hpOf(c) }}/{{ c.maxHp }}</span>
         </td>
         <td>
-          <span *ngIf="isShownDefeated(c)" class="defeated-label">DEFEATED</span>
+          <ng-container [ngSwitch]="statusOf(c).status">
+            <span *ngSwitchCase="'downed'" class="status-label downed-label"
+                  [title]="'Bleeding out: dies at the end of round ' + (statusOf(c).bleedoutRoundsLeft) + ' from now unless an adjacent ally stabilizes them'">
+              DOWN ({{ statusOf(c).bleedoutRoundsLeft }})
+            </span>
+            <span *ngSwitchCase="'stable'" class="status-label stable-label" title="Stabilized: out of this fight, but no longer dying">STABLE</span>
+            <span *ngSwitchCase="'dead'" class="defeated-label">DEAD</span>
+          </ng-container>
           <span *ngIf="!isShownDefeated(c) && isLockedIn(c)" class="locked-in-badge">✓ Ready</span>
         </td>
       </tr>

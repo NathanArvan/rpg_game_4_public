@@ -47,6 +47,8 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   profileName: 'Bruiser',
   movementRange: 4,
   maxAp: 4,
+  status: 'standing',
+  bleedoutRoundsLeft: 0,
   ...overrides,
 });
 
@@ -242,7 +244,7 @@ describe('EncounterState', () => {
           wasted: false,
           feedText: 'Sam strikes Frodo for 5 damage',
           roll: { d20: 15, accuracy: 0, targetDodge: 10 },
-          wastedReason: null,
+          wastedReason: null, targetStatus: 'standing', finishingBlow: false,
         }],
         effects: [],
       }],
@@ -250,6 +252,7 @@ describe('EncounterState', () => {
       defeatedCombatantIds: [],
       updatedCombatants: [],
       queues: [],
+      endOfRound: [],
       ...overrides,
     });
 

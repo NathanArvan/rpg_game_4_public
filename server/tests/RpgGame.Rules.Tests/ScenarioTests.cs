@@ -77,14 +77,19 @@ public partial class ScenarioTests
                 RangedAccuracy: c.RangedAccuracy ?? d.RangedAccuracy,
                 Dodge: c.Dodge ?? d.Dodge,
                 BaseDamage: DamageDie.Parse(c.Damage ?? "d8"),
-                MaxAp: c.MaxAp ?? d.MaxAp);
+                MaxAp: c.MaxAp ?? d.MaxAp,
+                CanBeDowned: c.Downs ?? false);
+            // "status" sets a starting status (3B.5); the older "defeated": true means dead.
+            var status = c.Status is { } st ? ParseStatus(st, $"{file}: combatant {c.Id} 'status'")
+                : c.Defeated == true ? CombatantStatus.Dead : CombatantStatus.Standing;
             return new CombatantState(
                 c.Id,
                 c.Name ?? c.Id,
                 hp,
                 profile,
                 c.At is { } at ? Cell(at, $"{file}: combatant {c.Id} 'at'") : null,
-                c.Defeated ?? false);
+                status,
+                status == CombatantStatus.Downed ? c.Bleedout ?? RulesConfig.Default.BleedoutRounds : 0);
         }).ToList();
 
         // JSON object key order is preserved: plan order is meaningful to the resolver.
@@ -108,6 +113,7 @@ public partial class ScenarioTests
             : RulesConfig.Default with
             {
                 MeleeReach = s.Config.MeleeReach ?? RulesConfig.Default.MeleeReach,
+                BleedoutRounds = s.Config.BleedoutRounds ?? RulesConfig.Default.BleedoutRounds,
             };
 
         var state = new EncounterState(grid[0], grid[1], combatants);
@@ -153,6 +159,7 @@ public partial class ScenarioTests
         ActionType.Move => $"\"move {a.TargetCell!.Value.X},{a.TargetCell.Value.Y}\"",
         ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
         ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
+        ActionType.Stabilize => $"\"stabilize {a.TargetCombatantId}\"",
         _ => "\"defend\"",
     };
 
@@ -162,6 +169,9 @@ public partial class ScenarioTests
     [GeneratedRegex(@"^\s*(melee|ranged)\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex AttackRegex();
 
+    [GeneratedRegex(@"^\s*stabilize\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex StabilizeRegex();
+
     internal static PlannedAction ParseAction(string text, string where)
     {
         if (MoveRegex().Match(text) is { Success: true } m)
@@ -170,11 +180,18 @@ public partial class ScenarioTests
             return a.Groups[1].Value.Equals("melee", StringComparison.OrdinalIgnoreCase)
                 ? PlannedAction.Melee(a.Groups[2].Value)
                 : PlannedAction.Ranged(a.Groups[2].Value);
+        if (StabilizeRegex().Match(text) is { Success: true } st)
+            return PlannedAction.Stabilize(st.Groups[1].Value);
         if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
             return PlannedAction.Defend();
         throw new FormatException(
-            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\" or \"defend\".");
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\" or \"defend\".");
     }
+
+    private static CombatantStatus ParseStatus(string text, string where) =>
+        Enum.TryParse<CombatantStatus>(text, ignoreCase: true, out var status)
+            ? status
+            : throw new InvalidDataException($"{where}: \"{text}\" isn't a status. Use standing, downed, stable or dead.");
 
     private static GridPosition Cell(int[] xy, string where) => xy.Length == 2
         ? new GridPosition(xy[0], xy[1])
@@ -207,6 +224,21 @@ public partial class ScenarioTests
 
         if (e.Defeated is { } defeated)
             CompareSets("defeated (at end of round)", defeated, final.Values.Where(c => c.IsDefeated).Select(c => c.Id), failures);
+
+        foreach (var (id, text) in e.Status ?? [])
+        {
+            var expected = ParseStatus(text, $"expect.status.{id}");
+            var actual = final.TryGetValue(id, out var c) ? c.Status.ToString().ToLowerInvariant() : "unknown combatant";
+            if (actual != expected.ToString().ToLowerInvariant())
+                failures.Add($"status of {id}: expected {expected.ToString().ToLowerInvariant()}, got {actual}");
+        }
+
+        foreach (var (id, rounds) in e.Bleedout ?? [])
+        {
+            var actual = final.TryGetValue(id, out var c) ? c.BleedoutRoundsLeft : (int?)null;
+            if (actual != rounds)
+                failures.Add($"bleedout rounds left for {id}: expected {rounds}, got {actual?.ToString() ?? "unknown combatant"}");
+        }
 
         if (e.Blocked is { } blocked)
             CompareSets("blocked movers", blocked.Select(Key),
@@ -263,11 +295,18 @@ public partial class ScenarioTests
         public int[]? At { get; set; }
         public bool? Defeated { get; set; }
         public string? Side { get; set; }
+        /// <summary>Goes Downed at 0 HP instead of dying (3B.5).</summary>
+        public bool? Downs { get; set; }
+        /// <summary>Starting status: standing, downed, stable or dead.</summary>
+        public string? Status { get; set; }
+        /// <summary>Starting bleedout rounds left, when status is downed.</summary>
+        public int? Bleedout { get; set; }
     }
 
     private sealed class ConfigDto
     {
         public int? MeleeReach { get; set; }
+        public int? BleedoutRounds { get; set; }
     }
 
     private sealed class ExpectDto
@@ -276,6 +315,10 @@ public partial class ScenarioTests
         public Dictionary<string, int[]>? Positions { get; set; }
         public Dictionary<string, int>? Hp { get; set; }
         public List<string>? Defeated { get; set; }
+        /// <summary>Status at the end of the round, per combatant (3B.5).</summary>
+        public Dictionary<string, string>? Status { get; set; }
+        /// <summary>Bleedout rounds left at the end of the round, per combatant.</summary>
+        public Dictionary<string, int>? Bleedout { get; set; }
         public List<TickRefDto>? Blocked { get; set; }
         public List<TickRefDto>? Hits { get; set; }
         public List<TickRefDto>? Wasted { get; set; }

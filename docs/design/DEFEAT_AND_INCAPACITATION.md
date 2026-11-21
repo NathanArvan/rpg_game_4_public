@@ -140,7 +140,7 @@ End of round 5:   nobody stabilized them             → Archer dies
 
 ### C.4 Who can go down
 
-- **Profile flag:** a new combat profile value, `CanBeDowned`. It's `true` for the party profiles and `false` for the enemy profiles, so **monsters die at 0 HP** as they do now.
+- **By side:** `CombatProfile.CanBeDowned` is decided by the combatant's side, so party combatants go down and **monsters die at 0 HP** as they do now. *(As built: a side default rather than a value in `profiles.json`, so a GM who gives a monster a party profile such as Bruiser doesn't create a downable monster by accident. The stored profile has an optional `CanBeDowned` override.)*
 - **Battle presets** can override it per combatant (`"downs": true`), for example a named enemy whose allies can save it later.
 - **Why:** it keeps fights moving, keeps the AI simple (no enemy rescues to plan), and puts the stakes on the player side, where they're felt.
 
@@ -164,6 +164,7 @@ End of round 5:   nobody stabilized them             → Archer dies
 ### C.6 Finishing blows
 
 - **Rule:** an attack can target a Downed or Stable combatant. Any hit kills them: no extra damage roll, and the normal hit check applies.
+- **Finishing blows must be planned** *(added during implementation)*: only someone who was already Downed or Stable **when the round started** can be finished off. An attack on someone who went down earlier in the same round is wasted ("target down"). Without this, a queued second attack (melee, melee) would finish off a hero in tick 2 right after dropping them in tick 1, and allies would never get a planning phase. It mirrors the Stabilize rule: neither can be planned around someone going down mid-round.
 - **Defaults:** the Tier-1 enemy AI never does this. It attacks standing targets only. A GM planning monsters manually can, which keeps the threat real without the AI being cruel.
 
 Locked as above for now; how many hits it takes is a candidate for a stat (e.g. Hardiness) later, see the status note at the top.
@@ -171,7 +172,7 @@ Locked as above for now; how many hits it takes is a candidate for a stat (e.g. 
 ### C.7 Encounter end
 
 - **When:** a side **loses when it has no Standing combatants**. Downed and Stable members count as out, so fights don't drag on for a bleeding last survivor.
-- **Party wins:** any still-Downed party members are stabilized automatically (the battle is over and allies tend to them).
+- **Party wins:** any still-Downed party members are stabilized automatically (the battle is over and allies tend to them). *(As built this has no mechanical effect yet, because encounter state is cleared and every encounter starts at full HP.)*
 - **Party loses:** it's a defeat, and what happens to downed characters is narrative for now.
 
 Today every combatant starts each encounter at full HP, so "after the fight" has no mechanical effect yet. That arrives with persistent HP and progression.

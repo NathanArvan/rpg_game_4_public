@@ -229,9 +229,28 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 var targetRef = activeEncounter.Combatants.FirstOrDefault(c => c.Id == entry.TargetCombatantId)
                     ?? throw new GameActionException("Target combatant not found.", isActionRejected: true);
 
-                if (await redisState.IsDefeatedAsync(activeEncounter.EncounterId, entry.TargetCombatantId))
+                // A downed or stable target can still be attacked: a hit finishes it off (3B.5).
+                if (await TargetStatusAsync(activeEncounter, entry.TargetCombatantId) == CombatantStatus.Dead)
                     throw new GameActionException("Target is already defeated.", isActionRejected: true);
                 break;
+
+            case "stabilize":
+            {
+                if (string.IsNullOrEmpty(entry.TargetCombatantId))
+                    throw new GameActionException("Stabilize requires a target combatant ID.", isActionRejected: true);
+                if (entry.TargetCombatantId == combatantId)
+                    throw new GameActionException("You cannot stabilize yourself.", isActionRejected: true);
+
+                var target = activeEncounter.Combatants.FirstOrDefault(c => c.Id == entry.TargetCombatantId)
+                    ?? throw new GameActionException("Target combatant not found.", isActionRejected: true);
+                var self = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId);
+                if (self is not null && self.CombatantType != target.CombatantType)
+                    throw new GameActionException("You can only stabilize an ally.", isActionRejected: true);
+                // Only someone already bleeding out: going down mid-round can't be planned for.
+                if (await TargetStatusAsync(activeEncounter, entry.TargetCombatantId) != CombatantStatus.Downed)
+                    throw new GameActionException("Only a downed ally can be stabilized.", isActionRejected: true);
+                break;
+            }
 
             case "defend":
                 break;
@@ -240,6 +259,9 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 throw new GameActionException($"Unknown action type: {entry.Type}", isActionRejected: true);
         }
     }
+
+    private async Task<CombatantStatus> TargetStatusAsync(ActiveEncounterEntry activeEncounter, string targetId) =>
+        (await EncounterStateLoader.LoadStatusAsync(redisState, activeEncounter.EncounterId, targetId)).Status;
 
     public async Task<PlanActionResult> PlanEnemyActionAsync(string joinCode, string gmUserId, string combatantId, PlannedActionArray action)
     {

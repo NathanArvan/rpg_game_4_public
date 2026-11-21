@@ -15,6 +15,7 @@ export const DEFAULT_AP_COSTS: Readonly<Record<string, number>> = {
   melee_attack: 2,
   ranged_attack: 2,
   defend: 1,
+  stabilize: 2,
 };
 
 /** AP budget for a combatant whose server DTO doesn't carry one. */
@@ -67,6 +68,7 @@ export function describeAction(action: PlannedActionEntry, nameOf: (id: string) 
   if (action.type === 'melee_attack') return target ? `Melee Attack on ${target}` : 'Melee Attack';
   if (action.type === 'ranged_attack') return target ? `Ranged Attack on ${target}` : 'Ranged Attack';
   if (action.type === 'defend') return 'Defend';
+  if (action.type === 'stabilize') return target ? `Stabilize ${target}` : 'Stabilize';
   return action.type;
 }
 

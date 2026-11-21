@@ -48,7 +48,7 @@ internal static class EncounterLaunch
             map.Positions.ToDictionary(kv => kv.Key, kv => new PositionDto(kv.Value.X, kv.Value.Y)),
             new List<string>());
 
-        var planningCombatantDtos = starts.Select(s => CombatantDtos.Planning(s.Combatant, s.CurrentHp, false)).ToList();
+        var planningCombatantDtos = starts.Select(s => CombatantDtos.Planning(s.Combatant, s.CurrentHp)).ToList();
 
         return new EncounterStartedResult(
             sessionId,

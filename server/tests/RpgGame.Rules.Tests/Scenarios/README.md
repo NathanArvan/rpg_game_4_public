@@ -55,7 +55,10 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `dodge` | 10 | An attack on this combatant hits when d20 + the attacker's accuracy is at least this |
 | `damage` | `"d8"` | Damage die, written as `"d4"`, `"d6"`, `"d8"`, or `"1d8"` |
 | `at` | none | `[x, y]` start cell. If you leave it out, the combatant is treated as standing at (0, 0) |
-| `defeated` | false | Already defeated before this round |
+| `defeated` | false | Already dead before this round (same as `"status": "dead"`) |
+| `downs` | false | Goes **Downed** at 0 HP instead of dying (3B.5; party profiles do) |
+| `status` | `"standing"` | Starting status: `standing`, `downed`, `stable` or `dead` |
+| `bleedout` | 2 | With `"status": "downed"`: rounds left before bleeding out |
 | `side` | `"party"` | Team, used only by `"ai"` plans. Any two different sides are enemies |
 
 ### `plans`
@@ -83,10 +86,13 @@ toward it, then melee with the AP left if the walk ends next to it. Give combata
 | `"melee ID"` | Melee attack. Requires the target to be adjacent (diagonals count) **after** this tick's movement |
 | `"ranged ID"` | Ranged attack, unlimited range |
 | `"defend"` | No mechanical effect yet |
+| `"stabilize ID"` | Stops an adjacent **Downed** combatant bleeding out (they become Stable). Resolves with the effects, after the tick's attacks |
 
 Within each tick, all movement happens first, then all attacks, then effects. Damage
-within a tick is simultaneous, so two combatants can kill each other. Anyone defeated in
-a tick loses the rest of their queue.
+within a tick is simultaneous, so two combatants can kill each other. Anyone who falls in
+a tick loses the rest of their queue. At 0 HP a combatant with `downs` goes **Downed**
+(bleeding out); anyone else dies. At the end of the round, everyone who was already Downed
+when it started loses a bleedout round, and dies at 0.
 
 **Plan order matters.** The order of keys in `plans` decides the order dice are consumed.
 It does **not** decide who wins a contested cell: the fastest claimant always gets it,
@@ -96,16 +102,18 @@ stops; plan order then only decides who each one reports as its blocker.
 ### `dice`
 
 These are the exact rolls, used in order. Every attack that isn't wasted rolls a d20 to
-hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die. Within a
-tick, attackers roll in plan order. Wasted attacks don't roll at all. A wasted attack is
-one where the target was already defeated, or a melee target is out of reach.
+hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die, except
+against a Downed or Stable target: that's a finishing blow, and a hit kills with no damage
+roll. Within a tick, attackers roll in plan order. Wasted attacks don't roll at all. A
+wasted attack is one where the target is already dead, or a melee target is out of reach.
 
 The test fails if the resolver asks for more rolls than you listed. It also fails if a
 roll is impossible for the die (for example, 7 on a d6), or if any rolls are left over.
 
 ### `config` (optional)
 
-These override rule constants for this scenario only: `meleeReach` (default 1).
+These override rule constants for this scenario only: `meleeReach` (default 1) and
+`bleedoutRounds` (default 2).
 Accuracy, dodge and movement range are per combatant (see `combatants`).
 
 ### `expect`
@@ -116,8 +124,10 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 |---|---|
 | `ticks` | Number of ticks resolved |
 | `positions` | `{ "id": [x, y] }`, the final cell |
-| `hp` | `{ "id": hp }`, the final HP. HP can go negative |
-| `defeated` | The **exact** set of combatants defeated at the end of the round, including ones already defeated before it |
+| `hp` | `{ "id": hp }`, the final HP. HP stops at 0 |
+| `defeated` | The **exact** set of combatants out of the fight (downed, stable or dead) at the end of the round, including ones already out before it |
+| `status` | `{ "id": "downed" }`, the status at the end of the round (`standing`, `downed`, `stable`, `dead`) |
+| `bleedout` | `{ "id": 1 }`, bleedout rounds left at the end of the round (0 unless downed) |
 | `blocked` | The exact set of `{ "tick", "id" }` movers that were stopped short |
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |

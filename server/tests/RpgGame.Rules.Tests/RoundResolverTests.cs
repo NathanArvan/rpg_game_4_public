@@ -10,9 +10,9 @@ public class RoundResolverTests
         string id, int x, int y, int hp = 20, int speed = 10, int die = 8, bool defeated = false,
         int move = 6, int melee = 0, int ranged = 0, int dodge = 10, int ap = CombatProfile.DefaultMaxAp) =>
         new(id, id, hp, new CombatProfile(20, move, speed, melee, ranged, dodge, new DamageDie(die), ap),
-            new GridPosition(x, y), defeated);
+            new GridPosition(x, y), defeated ? CombatantStatus.Dead : CombatantStatus.Standing);
 
-    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null, false);
+    private static CombatantState OffMap(string id) => new(id, id, 20, CombatProfile.Default, null);
 
     private static EncounterState State(params CombatantState[] combatants) => new(20, 20, combatants);
 
@@ -653,5 +653,112 @@ public class RoundResolverTests
         Assert.Equal(["A", "B"], o.ResolvedPlans.Keys);
         Assert.Equal([ActionType.MeleeAttack, ActionType.MeleeAttack], o.ResolvedPlans["A"].Select(a => a.Type));
         Assert.Single(o.ResolvedPlans["B"]);
+    }
+
+    // ----- Bleedout (3B.5) -----
+
+    private static CombatantState Downable(string id, int x, int y, int hp = 20) =>
+        C(id, x, y, hp) with { Profile = C(id, x, y).Profile with { CanBeDowned = true } };
+
+    private static CombatantState DownedAt(string id, int x, int y, int roundsLeft) =>
+        Downable(id, x, y, hp: 0) with { Status = CombatantStatus.Downed, BleedoutRoundsLeft = roundsLeft };
+
+    [Fact]
+    public void ZeroHp_DownsThoseWhoCan_AndKillsTheRest_HpStopsAtZero()
+    {
+        var o = Resolve(
+            State(Downable("Hero", 0, 0, hp: 3), C("Goblin", 1, 0, hp: 2)),
+            new Plans().Add("Hero", PlannedAction.Melee("Goblin")).Add("Goblin", PlannedAction.Melee("Hero")),
+            new ScriptedDice(15, 5, 15, 6));
+
+        Assert.Equal(CombatantStatus.Downed, Final(o, "Hero").Status);
+        Assert.Equal(RulesConfig.Default.BleedoutRounds, Final(o, "Hero").BleedoutRoundsLeft);
+        Assert.Equal(CombatantStatus.Dead, Final(o, "Goblin").Status);
+        Assert.Equal(0, Final(o, "Hero").Hp);
+        Assert.Equal(0, Final(o, "Goblin").Hp);
+        Assert.Equal(["Goblin", "Hero"], o.DefeatedThisRound.Order());
+
+        var attacks = Assert.Single(o.Ticks).Attacks;
+        Assert.Equal(CombatantStatus.Downed, attacks.Single(a => a.TargetId == "Hero").TargetStatus);
+        Assert.Equal(0, attacks.Single(a => a.TargetId == "Hero").TargetHpAfter);
+        Assert.Empty(o.EndOfRound); // the round you fall in doesn't count down
+    }
+
+    [Fact]
+    public void Bleedout_CountsDownAtEndOfRound_AndKillsAtZero()
+    {
+        var o = Resolve(State(DownedAt("A", 0, 0, roundsLeft: 2), DownedAt("B", 5, 5, roundsLeft: 1)), new Plans(), new ScriptedDice());
+
+        Assert.Equal([new BleedoutOutcome("A", 1, false), new BleedoutOutcome("B", 0, true)], o.EndOfRound);
+        Assert.Equal(CombatantStatus.Downed, Final(o, "A").Status);
+        Assert.Equal(1, Final(o, "A").BleedoutRoundsLeft);
+        Assert.Equal(CombatantStatus.Dead, Final(o, "B").Status);
+        Assert.Empty(o.DefeatedThisRound); // both were already out of the fight
+    }
+
+    [Fact]
+    public void Stabilize_IsWastedUnlessTheTargetIsDownedAndAdjacent()
+    {
+        var o = Resolve(
+            State(DownedAt("Far", 9, 9, 2), C("Up", 1, 1), DownedAt("Near", 0, 1, 2), C("Medic", 0, 0), C("Medic2", 1, 0)),
+            new Plans()
+                .Add("Medic", PlannedAction.Stabilize("Near"))
+                .Add("Medic2", PlannedAction.Stabilize("Near"))   // second on the same target: already Stable
+                .Add("Up", PlannedAction.Stabilize("Far")),        // not adjacent
+            new ScriptedDice());
+
+        var effects = Assert.Single(o.Ticks).Effects;
+        Assert.Equal(
+            [("Medic", WastedReason.None), ("Medic2", WastedReason.TargetNotDowned), ("Up", WastedReason.OutOfMeleeReach)],
+            effects.Select(e => (e.CombatantId, e.WastedReason)));
+        Assert.All(effects, e => Assert.Equal(EffectType.Stabilize, e.Type));
+        Assert.Equal(CombatantStatus.Stable, Final(o, "Near").Status);
+        Assert.Equal(0, Final(o, "Near").BleedoutRoundsLeft);
+        // Stabilized this round: no countdown; the unreached one counts down.
+        Assert.Equal([new BleedoutOutcome("Far", 1, false)], o.EndOfRound);
+    }
+
+    [Fact]
+    public void FinishingBlow_OnStable_RollsToHitOnly_AndKills()
+    {
+        var stable = Downable("S", 0, 1, hp: 0) with { Status = CombatantStatus.Stable };
+        var o = Resolve(State(stable, C("Ogre", 0, 0)), new Plans().Add("Ogre", PlannedAction.Melee("S")), new ScriptedDice(10));
+
+        var attack = Assert.Single(Assert.Single(o.Ticks).Attacks);
+        Assert.True(attack.FinishingBlow);
+        Assert.True(attack.Hit);
+        Assert.Equal(0, attack.Damage);
+        Assert.Equal(CombatantStatus.Dead, attack.TargetStatus);
+        Assert.Equal(CombatantStatus.Dead, Final(o, "S").Status);
+    }
+
+    [Fact]
+    public void QueuedSecondAttack_OnSomeoneWhoWentDownThisRound_IsWasted_NotAFinishingBlow()
+    {
+        // Finishing blows must be planned: the hero who falls in tick 1 survives the ogre's tick-2 attack,
+        // so allies get a planning phase to react (3B.5).
+        var o = Resolve(
+            State(Downable("Hero", 0, 1, hp: 1), C("Ogre", 0, 0)),
+            new Plans().Add("Ogre", PlannedAction.Melee("Hero"), PlannedAction.Melee("Hero")),
+            new ScriptedDice(15, 3)); // tick 1 only: tick 2 rolls nothing
+
+        Assert.Equal(WastedReason.TargetDefeated, Assert.Single(o.Ticks[1].Attacks).WastedReason);
+        Assert.Equal(CombatantStatus.Downed, Final(o, "Hero").Status);
+    }
+
+    [Fact]
+    public void AttackOnTheDead_IsWasted()
+    {
+        var o = Resolve(State(C("Dead", 0, 1, defeated: true), C("Ogre", 0, 0)),
+            new Plans().Add("Ogre", PlannedAction.Melee("Dead")), new ScriptedDice());
+        Assert.Equal(WastedReason.TargetDefeated, Assert.Single(Assert.Single(o.Ticks).Attacks).WastedReason);
+    }
+
+    [Fact]
+    public void Downed_CannotAct()
+    {
+        var o = Resolve(State(DownedAt("D", 0, 0, 2), C("T", 0, 1)),
+            new Plans().Add("D", PlannedAction.Melee("T")), new ScriptedDice());
+        Assert.Empty(Assert.Single(o.Ticks).Attacks);
     }
 }

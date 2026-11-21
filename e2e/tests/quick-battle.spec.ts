@@ -83,3 +83,27 @@ test('Skirmish: command three heroes in one round with Lock In All, queueing two
   await timeline.locator('.tick-head', { hasText: 'T1' }).click();
   await expect(timeline.locator('.details li', { hasText: 'Bruiser moves 2 cells to (8, 4)' })).toHaveCount(1);
 });
+
+test('Rescue: a downed hero bleeds out unless an ally stabilizes them (3B.5)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Rescue');
+  const tracker = page.locator('app-encounter-tracker');
+  const archerRow = tracker.locator('tr', { hasText: 'Archer' });
+
+  // Round 1: the Ogre (AI) hits the 1-HP Archer, who goes down instead of dying. Its queued
+  // second attack is wasted: finishing blows have to be planned.
+  await page.getByRole('button', { name: /Defend/ }).click();               // the Knight defends
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expectPlanningRound(page, 2, 20_000);
+  await expect(archerRow).toContainText('DOWN (2)');
+  await expect(feedEntries(page).filter({ hasText: 'Archer for' }).filter({ hasText: 'goes down!' })).toHaveCount(1);
+  await expect(tokenAt(page, 9, 10)).toHaveClass(/downed-token/);
+  await expect(page.locator('.stabilize-hint')).toContainText('Archer is bleeding out');
+
+  // Round 2: the Knight (already next to the Archer) clicks them to queue Stabilize.
+  await tokenAt(page, 9, 10).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Stabilize Archer');
+  await page.getByRole('button', { name: 'Lock In', exact: true }).click();
+  await expect(feedEntries(page).filter({ hasText: 'Knight stabilizes Archer' })).toHaveCount(1, { timeout: 20_000 });
+  await expect(archerRow).toContainText('STABLE', { timeout: 20_000 });
+});

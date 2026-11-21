@@ -44,17 +44,20 @@ public static class RoundResolver
             ticks.Add(new TickOutcome(tick, movements, attacks, effects));
         }
 
+        var endOfRound = ResolveBleedout(round);
+
         var next = state with
         {
             Combatants = state.Combatants.Select(c => c with
             {
                 Hp = round.Hp[c.Id],
                 Position = round.Positions.TryGetValue(c.Id, out var p) ? p : c.Position,
-                IsDefeated = round.IsOut(c.Id),
+                Status = round.Status[c.Id],
+                BleedoutRoundsLeft = round.Status[c.Id] == CombatantStatus.Downed ? round.Bleedout[c.Id] : 0,
             }).ToList(),
         };
 
-        return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList(), round.Plans);
+        return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList(), round.Plans, endOfRound);
     }
 
     // ----- Phase 1: Movement -----
@@ -176,7 +179,8 @@ public static class RoundResolver
     // ----- Phase 2: Attacks -----
 
     private sealed record PendingAttack(
-        string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit, AttackRoll? Roll);
+        string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
+        AttackRoll? Roll, bool Finishing);
 
     private static List<AttackOutcome> ResolveAttackPhase(RoundContext round, int tick)
     {
@@ -191,15 +195,19 @@ public static class RoundResolver
 
             var targetId = action.TargetCombatantId ?? "";
 
-            // Validate against post-movement positions. Only targets defeated in an EARLIER
-            // round or tick are wasted as defeated: damage within a tick is simultaneous, so
-            // nobody is "already dead" mid-phase (quirk 6).
+            // Validate against post-movement positions. Damage within a tick is simultaneous, so
+            // nobody falls mid-phase (quirk 6). A target that fell in an EARLIER tick is wasted as
+            // defeated — dead, or downed this round: finishing blows must be planned, so only
+            // someone already Downed or Stable when the round began can be finished off (3B.5).
+            // That way a queued second attack never kills a hero before allies can react.
             var wasted = WastedReason.None;
+            bool finishing = false;
             if (!round.Combatants.ContainsKey(targetId))
             {
                 wasted = WastedReason.InvalidTarget;
             }
-            else if (round.IsOut(targetId))
+            else if (round.Status[targetId] == CombatantStatus.Dead
+                     || (round.IsOut(targetId) && !round.OutAtStart.Contains(targetId)))
             {
                 wasted = WastedReason.TargetDefeated;
             }
@@ -214,12 +222,15 @@ public static class RoundResolver
             AttackRoll? roll = null;
             if (wasted == WastedReason.None)
             {
-                (hit, damage, isCrit, roll) = ComputeAttack(round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice);
-                if (hit)
+                // Downed or Stable before this tick's attacks: any hit kills, with no damage roll.
+                finishing = round.Status[targetId] != CombatantStatus.Standing;
+                (hit, damage, isCrit, roll) = ComputeAttack(
+                    round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice, rollDamage: !finishing);
+                if (hit && !finishing)
                     hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - damage;
             }
 
-            pending.Add(new PendingAttack(attackerId, targetId, action.Type, wasted, hit, damage, isCrit, roll));
+            pending.Add(new PendingAttack(attackerId, targetId, action.Type, wasted, hit, damage, isCrit, roll, finishing));
         }
 
         // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3).
@@ -227,18 +238,34 @@ public static class RoundResolver
         foreach (var (targetId, delta) in hpDeltas)
             round.Hp[targetId] += delta;
 
-        // Defeat check runs once, after ALL damage is applied — enables mutual kills
+        // Finishing blows land together with the damage: a Downed or Stable target that was hit dies.
+        var fellThisTick = new HashSet<string>();
+        foreach (var a in pending.Where(a => a.Finishing && a.Hit))
+        {
+            if (round.Status[a.TargetId] == CombatantStatus.Dead) continue;
+            round.SetStatus(a.TargetId, CombatantStatus.Dead);
+            fellThisTick.Add(a.TargetId);
+        }
+
+        // The 0-HP check runs once, after ALL damage is applied — enables mutual kills
         // (DESIGN_SPIKE Decision 2). It deliberately covers every combatant, not just this
-        // tick's targets: anyone at HP ≤ 0 is defeated however they got there (e.g. future
-        // damage-over-time statuses), even if nobody attacked them.
-        var defeatedThisTick = new HashSet<string>();
+        // tick's targets: anyone standing at HP ≤ 0 falls however they got there (e.g. future
+        // damage-over-time statuses), even if nobody attacked them. Those who can be downed go
+        // Downed and start bleeding out; everyone else dies (3B.5). HP stops at 0.
         foreach (var c in round.State.Combatants)
         {
-            if (!round.IsOut(c.Id) && round.Hp[c.Id] <= 0)
+            if (round.IsOut(c.Id) || round.Hp[c.Id] > 0) continue;
+            round.Hp[c.Id] = 0;
+            if (c.Profile.CanBeDowned)
             {
-                round.MarkDefeated(c.Id);
-                defeatedThisTick.Add(c.Id);
+                round.SetStatus(c.Id, CombatantStatus.Downed);
+                round.Bleedout[c.Id] = round.Config.BleedoutRounds;
             }
+            else
+            {
+                round.SetStatus(c.Id, CombatantStatus.Dead);
+            }
+            fellThisTick.Add(c.Id);
         }
 
         return pending.Select(a => new AttackOutcome(
@@ -250,9 +277,11 @@ public static class RoundResolver
             a.IsCrit,
             TargetHpBefore: hpBefore.GetValueOrDefault(a.TargetId, 0),
             TargetHpAfter: round.Hp.GetValueOrDefault(a.TargetId, 0),
-            TargetDefeated: defeatedThisTick.Contains(a.TargetId),
+            TargetDefeated: fellThisTick.Contains(a.TargetId),
             a.Wasted,
-            a.Roll)).ToList();
+            a.Roll,
+            TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
+            FinishingBlow: a.Finishing)).ToList();
     }
 
     /// <summary>
@@ -260,7 +289,7 @@ public static class RoundResolver
     /// stats and crits can fill them in later without restructuring.
     /// </summary>
     private static (bool Hit, int Damage, bool IsCrit, AttackRoll Roll) ComputeAttack(
-        CombatantState attacker, CombatantState target, ActionType type, IDiceRoller dice)
+        CombatantState attacker, CombatantState target, ActionType type, IDiceRoller dice, bool rollDamage = true)
     {
         int accuracy = type == ActionType.MeleeAttack
             ? attacker.Profile.MeleeAccuracy
@@ -268,6 +297,8 @@ public static class RoundResolver
         var roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
         if (roll.Total < roll.TargetDodge)
             return (false, 0, false, roll);
+        if (!rollDamage)
+            return (true, 0, false, roll); // a finishing blow: the hit is what counts
 
         int baseDamage = dice.Roll(attacker.Profile.BaseDamage.Sides);
         int statModifier = 0;                                // stats (deferred)
@@ -288,11 +319,61 @@ public static class RoundResolver
         var results = new List<EffectOutcome>();
         foreach (var (combatantId, queue) in round.Plans)
         {
-            // Includes combatants defeated in this tick's attack phase.
+            // Includes combatants who fell in this tick's attack phase.
             if (round.IsOut(combatantId)) continue;
-            // Quirk 4: defend has no mechanical effect yet; it only produces an entry.
-            if (ActionAt(queue, tick)?.Type == ActionType.Defend)
-                results.Add(new EffectOutcome(combatantId, EffectType.Defend));
+            var action = ActionAt(queue, tick);
+            switch (action?.Type)
+            {
+                case ActionType.Defend:
+                    // Quirk 4: defend has no mechanical effect yet; it only produces an entry.
+                    results.Add(new EffectOutcome(combatantId, EffectType.Defend));
+                    break;
+                case ActionType.Stabilize:
+                    results.Add(ResolveStabilize(round, combatantId, action.TargetCombatantId ?? ""));
+                    break;
+            }
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Stabilize (3B.5): an adjacent Downed target stops bleeding out and becomes Stable. Runs in
+    /// plan order, so of two stabilizers on one target the second finds it already Stable.
+    /// </summary>
+    private static EffectOutcome ResolveStabilize(RoundContext round, string stabilizerId, string targetId)
+    {
+        var wasted = WastedReason.None;
+        if (!round.Combatants.ContainsKey(targetId))
+            wasted = WastedReason.InvalidTarget;
+        else if (round.Status[targetId] != CombatantStatus.Downed)
+            wasted = WastedReason.TargetNotDowned;
+        else if (!round.InMeleeReach(stabilizerId, targetId))
+            wasted = WastedReason.OutOfMeleeReach;
+
+        if (wasted == WastedReason.None)
+        {
+            round.SetStatus(targetId, CombatantStatus.Stable);
+            round.Bleedout[targetId] = 0;
+        }
+        return new EffectOutcome(stabilizerId, EffectType.Stabilize, targetId, wasted);
+    }
+
+    // ----- End of round -----
+
+    /// <summary>
+    /// Bleedout countdown (3B.5): everyone who was Downed when the round started and still is
+    /// loses a round; at 0 they die. The round a combatant falls in doesn't count.
+    /// </summary>
+    private static List<BleedoutOutcome> ResolveBleedout(RoundContext round)
+    {
+        var results = new List<BleedoutOutcome>();
+        foreach (var c in round.State.Combatants)
+        {
+            if (!round.DownedAtStart.Contains(c.Id) || round.Status[c.Id] != CombatantStatus.Downed) continue;
+            int left = Math.Max(0, round.Bleedout[c.Id] - 1);
+            round.Bleedout[c.Id] = left;
+            if (left == 0) round.SetStatus(c.Id, CombatantStatus.Dead);
+            results.Add(new BleedoutOutcome(c.Id, left, left == 0));
         }
         return results;
     }
@@ -365,8 +446,18 @@ public static class RoundResolver
         /// <summary>Cells each combatant has stepped this round (the shared movement budget).</summary>
         public Dictionary<string, int> CellsMoved { get; } = [];
 
-        private readonly HashSet<string> _defeatedBefore;
-        private readonly HashSet<string> _defeatedThisRoundSet = [];
+        /// <summary>Everyone's status as the round goes (3B.5).</summary>
+        public Dictionary<string, CombatantStatus> Status { get; }
+
+        /// <summary>Bleedout rounds left, for Downed combatants.</summary>
+        public Dictionary<string, int> Bleedout { get; }
+
+        /// <summary>Downed when the round started: their bleedout counts down at its end.</summary>
+        public HashSet<string> DownedAtStart { get; }
+
+        /// <summary>Downed or Stable when the round started: the only ones a finishing blow can hit.</summary>
+        public HashSet<string> OutAtStart { get; }
+
         public List<string> DefeatedThisRound { get; } = [];
 
         public RoundContext(
@@ -383,7 +474,11 @@ public static class RoundResolver
                 .Where(c => c.Position.HasValue)
                 .ToDictionary(c => c.Id, c => c.Position!.Value);
             Hp = state.Combatants.ToDictionary(c => c.Id, c => c.Hp);
-            _defeatedBefore = state.Combatants.Where(c => c.IsDefeated).Select(c => c.Id).ToHashSet();
+            Status = state.Combatants.ToDictionary(c => c.Id, c => c.Status);
+            Bleedout = state.Combatants.ToDictionary(c => c.Id, c => c.BleedoutRoundsLeft);
+            DownedAtStart = state.Combatants.Where(c => c.Status == CombatantStatus.Downed).Select(c => c.Id).ToHashSet();
+            OutAtStart = state.Combatants
+                .Where(c => c.Status is CombatantStatus.Downed or CombatantStatus.Stable).Select(c => c.Id).ToHashSet();
 
             foreach (var id in plans.Keys)
                 if (!Combatants.ContainsKey(id))
@@ -401,13 +496,15 @@ public static class RoundResolver
             Plans = affordable;
         }
 
-        /// <summary>Defeated before this round, or earlier in it.</summary>
-        public bool IsOut(string id) => _defeatedBefore.Contains(id) || _defeatedThisRoundSet.Contains(id);
+        /// <summary>Not standing (Downed, Stable or Dead): can't act this tick or later.</summary>
+        public bool IsOut(string id) => Status[id] != CombatantStatus.Standing;
 
-        public void MarkDefeated(string id)
+        /// <summary>Changes a status, recording anyone who stops standing this round.</summary>
+        public void SetStatus(string id, CombatantStatus status)
         {
-            if (_defeatedThisRoundSet.Add(id))
+            if (Status[id] == CombatantStatus.Standing && status != CombatantStatus.Standing)
                 DefeatedThisRound.Add(id);
+            Status[id] = status;
         }
 
         /// <summary>
