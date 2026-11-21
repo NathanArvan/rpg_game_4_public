@@ -73,8 +73,9 @@ export function cell(page: Page, x: number, y: number): Locator {
   return page.locator(`.grid .cell[data-x="${x}"][data-y="${y}"]`);
 }
 
+/** Tokens live in a layer above the cells (so they can glide), tagged with the cell they're on. */
 export function tokenAt(page: Page, x: number, y: number): Locator {
-  return cell(page, x, y).locator('.token');
+  return page.locator(`.token-layer .token[data-x="${x}"][data-y="${y}"]`);
 }
 
 export function feedEntries(page: Page): Locator {

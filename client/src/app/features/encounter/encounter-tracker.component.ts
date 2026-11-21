@@ -6,6 +6,7 @@ import { EncounterState } from '../../state/encounter/encounter.state';
 import { Combatant, isControlledBy } from '../../state/encounter/encounter.model';
 import { SelectMyCombatant } from '../../state/encounter/encounter.actions';
 import { AuthService } from '../../core/services/auth.service';
+import { ResolutionPlaybackService } from '../../core/services/resolution-playback.service';
 
 @Component({
   selector: 'app-encounter-tracker',
@@ -24,7 +25,7 @@ export class EncounterTrackerComponent {
   private _lockedInNames: string[] = [];
   private _selectedId: string | null = null;
 
-  constructor(private store: Store, private auth: AuthService) {
+  constructor(private store: Store, private auth: AuthService, private playback: ResolutionPlaybackService) {
     this.combatants$ = store.select(EncounterState.combatants);
     this.isPlanning$ = store.select(EncounterState.isPlanning);
     this.isResolving$ = store.select(EncounterState.isResolving);
@@ -32,6 +33,15 @@ export class EncounterTrackerComponent {
     this.lockedIn$ = store.select(EncounterState.lockedInCombatantNames);
     this.lockedIn$.subscribe(names => this._lockedInNames = names);
     store.select(EncounterState.selectedCombatantId).subscribe(id => this._selectedId = id);
+  }
+
+  /** HP as far as the round's playback has revealed it (the store already holds the final HP). */
+  hpOf(combatant: Combatant): number {
+    return this.playback.hpOf(combatant);
+  }
+
+  isShownDefeated(combatant: Combatant): boolean {
+    return this.playback.isDefeated(combatant);
   }
 
   isMine(combatant: Combatant): boolean {

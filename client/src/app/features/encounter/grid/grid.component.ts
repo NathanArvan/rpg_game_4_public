@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { GmEnemyPlannerComponent } from '../gm-enemy-planner/gm-enemy-planner.component';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
@@ -13,19 +13,37 @@ import {
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant, isControlledBy } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
-import { PlannedActionEntry, TickResult } from '../../../contracts/hub-contracts.generated';
+import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
+import { ActiveAura, ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 
 interface Cell {
   x: number;
   y: number;
 }
 
-interface DamageNumber {
-  combatantId: string;
-  text: string;
-  isHit: boolean;
-  key: string;
+/** A token on the board, at the position currently shown (animated during playback). */
+interface TokenView {
+  combatant: Combatant;
+  x: number;
+  y: number;
 }
+
+/** Floating damage / MISS text above a combatant; `stack` lifts it above earlier texts on the same token. */
+interface FloatView {
+  key: number;
+  text: string;
+  kind: string;
+  x: number;
+  y: number;
+  stack: number;
+}
+
+/** Cell size + the 1px grid gap (see .cell and .grid in the stylesheet). */
+const CELL_PITCH_PX = 31;
+/** Inset that centres a 24px token in a 30px cell. */
+const TOKEN_INSET_PX = 3;
+/** Fade time for a token being defeated (matches the defeat beat). */
+const FADE_MS = 500;
 
 @Component({
   selector: 'app-grid',
@@ -34,7 +52,7 @@ interface DamageNumber {
   templateUrl: './grid.component.html',
   styleUrl: './grid.component.css',
 })
-export class GridComponent implements OnInit, OnDestroy {
+export class GridComponent implements OnInit {
   @Input() joinCode = '';
   @Input() myUserId = '';
   @Input() isGm = false;
@@ -48,15 +66,6 @@ export class GridComponent implements OnInit, OnDestroy {
   private combatants: Combatant[] = [];
   private positions: Record<string, Position> = {};
 
-  // Playback state
-  private animPositions: Record<string, Position> = {};
-  private preResolutionPositions: Record<string, Position> = {};
-  private isPlayingBack = false;
-  private defeatingNow = new Set<string>();
-  /** 1-based tick being played back, and how many ticks the round has. */
-  playbackTick = 0;
-  playbackTickCount = 0;
-  damageNumbers: DamageNumber[] = [];
 
   /** This user's plans this round, per character they control. */
   myPlans: Record<string, PlannedActionEntry[]> = {};
@@ -66,9 +75,7 @@ export class GridComponent implements OnInit, OnDestroy {
   enemyPlannedActions: Record<string, PlannedActionEntry[]> = {};
   private apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
 
-  private destroyed = false;
-
-  constructor(private store: Store, private hub: GameHubService) {}
+  constructor(private store: Store, private hub: GameHubService, private playback: ResolutionPlaybackService) {}
 
   ngOnInit(): void {
     const gridWidth$ = this.store.select(MapState.gridWidth);
@@ -97,13 +104,7 @@ export class GridComponent implements OnInit, OnDestroy {
       })
     );
 
-    this.store.select(MapState.positions).subscribe(p => {
-      // Snapshot current positions before overwriting — used as playback starting point
-      if (!this.isPlayingBack) {
-        this.preResolutionPositions = this.positions;
-      }
-      this.positions = p;
-    });
+    this.store.select(MapState.positions).subscribe(p => this.positions = p);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
     this.store.select(EncounterState.myPlannedActions).subscribe(plans => this.myPlans = plans);
     this.store.select(EncounterState.selectedCombatantId).subscribe(id => this.selectedCombatantId = id);
@@ -112,17 +113,6 @@ export class GridComponent implements OnInit, OnDestroy {
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
     this.store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
-
-    // Trigger playback when resolution ticks arrive
-    this.store.select(EncounterState.resolutionTicks).subscribe(ticks => {
-      if (ticks && ticks.length > 0 && !this.isPlayingBack && !this.destroyed) {
-        this.startPlayback(ticks);
-      }
-    });
-  }
-
-  ngOnDestroy(): void {
-    this.destroyed = true;
   }
 
   // ----- Who am I planning for -----
@@ -170,8 +160,26 @@ export class GridComponent implements OnInit, OnDestroy {
 
   // ----- Rendering helpers -----
 
+  private get isPlayingBack(): boolean {
+    return this.playback.playing();
+  }
+
+  /** 1-based tick being played back, and how many ticks the round has. */
+  get playbackTick(): number {
+    return this.playback.tick();
+  }
+
+  get playbackTickCount(): number {
+    return this.playback.tickCount();
+  }
+
+  /** Positions on screen: the playback's while a round plays back, otherwise the map's. */
+  private get shownPositions(): Record<string, Position> {
+    return this.isPlayingBack ? this.playback.positions() : this.positions;
+  }
+
   tokenAt(cell: Cell): Combatant | null {
-    const pos = this.isPlayingBack ? this.animPositions : this.positions;
+    const pos = this.shownPositions;
     for (const combatant of this.combatants) {
       const p = pos[combatant.id];
       if (p && p.x === cell.x && p.y === cell.y)
@@ -180,13 +188,85 @@ export class GridComponent implements OnInit, OnDestroy {
     return null;
   }
 
-  damageNumbersAt(cell: Cell): DamageNumber[] {
-    if (this.damageNumbers.length === 0) return [];
-    const pos = this.isPlayingBack ? this.animPositions : this.positions;
-    return this.damageNumbers.filter(dmg => {
-      const p = pos[dmg.combatantId];
-      return p && p.x === cell.x && p.y === cell.y;
-    });
+  /**
+   * Every token on the board. Tokens live in their own layer above the cells, one element per
+   * combatant, so they glide between cells and keep their auras instead of being rebuilt in
+   * each new cell.
+   */
+  get tokens(): TokenView[] {
+    const pos = this.shownPositions;
+    const views: TokenView[] = [];
+    for (const combatant of this.combatants) {
+      const p = pos[combatant.id];
+      if (p) views.push({ combatant, x: p.x, y: p.y });
+    }
+    return views;
+  }
+
+  trackToken(_: number, token: TokenView): string {
+    return token.combatant.id;
+  }
+
+  trackKey(_: number, item: { key: number }): number {
+    return item.key;
+  }
+
+  tokenTransform(token: { x: number; y: number }): string {
+    return `translate(${token.x * CELL_PITCH_PX + TOKEN_INSET_PX}px, ${token.y * CELL_PITCH_PX + TOKEN_INSET_PX}px)`;
+  }
+
+  /** Durations for the token transitions: transform (movement), opacity and background (defeat fade). */
+  get tokenTransitionDurations(): string {
+    return `${this.playback.moveMs()}ms, ${FADE_MS}ms, ${FADE_MS}ms`;
+  }
+
+  get floatTransitionDuration(): string {
+    return `${this.playback.moveMs()}ms`;
+  }
+
+  /** Auras glowing on a combatant right now (miss, hit, hurt). */
+  aurasFor(combatantId: string): ActiveAura[] {
+    return this.playback.auras().filter(a => a.combatantId === combatantId);
+  }
+
+  get auraMs(): number {
+    return this.playback.timing.auraMs;
+  }
+
+  get floatMs(): number {
+    return this.playback.timing.floatMs;
+  }
+
+  /** Floating damage / MISS texts, positioned over their combatants. */
+  get floats(): FloatView[] {
+    const pos = this.shownPositions;
+    const stacks: Record<string, number> = {};
+    const views: FloatView[] = [];
+    for (const f of this.playback.floats()) {
+      const p = pos[f.combatantId];
+      if (!p) continue;
+      const stack = stacks[f.combatantId] ?? 0;
+      stacks[f.combatantId] = stack + 1;
+      views.push({ key: f.key, text: f.text, kind: f.kind, x: p.x, y: p.y, stack });
+    }
+    return views;
+  }
+
+  floatTransform(f: FloatView): string {
+    return `translate(${f.x * CELL_PITCH_PX}px, ${f.y * CELL_PITCH_PX - 10 - f.stack * 17}px)`;
+  }
+
+  /** Defeated as far as the screen has shown (playback reveals defeats as they happen). */
+  isShownDefeated(combatant: Combatant): boolean {
+    return this.playback.isDefeated(combatant);
+  }
+
+  tokenTitle(combatant: Combatant): string {
+    return `${combatant.characterName} (HP: ${this.playback.hpOf(combatant)}/${combatant.maxHp})`;
+  }
+
+  onTokenClick(token: TokenView): void {
+    this.onCellClick({ x: token.x, y: token.y });
   }
 
   isInRange(cell: Cell): boolean {
@@ -249,10 +329,6 @@ export class GridComponent implements OnInit, OnDestroy {
   isTargeted(combatant: Combatant): boolean {
     return Object.values(this.myPlans).some(plan => plan.some(a =>
       (a.type === 'melee_attack' || a.type === 'ranged_attack') && a.targetCombatantId === combatant.id));
-  }
-
-  isDefeating(combatant: Combatant): boolean {
-    return this.defeatingNow.has(combatant.id);
   }
 
   get hasDefendPlanned(): boolean {
@@ -386,70 +462,5 @@ export class GridComponent implements OnInit, OnDestroy {
 
   onForceResolve(): void {
     this.hub.forceResolve(this.joinCode);
-  }
-
-  // ----- Playback animation -----
-
-  /** Plays every tick in order: movement, then damage numbers, then defeat fades (3B.2). */
-  private async startPlayback(ticks: TickResult[]): Promise<void> {
-    this.isPlayingBack = true;
-    this.playbackTickCount = ticks.length;
-    // Use pre-resolution positions as the starting point; each tick continues from the last.
-    this.animPositions = { ...this.preResolutionPositions };
-
-    for (let i = 0; i < ticks.length; i++) {
-      if (this.destroyed) return;
-      this.playbackTick = i + 1;
-      await this.playTick(ticks[i]);
-    }
-
-    // Positions already committed to MapState in game-hub.service.ts when ResolutionCompleted arrived.
-    // Just clean up playback state so tokenAt() switches back to this.positions (which has final positions).
-    this.animPositions = {};
-    this.playbackTick = 0;
-    this.playbackTickCount = 0;
-    this.isPlayingBack = false;
-  }
-
-  private async playTick(tick: TickResult): Promise<void> {
-    // Phase 1: Movement (~1.2s)
-    const maxPathLen = tick.movements.length > 0 ? Math.max(...tick.movements.map(m => m.path.length)) : 0;
-    if (maxPathLen > 1) {
-      const stepMs = Math.max(80, Math.floor(1200 / maxPathLen));
-      for (let step = 0; step < maxPathLen; step++) {
-        if (this.destroyed) return;
-        for (const movement of tick.movements) {
-          if (step < movement.path.length) {
-            this.animPositions = { ...this.animPositions, [movement.combatantId]: movement.path[step] };
-          }
-        }
-        await this.sleep(stepMs);
-      }
-    }
-
-    // Phase 2: Attacks — floating damage numbers (~1s), or a short beat if nobody attacked.
-    const newDamageNumbers: DamageNumber[] = tick.attacks
-      .filter(attack => !attack.wasted)
-      .map(attack => ({
-        combatantId: attack.targetId,
-        text: attack.hit ? `-${attack.damage}` : 'MISS',
-        isHit: attack.hit,
-        key: Math.random().toString(36).slice(2),
-      }));
-    this.damageNumbers = newDamageNumbers;
-    await this.sleep(newDamageNumbers.length > 0 ? 1000 : 300);
-    this.damageNumbers = [];
-
-    // Phase 3: Defeat fade (~400ms)
-    const newlyDefeated = new Set(tick.attacks.filter(a => a.targetDefeated).map(a => a.targetId));
-    if (newlyDefeated.size > 0) {
-      this.defeatingNow = newlyDefeated;
-      await this.sleep(400);
-      this.defeatingNow = new Set();
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

@@ -65,14 +65,19 @@ describe('FeedState', () => {
   });
 
   describe('AddFeedBatch', () => {
-    it('prepends all batch entries to the front of the list', () => {
+    it('puts the batch in front of the list, newest (last) line first', () => {
       store.dispatch(new AddFeedEntry('Existing'));
       store.dispatch(new AddFeedBatch(['Round header', 'Attack result']));
 
       const entries = store.selectSnapshot(FeedState.entries);
-      expect(entries[0].text).toBe('Round header');
-      expect(entries[1].text).toBe('Attack result');
-      expect(entries[2].text).toBe('Existing');
+      expect(entries.map(e => e.text)).toEqual(['Attack result', 'Round header', 'Existing']);
+    });
+
+    it('reads the same whether lines arrive together or one batch at a time', () => {
+      store.dispatch(new AddFeedBatch(['A', 'B']));
+      store.dispatch(new AddFeedBatch(['C']));
+
+      expect(store.selectSnapshot(FeedState.entries).map(e => e.text)).toEqual(['C', 'B', 'A']);
     });
 
     it('increments unreadCount by the batch size', () => {

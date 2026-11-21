@@ -16,20 +16,20 @@
     </thead>
     <tbody>
       <tr *ngFor="let c of combatants$ | async"
-          [class.defeated]="c.isDefeated"
+          [class.defeated]="isShownDefeated(c)"
           [class.mine]="isMine(c)"
           [class.selected]="isMine(c) && isSelected(c)"
           (click)="select(c)">
         <td>
-          <strong [class.strikethrough]="c.isDefeated">{{ c.characterName }}</strong>
+          <strong [class.strikethrough]="isShownDefeated(c)">{{ c.characterName }}</strong>
           <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange + ' · ' + c.maxAp + ' AP'">{{ c.profileName }}</span>
         </td>
         <td>
-          <span *ngIf="!c.isDefeated">{{ c.currentHp }}/{{ c.maxHp }}</span>
+          <span *ngIf="!isShownDefeated(c)">{{ hpOf(c) }}/{{ c.maxHp }}</span>
         </td>
         <td>
-          <span *ngIf="c.isDefeated" class="defeated-label">DEFEATED</span>
-          <span *ngIf="!c.isDefeated && isLockedIn(c)" class="locked-in-badge">✓ Ready</span>
+          <span *ngIf="isShownDefeated(c)" class="defeated-label">DEFEATED</span>
+          <span *ngIf="!isShownDefeated(c) && isLockedIn(c)" class="locked-in-badge">✓ Ready</span>
         </td>
       </tr>
     </tbody>

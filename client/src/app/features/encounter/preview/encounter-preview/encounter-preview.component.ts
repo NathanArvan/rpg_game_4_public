@@ -2,9 +2,10 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { Store } from '@ngxs/store';
 import { CombatLayoutComponent } from '../../combat-layout/combat-layout.component';
-import { EncounterStarted, PlanningPhaseStarted, ResolutionCompleted, ClearEncounter, PlayerLockedIn } from '../../../../state/encounter/encounter.actions';
+import { EncounterStarted, PlanningPhaseStarted, ClearEncounter, PlayerLockedIn } from '../../../../state/encounter/encounter.actions';
 import { MapInitialized } from '../../../../state/map/map.actions';
 import { AddFeedBatch, ClearFeed } from '../../../../state/feed/feed.actions';
+import { ResolutionPlaybackService } from '../../../../core/services/resolution-playback.service';
 import { CombatantDto, PlanningCombatantDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
 
 const ENCOUNTER_ID = 'preview-encounter-1';
@@ -40,15 +41,16 @@ const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {
   c4: { x: 6, y: 16 },
 };
 
+/** Earlier rounds' log, oldest line first (the feed shows the newest on top). */
 const MOCK_FEED = [
-  '— Round 3 Resolution —',
-  'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 6 → 4)',
-  'Zara Forge shoots at Goblin 2 for 3 damage (HP: 20 → 17)',
-  'Goblin 2 shoots at Zara Forge for 2 damage (HP: 10 → 8)',
-  'Isolde Blade shoots at Goblin 1 for 3 damage (HP: 20 → 17)',
   '— Round 2 Resolution —',
-  'Goblin 1 moves to (5, 14)',
   'Zara Forge moves to (8, 10)',
+  'Goblin 1 moves to (5, 14)',
+  '— Round 3 Resolution —',
+  'Isolde Blade shoots at Goblin 1 for 3 damage (HP: 20 → 17)',
+  'Goblin 2 shoots at Zara Forge for 2 damage (HP: 10 → 8)',
+  'Zara Forge shoots at Goblin 2 for 3 damage (HP: 20 → 17)',
+  'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 6 → 4)',
 ];
 
 const MOCK_RESOLUTION: ResolutionPayload = {
@@ -60,7 +62,7 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       tickIndex: 0,
       movements: [
         { combatantId: 'c1', combatantName: 'Zara Forge', path: [{ x: 8, y: 10 }, { x: 7, y: 11 }, { x: 6, y: 12 }], finalPosition: { x: 6, y: 12 }, wasBlocked: false, blockedByCombatantId: null },
-        { combatantId: 'c3', combatantName: 'Goblin 1', path: [{ x: 5, y: 13 }, { x: 6, y: 12 }], finalPosition: { x: 5, y: 13 }, wasBlocked: false, blockedByCombatantId: null },
+        { combatantId: 'c3', combatantName: 'Goblin 1', path: [{ x: 5, y: 13 }], finalPosition: { x: 5, y: 13 }, wasBlocked: true, blockedByCombatantId: 'c1' },
       ],
       attacks: [
         { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Zara Forge shoots Goblin 1 for 3 damage' },
@@ -98,7 +100,7 @@ export class EncounterPreviewComponent implements OnInit {
     return this.isGm ? this.myUserIdGm : this.myUserIdPlayer;
   }
 
-  constructor(private store: Store) {}
+  constructor(private store: Store, private playback: ResolutionPlaybackService) {}
 
   ngOnInit(): void {
     this.seedState();
@@ -110,10 +112,11 @@ export class EncounterPreviewComponent implements OnInit {
 
   setPhase(phase: 'planning' | 'resolving'): void {
     this.phase = phase;
+    this.playback.reset();
     if (phase === 'planning') {
       this.store.dispatch(new PlanningPhaseStarted(4, 300, PLANNING_COMBATANTS));
     } else {
-      this.store.dispatch(new ResolutionCompleted(MOCK_RESOLUTION));
+      this.playback.receiveResolution(MOCK_RESOLUTION);
     }
   }
 

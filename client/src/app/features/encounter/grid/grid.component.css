@@ -118,7 +118,18 @@
 .ap-budget.ap-spent { color: #555; border-color: #ccc; background: #f5f5f5; }
 .tick-progress { font-weight: normal; margin-left: 4px; }
 .cell.enemy-ghost { background: #ffcdd2; }
+/* Wraps the grid so the token layer can sit exactly over the cells (inside the 2px border). */
+.board { position: relative; }
+.token-layer {
+  position: absolute;
+  inset: 2px;
+  pointer-events: none;
+}
+
 .token {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -130,13 +141,14 @@
   font-size: 11px;
   font-weight: bold;
   cursor: pointer;
-  z-index: 1;
+  pointer-events: auto;
+  /* Durations are bound per token: movement speed comes from the playback. */
+  transition-property: transform, opacity, background-color;
+  transition-timing-function: linear, ease, ease;
 }
 .token.my-token { background: #2e7d32; }
 .token.defeated-token { background: #9e9e9e; opacity: 0.5; cursor: not-allowed; }
-.token.defeating-token { animation: fadeOut 0.5s forwards; }
 .token.targeted-token { box-shadow: 0 0 0 2px #f44336; }
-.token.planned-token { position: relative; }
 .token.selected-token { outline: 3px solid #ffd54f; outline-offset: 1px; }
 /* A small dot on each of your characters that already has a plan this round (Quick Battle). */
 .token.planned-token::after {
@@ -150,22 +162,49 @@
   background: #ffd54f;
   border: 1px solid #333;
 }
-@keyframes fadeOut { from { opacity: 1; } to { opacity: 0.2; } }
 
-.damage-number {
+/* Auras during playback: grey = missed, green = hit, red = was hit. Inset is bound so several nest. */
+.aura {
   position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 11px;
-  font-weight: bold;
-  pointer-events: none;
-  z-index: 10;
-  animation: floatUp 0.8s ease-out forwards;
+  border-radius: 50%;
+  border: 3px solid var(--aura);
+  box-shadow: 0 0 8px 2px var(--aura);
+  animation: aura-glow ease-out forwards;
 }
-.damage-hit { color: #c62828; }
-.damage-miss { color: #757575; }
-@keyframes floatUp {
-  0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+.aura-miss { --aura: #9e9e9e; }
+.aura-hit  { --aura: #43a047; }
+.aura-hurt { --aura: #e53935; }
+@keyframes aura-glow {
+  0%   { opacity: 0; transform: scale(0.8); }
+  20%, 70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.2); }
+}
+
+/* Floating damage / MISS text: a cell-wide box positioned over the combatant (painted above tokens: later in the layer). */
+.float {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  display: flex;
+  justify-content: center;
+  transition: transform linear;
+}
+.float-text {
+  font-size: 13px;
+  font-weight: bold;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  /* Readable over neighbouring tokens in melee. */
+  background: rgba(255, 255, 255, 0.92);
+  animation: float-up ease-out forwards;
+}
+.float-damage { color: #c62828; }
+.float-miss { color: #616161; }
+@keyframes float-up {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  75%  { opacity: 1; transform: translateY(-12px); }
+  100% { opacity: 0; transform: translateY(-18px); }
 }
