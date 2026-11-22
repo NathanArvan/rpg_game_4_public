@@ -1,0 +1,13 @@
+{
+  "description": "A target beyond Charge's range (6) when the tick starts: the charger doesn't move and the strike is wasted",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "move": 10, "at": [0, 5], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [7, 5] }
+  ],
+  "plans": { "Skirmisher": ["ability charge Goblin"] },
+  "dice": [],
+  "expect": {
+    "positions": { "Skirmisher": [0, 5] },
+    "events": [ "t1 Skirmisher stays at 0,5 (charge)", "t1 Skirmisher charge Goblin: wasted out_of_range" ]
+  }
+}

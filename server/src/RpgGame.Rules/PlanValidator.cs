@@ -25,6 +25,10 @@ public sealed record PlanCheck(string? Error, int ApSpent, int MoveCellsUsed)
 public static class PlanValidator
 {
     /// <param name="cooldowns">Abilities on cooldown at the start of this planning phase (id → rounds left).</param>
+    /// <param name="positions">
+    /// Where everyone stands at the start of planning, to estimate a move to a target (Charge). Without
+    /// it (or for an unknown target) such a move is counted as zero cells.
+    /// </param>
     public static PlanCheck Validate(
         GridPosition? start,
         CombatProfile profile,
@@ -32,7 +36,8 @@ public static class PlanValidator
         int gridWidth,
         int gridHeight,
         RulesConfig? config = null,
-        IReadOnlyDictionary<string, int>? cooldowns = null)
+        IReadOnlyDictionary<string, int>? cooldowns = null,
+        IReadOnlyDictionary<string, GridPosition>? positions = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(queue);
@@ -51,6 +56,14 @@ public static class PlanValidator
             if (ap > profile.MaxAp)
                 return new PlanCheck($"Not enough AP: this plan costs {ApCost(queue, profile, config)} AP but only {profile.MaxAp} AP are available.", ap, cells);
 
+            if (action.Type == ActionType.Ability && profile.FindAbility(action.AbilityId) is { Move: { } move } moving)
+            {
+                if (CheckAbilityMove(action, moving, move, profile, ref position, ref cells, gridWidth, gridHeight, config, positions)
+                    is { } moveError)
+                    return new PlanCheck(moveError, ap, cells);
+                continue;
+            }
+
             if (action.Type != ActionType.Move) continue;
 
             if (action.TargetCell is not { } target)
@@ -67,6 +80,53 @@ public static class PlanValidator
         }
 
         return new PlanCheck(null, ap, cells);
+    }
+
+    /// <summary>
+    /// An ability's move effect (ABILITIES.md A7). A move to a cell must stay on the grid and within
+    /// the effect's <see cref="MoveEffect.MaxCells"/> of where the earlier moves end. A move to a target
+    /// is estimated from the target's position at the start of planning: toward it until in melee
+    /// reach, capped at <see cref="MoveEffect.MaxCells"/> and the budget left (the resolver caps it the
+    /// same way, so it's never rejected for distance). Budget moves add their cells to the round's
+    /// total; a cell move that would go over it is rejected, like a plain move.
+    /// </summary>
+    private static string? CheckAbilityMove(
+        PlannedAction action, AbilityDefinition ability, MoveEffect move, CombatProfile profile,
+        ref GridPosition? position, ref int cells, int gridWidth, int gridHeight, RulesConfig config,
+        IReadOnlyDictionary<string, GridPosition>? positions)
+    {
+        if (position is not { } from)
+            return "Current position not found.";
+
+        int steps;
+        GridPosition end;
+        if (move.To == MoveTo.Cell)
+        {
+            if (action.TargetCell is not { } target)
+                return $"{ability.Name} needs a target cell.";
+            if (target.X < 0 || target.Y < 0 || target.X >= gridWidth || target.Y >= gridHeight)
+                return $"Target cell is out of bounds (0–{gridWidth - 1}, 0–{gridHeight - 1}).";
+            steps = from.ChebyshevDistanceTo(target);
+            if (steps > move.MaxCells)
+                return $"{ability.Name} moves at most {move.MaxCells} {(move.MaxCells == 1 ? "square" : "squares")}.";
+            if (move.UsesMovementBudget && cells + steps > profile.MovementRange)
+                return $"Moves this round exceed maximum range ({profile.MovementRange} squares).";
+            end = target;
+        }
+        else
+        {
+            if (action.TargetCombatantId is not { } targetId || positions?.TryGetValue(targetId, out var targetAt) != true)
+                return null;
+            int cap = move.MaxCells;
+            if (move.UsesMovementBudget) cap = Math.Min(cap, Math.Max(0, profile.MovementRange - cells));
+            steps = Math.Min(cap, Math.Max(0, from.ChebyshevDistanceTo(targetAt) - config.MeleeReach));
+            var path = RoundResolver.ComputeChebyshevPath(from, targetAt);
+            end = path[Math.Min(steps, path.Count - 1)];
+        }
+
+        if (move.UsesMovementBudget) cells += steps;
+        position = end;
+        return null;
     }
 
     /// <summary>Loadout, cooldown, once-per-queue and target-shape checks for one ability entry.</summary>
@@ -87,6 +147,8 @@ public static class PlanValidator
 
         bool hasOne = !string.IsNullOrEmpty(action.TargetCombatantId);
         int listed = action.TargetCombatantIds?.Count ?? 0;
+        if (action.TargetCell is not null && !ability.NeedsCell)
+            return $"{ability.Name} doesn't take a target cell.";
         return ability.Targeting.Kind switch
         {
             TargetKind.Combatant when !hasOne || listed > 0 => $"{ability.Name} needs one target.",

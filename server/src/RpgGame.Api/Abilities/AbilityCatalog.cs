@@ -22,8 +22,8 @@ public sealed class AbilityCatalog
     /// <summary>Allowed ranges for an ability's numbers.</summary>
     public const int MaxApCost = 10, MaxCooldown = 10, MaxRange = 30;
 
-    /// <summary>Target kinds the resolver supports so far. "self" arrives with movement abilities (3B.3 PR 3); "cell" in 4.1.</summary>
-    private static readonly HashSet<string> SupportedTargetKinds = ["combatant", "combatants", "auto"];
+    /// <summary>Target kinds the resolver supports so far; "cell" arrives in 4.1.</summary>
+    private static readonly HashSet<string> SupportedTargetKinds = ["self", "combatant", "combatants", "auto"];
 
     /// <summary>Most targets a "combatants" ability may pick.</summary>
     public const int MaxTargetCount = 6;
@@ -96,11 +96,13 @@ public sealed class AbilityCatalog
         var target = a.Target ?? throw new InvalidDataException($"Abilities {file}: {who}: 'target' is required");
         var kind = target.Kind?.Trim().ToLowerInvariant() ?? "";
         if (!SupportedTargetKinds.Contains(kind))
-            Fail($"target kind '{target.Kind}' isn't supported yet (use \"combatant\", \"combatants\" or \"auto\")");
-        var filter = target.Filter?.Trim().ToLowerInvariant() ?? "";
+            Fail($"target kind '{target.Kind}' isn't supported yet (use \"self\", \"combatant\", \"combatants\" or \"auto\")");
+        bool self = kind == "self";
+        // A "self" ability needs no filter or range: it only ever affects its caster.
+        var filter = target.Filter?.Trim().ToLowerInvariant() ?? (self ? "ally" : "");
         if (filter is not ("enemy" or "ally" or "any" or "downed_ally"))
             Fail("target 'filter' must be \"enemy\", \"ally\", \"any\" or \"downed_ally\"");
-        if (target.Range is not (>= 1 and <= MaxRange)) Fail($"target 'range' must be between 1 and {MaxRange}");
+        if (!self && target.Range is not (>= 1 and <= MaxRange)) Fail($"target 'range' must be between 1 and {MaxRange}");
         if (target.Count is not null && kind is not ("combatants" or "auto")) Fail("target 'count' only applies to \"combatants\" and \"auto\"");
         if (kind == "combatants" && target.Count is not (>= 1 and <= MaxTargetCount))
             Fail($"a \"combatants\" ability needs a target 'count' between 1 and {MaxTargetCount}");
@@ -110,6 +112,17 @@ public sealed class AbilityCatalog
         if (a.Effects is not { Count: > 0 }) Fail("'effects' must list at least one effect");
         var effects = a.Effects!.Select((e, i) => ValidateEffect(e, $"effect {i + 1}", Fail)).ToList();
         if (filter == "enemy" && effects.Any(e => e.Kind == "heal")) Fail("a heal can't target enemies (use an \"ally\" or \"any\" filter)");
+        if (self && filter != "ally") Fail("a \"self\" ability doesn't take a target 'filter'");
+        if (self && effects.Any(e => e.Kind == "attack")) Fail("a \"self\" ability can't attack (it would hit its caster)");
+        var moves = effects.Where(e => e.Kind == "move").ToList();
+        if (moves.Count > 1) Fail("an ability can move its caster only once (one \"move\" effect)");
+        if (moves.FirstOrDefault() is { } move)
+        {
+            if (move.To == "cell" && !self) Fail("a move to a \"cell\" needs a \"self\" target kind");
+            if (move.To == "target" && kind != "combatant") Fail("a move to the \"target\" needs a \"combatant\" target kind");
+        }
+        if (moves.Count == 0 && effects.Any(e => e.Damage?.BonusIfMoved is not null))
+            Fail("damage 'bonusIfMoved' needs a \"move\" effect in the same ability");
 
         ValidateResonanceScaling(a.ResonanceScaling, Fail);
 
@@ -123,7 +136,7 @@ public sealed class AbilityCatalog
             Tags = (a.Tags ?? []).Select(t => t.Trim().ToLowerInvariant()).ToList(),
             Target = new AbilityTargetValues
             {
-                Kind = kind, Filter = filter, Range = target.Range!.Value, Count = target.Count,
+                Kind = kind, Filter = filter, Range = self ? 0 : target.Range!.Value, Count = target.Count,
                 IncludeSelf = target.IncludeSelf ?? false,
             },
             Effects = effects,
@@ -144,6 +157,9 @@ public sealed class AbilityCatalog
                     catch (FormatException) { fail($"{which}: damage 'die' must be \"weapon\" or a die like \"d10\""); }
                 }
                 if (e.Damage?.Multiplier is < 1) fail($"{which}: damage 'multiplier' must be at least 1");
+                var ifMoved = e.Damage?.BonusIfMoved;
+                if (ifMoved is not null && (ifMoved.MinCells is not (>= 1 and <= MaxRange) || ifMoved.Bonus is not >= 1))
+                    fail($"{which}: damage 'bonusIfMoved' needs 'minCells' between 1 and {MaxRange} and a 'bonus' of at least 1");
                 return new AbilityEffectValues
                 {
                     Kind = "attack",
@@ -152,6 +168,8 @@ public sealed class AbilityCatalog
                     Damage = new AbilityDamageValues
                     {
                         Die = die, Bonus = e.Damage?.Bonus ?? 0, Multiplier = e.Damage?.Multiplier ?? 1,
+                        BonusIfMoved = ifMoved is null ? null
+                            : new AbilityMovedBonusValues { MinCells = ifMoved.MinCells!.Value, Bonus = ifMoved.Bonus!.Value },
                     },
                 };
             case "heal":
@@ -170,8 +188,17 @@ public sealed class AbilityCatalog
                     Amount = new AbilityAmountValues { Die = healDie, Bonus = healBonus },
                     CanRevive = e.CanRevive ?? true,
                 };
+            case "move":
+                var to = e.To?.Trim().ToLowerInvariant() ?? "";
+                if (to is not ("cell" or "target")) fail($"{which}: 'to' must be \"cell\" or \"target\"");
+                if (e.MaxCells is not (>= 1 and <= MaxRange)) fail($"{which}: 'maxCells' must be between 1 and {MaxRange}");
+                if (e.Path is not (null or "walk")) fail($"{which}: only \"walk\" moves are supported yet ('path')");
+                return new AbilityEffectValues
+                {
+                    Kind = "move", To = to, MaxCells = e.MaxCells!.Value, UsesMovementBudget = e.UsesMovementBudget ?? true,
+                };
             default:
-                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\")");
+                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\", \"move\")");
                 return null!;
         }
     }
@@ -228,6 +255,16 @@ public sealed class AbilityCatalog
         public DamageDto? Damage { get; set; }
         public AmountDto? Amount { get; set; }
         public bool? CanRevive { get; set; }
+        public string? To { get; set; }
+        public int? MaxCells { get; set; }
+        public bool? UsesMovementBudget { get; set; }
+        public string? Path { get; set; }
+    }
+
+    private sealed class MovedBonusDto
+    {
+        public int? MinCells { get; set; }
+        public int? Bonus { get; set; }
     }
 
     private sealed class AmountDto
@@ -241,6 +278,7 @@ public sealed class AbilityCatalog
         public string? Die { get; set; }
         public int? Bonus { get; set; }
         public int? Multiplier { get; set; }
+        public MovedBonusDto? BonusIfMoved { get; set; }
     }
 
     private sealed class ResonanceScalingDto
@@ -270,8 +308,10 @@ internal static class AbilityMapping
             new DamageSpec(
                 e.Damage is null || e.Damage.Die == "weapon" ? null : DamageDie.Parse(e.Damage.Die),
                 e.Damage?.Bonus ?? 0,
-                e.Damage?.Multiplier ?? 1),
+                e.Damage?.Multiplier ?? 1,
+                e.Damage?.BonusIfMoved is { } m ? new MovedBonus(m.MinCells, m.Bonus) : null),
             e.AccuracyBonus),
+        "move" => new MoveEffect(e.To == "target" ? MoveTo.Target : MoveTo.Cell, e.MaxCells, e.UsesMovementBudget),
         "heal" => new HealEffect(
             e.Amount?.Die is { } die ? DamageDie.Parse(die) : null,
             e.Amount?.Bonus ?? 0,

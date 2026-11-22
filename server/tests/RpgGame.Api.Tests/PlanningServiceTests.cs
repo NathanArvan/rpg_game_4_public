@@ -819,6 +819,38 @@ public class PlanningServiceTests
         Assert.Contains("Not enough AP: this plan costs 5 AP but only 4 AP are available.", ex.Message);
     }
 
+    // ----- Movement abilities (3B.3 PR 3) -----
+
+    [Fact]
+    public async Task PlanAction_AcceptsADashBeyondTheMovementBudget()
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, _, _, _) = await SetupAbilityUser(db, "scout");
+        // Scout: 8 cells of movement, then Dash's own 3.
+        var plan = new PlannedActionArray([
+            new PlannedActionEntry("move", new PositionDto(13, 5), null),
+            new PlannedActionEntry("ability", new PositionDto(16, 5), null, "dash"),
+        ]);
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", plan)).Success);
+    }
+
+    [Theory]
+    [InlineData(17, "Dash moves at most 3 squares.")]
+    [InlineData(null, "Dash needs a target cell.")]
+    public async Task PlanAction_RejectsABadDash(int? x, string expected)
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, _, _, _) = await SetupAbilityUser(db, "scout");
+        var plan = new PlannedActionArray([
+            new PlannedActionEntry("move", new PositionDto(13, 5), null),
+            new PlannedActionEntry("ability", x is { } cx ? new PositionDto(cx, 5) : null, null, "dash"),
+        ]);
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", plan));
+        Assert.Equal(expected, ex.Message);
+    }
+
     // ----- Multi-target & healing (3B.3 PR 2) -----
 
     private static PlannedActionArray UseAbilityOn(string abilityId, params string[] targetIds) =>

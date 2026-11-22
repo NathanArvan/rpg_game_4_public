@@ -13,6 +13,8 @@
           [attr.data-y]="cell.y"
           [class.in-range]="isInRange(cell)"
           [class.ability-range]="isInAbilityRange(cell)"
+          [class.ability-move-range]="isAbilityMoveTarget(cell)"
+          [class.charge-path]="isChargePath(cell)"
           [class.ghost]="isGhostTarget(cell)"
           [class.enemy-ghost]="isEnemyGhostTarget(cell)"
           (click)="onCellClick(cell)">
@@ -39,7 +41,9 @@
           [class.ability-target]="isAbilityTarget(token.combatant)"
           [class.picked-token]="pickNumber(token.combatant) !== null"
           [title]="tokenTitle(token.combatant)"
-          (click)="onTokenClick(token)">
+          (click)="onTokenClick(token)"
+          (mouseenter)="onTokenHover(token)"
+          (mouseleave)="onTokenHover(null)">
           {{ token.combatant.characterName[0] }}
           <span class="bleed-badge" *ngIf="shownStatus(token.combatant).status === 'downed'">{{ shownStatus(token.combatant).bleedoutRoundsLeft }}</span>
           <span class="pick-badge" *ngIf="pickNumber(token.combatant) as n">{{ n }}</span>

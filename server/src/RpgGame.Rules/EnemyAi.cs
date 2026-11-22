@@ -5,9 +5,10 @@ namespace RpgGame.Rules;
 /// first heals an ally in trouble if it has a ready heal (ABILITIES.md A13 step 1), then spends the
 /// rest of its AP on the nearest living enemy: attack it if it is in reach; otherwise walk toward it
 /// (one move, up to the whole movement budget) and attack with the AP left if the walk ends in
-/// reach. An attack opens with a ready multi-target ability if it would hit two or more enemies
-/// (step 2), or else a ready single-target melee ability (step 4), then basic melee attacks with
-/// what's left. With nothing to do, it defends.
+/// reach. If the target isn't in reach but a ready Charge gets next to it, it charges instead of
+/// walking (step 3). An attack opens with a ready multi-target ability if it would hit two or more
+/// enemies (step 2), or else a ready single-target melee ability (step 4), then basic melee attacks
+/// with what's left. With nothing to do, it defends.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -99,6 +100,19 @@ public static class EnemyAi
                 continue;
             }
 
+            // Step 3: a ready Charge that gets next to the target closes and strikes in one tick.
+            if (ChooseCharge(state, self, from, target, apLeft, config, occupied, blockers, reservedPaths) is { } charge)
+            {
+                var end = charge.Path[^1];
+                reservedPaths.Add(charge.Path);
+                occupied.Add(end);
+                blockers.Add(end);
+                queue.Add(PlannedAction.Ability(charge.Ability.Id, target.Id));
+                AddAttacks(queue, state, self, end, target, apLeft - charge.Ability.ApCost, config);
+                plans[id] = queue;
+                continue;
+            }
+
             var path = apLeft >= config.MoveApCost
                 ? ChooseMove(state, from, targetPos, self.Profile.MovementRange, occupied, blockers, reservedPaths)
                 : null;
@@ -144,6 +158,38 @@ public static class EnemyAi
             apLeft -= ability.ApCost;
         }
         AddMelees(queue, target.Id, apLeft, config);
+    }
+
+    /// <summary>
+    /// Step 3 (ABILITIES.md A13): a ready ability that moves to its target and attacks it in melee
+    /// (Charge), if <paramref name="target"/> is within its range and the walk to the free cell next to
+    /// the target (found the way the resolver finds it) fits the move's cells (and the movement budget,
+    /// if it uses it) along a clear path. The charger takes that path.
+    /// </summary>
+    private static (AbilityDefinition Ability, List<GridPosition> Path)? ChooseCharge(
+        EncounterState state, CombatantState self, GridPosition from, CombatantState target, int apLeft, RulesConfig config,
+        HashSet<GridPosition> occupied, HashSet<GridPosition> blockers, List<List<GridPosition>> reservedPaths)
+    {
+        var targetPos = target.Position!.Value;
+        foreach (var ability in self.Profile.Abilities)
+        {
+            if (!Ready(self, ability, apLeft)
+                || ability.Targeting is not { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy }
+                || ability.Move is not { To: MoveTo.Target } move
+                || !ability.Effects.Any(e => e is AttackEffect { Roll: AttackKind.Melee })
+                || from.ChebyshevDistanceTo(targetPos) > ability.Targeting.Range)
+                continue;
+
+            if (RoundResolver.DestinationNear(from, targetPos, config.MeleeReach, state.GridWidth, state.GridHeight,
+                    c => !occupied.Contains(c)) is not { } end || end == from)
+                continue;
+            int cap = move.UsesMovementBudget ? Math.Min(move.MaxCells, self.Profile.MovementRange) : move.MaxCells;
+            if (from.ChebyshevDistanceTo(end) > cap) continue;
+
+            var path = RoundResolver.ComputeChebyshevPath(from, end);
+            if (PathIsClear(path, blockers, reservedPaths)) return (ability, path);
+        }
+        return null;
     }
 
     /// <summary>A ready, affordable, active ability of the loadout (not on cooldown).</summary>

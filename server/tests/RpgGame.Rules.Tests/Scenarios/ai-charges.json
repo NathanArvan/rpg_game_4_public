@@ -1,0 +1,14 @@
+{
+  "description": "The AI charges a hero who is out of reach but within Charge's range, instead of walking",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "at": [5, 10], "abilities": ["charge"] }
+  ],
+  "plans": { "Brute": ["ai"] },
+  "dice": [12, 4],                       // hit; 4 + 3 = 7
+  "expect": {
+    "plans": { "Brute": "ability charge Hero" },
+    "positions": { "Brute": [5, 6] },
+    "hp": { "Hero": 13 }
+  }
+}

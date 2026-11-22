@@ -3,12 +3,12 @@ import { PLAYBACK_TIMING, buildTimeline, positionsAfterResolution, positionsBefo
 
 const move = (id: string, path: [number, number][], wasBlocked = false): MovementResult => ({
   combatantId: id, combatantName: id, path: path.map(([x, y]) => ({ x, y })),
-  finalPosition: { x: path[path.length - 1][0], y: path[path.length - 1][1] }, wasBlocked, blockedByCombatantId: null,
+  finalPosition: { x: path[path.length - 1][0], y: path[path.length - 1][1] }, wasBlocked, blockedByCombatantId: null, abilityId: null,
 });
 
 const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit, damage,
-  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, ...extra,
+  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
@@ -118,7 +118,7 @@ describe('playback timeline', () => {
 
     it('labels a finishing blow instead of showing 0 damage', () => {
       const [beat] = buildTimeline(payload(tick(0, {
-        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true, abilityId: null })],
+        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true, abilityId: null, moveBonus: 0 })],
       })));
       expect(beat.floats).toEqual([{ combatantId: 'hero', text: 'finished', kind: 'damage' }]);
     });
@@ -180,6 +180,31 @@ describe('playback timeline', () => {
     const beats = buildTimeline(payload(tick(0, { abilityUses: [use] })));
     expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'on cooldown', kind: 'wasted' }]);
     expect(beats[0].feed).toContain("hero can't use Power Strike — still on cooldown");
+  });
+});
+
+describe('playback timeline: movement abilities (3B.3)', () => {
+  const use = (abilityId: string, abilityName: string, targetIds: string[] = []) =>
+    ({ combatantId: 'hero', combatantName: 'hero', abilityId, abilityName, targetIds, wastedReason: null, feedText: '' });
+
+  it('shows a Charge as the run starts, names it in the move line, then lands the strike', () => {
+    const run = { ...move('hero', [[5, 9], [5, 8], [5, 7], [5, 6]]), abilityId: 'charge' };
+    const beats = buildTimeline(payload(tick(0, {
+      movements: [run],
+      attacks: [attack('hero', 'ogre', true, 7, 13, { abilityId: 'charge', moveBonus: 3, feedText: "hero's Charge hits ogre" })],
+      abilityUses: [use('charge', 'Charge', ['ogre'])],
+    })));
+    expect(beats.map(b => b.phase)).toEqual(['movement', 'movement', 'movement', 'attacks']);
+    expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'Charge', kind: 'ability' }]);
+    expect(beats[0].feed).toContain('hero moves to (5, 6) with Charge');
+    expect(beats[3].floats).toEqual([{ combatantId: 'ogre', text: '-7', kind: 'damage' }]);
+  });
+
+  it('plays a Dash as movement only, with no attacks beat', () => {
+    const dash = { ...move('hero', [[0, 0], [1, 0], [2, 0], [3, 0]]), abilityId: 'dash' };
+    const beats = buildTimeline(payload(tick(0, { movements: [dash], abilityUses: [use('dash', 'Dash')] })));
+    expect(beats.every(b => b.phase === 'movement')).toBeTrue();
+    expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'Dash', kind: 'ability' }]);
   });
 });
 

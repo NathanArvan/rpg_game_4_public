@@ -1,0 +1,20 @@
+{
+  "description": "Charge runs to the cell next to its target and strikes in the same tick, +3 damage for moving 2+ cells",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "at": [5, 9], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [5, 5] }
+  ],
+  "plans": { "Skirmisher": ["ability charge Goblin"] },
+  "dice": [12, 5],                       // hit; 5 + 3 = 8
+  "expect": {
+    "ticks": 1,
+    "positions": { "Skirmisher": [5, 6] },
+    "hp": { "Goblin": 12 },
+    "cooldowns": { "Skirmisher": { "charge": 2 } },
+    "events": [
+      "t1 Skirmisher uses charge on Goblin",
+      "t1 Skirmisher moves to 5,6 (charge)",
+      "t1 Skirmisher charge Goblin: hit 8 (+3 moved)"
+    ]
+  }
+}

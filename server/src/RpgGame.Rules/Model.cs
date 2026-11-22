@@ -172,7 +172,7 @@ public sealed record EncounterState(
     int GridHeight,
     IReadOnlyList<CombatantState> Combatants);
 
-/// <param name="TargetCell">Set for <see cref="ActionType.Move"/>.</param>
+/// <param name="TargetCell">Set for <see cref="ActionType.Move"/> and abilities that move to a cell.</param>
 /// <param name="TargetCombatantId">Set for attacks, Stabilize and single-target abilities.</param>
 /// <param name="AbilityId">Set for <see cref="ActionType.Ability"/>: which loadout ability.</param>
 /// <param name="TargetCombatantIds">Abilities that pick several targets (3B.3 PR 2).</param>
@@ -190,4 +190,7 @@ public sealed record PlannedAction(
     public static PlannedAction Stabilize(string targetId) => new(ActionType.Stabilize, TargetCombatantId: targetId);
     public static PlannedAction Ability(string abilityId, string? targetId = null) =>
         new(ActionType.Ability, TargetCombatantId: targetId, AbilityId: abilityId);
+    /// <summary>An ability aimed at a cell (a move to a cell, e.g. Dash).</summary>
+    public static PlannedAction AbilityAt(string abilityId, int x, int y) =>
+        new(ActionType.Ability, new GridPosition(x, y), AbilityId: abilityId);
 }

@@ -10,8 +10,9 @@ import {
   ArmAbility, DisarmAbility, GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction,
 } from '../../../state/encounter/encounter.actions';
 import {
-  DEFAULT_AP_COSTS, abilityTakesTargets, apCost, apSpent, canAfford, canAffordEntry, canTargetWithAbility, chebyshev,
-  describeQueue, entry, maxTargets, moveCellsUsed, projectedPosition,
+  DEFAULT_AP_COSTS, MELEE_REACH, abilityCellError, abilityTakesCell, abilityTakesTargets, apCost, apSpent, canAfford,
+  canAffordEntry, canTargetWithAbility, chebyshev, chebyshevPath, describeQueue, entry, estimateMoveToTarget, maxTargets,
+  walkQueue,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -81,6 +82,10 @@ export class GridComponent implements OnInit {
   armedAbilityId: string | null = null;
   /** Targets picked so far for an armed "combatants" ability, in pick order (their roll order). */
   pickedTargetIds: string[] = [];
+  /** The token under the pointer, for the Charge path preview. */
+  hoveredCombatantId: string | null = null;
+  private gridWidth = 20;
+  private gridHeight = 20;
 
   constructor(private store: Store, private hub: GameHubService, private playback: ResolutionPlaybackService) {}
 
@@ -111,6 +116,8 @@ export class GridComponent implements OnInit {
     );
 
     this.store.select(MapState.positions).subscribe(p => this.positions = p);
+    gridWidth$.subscribe(w => this.gridWidth = w);
+    gridHeight$.subscribe(h => this.gridHeight = h);
     this.store.select(EncounterState.combatants).subscribe(c => this.combatants = c);
     this.store.select(EncounterState.myPlannedActions).subscribe(plans => this.myPlans = plans);
     this.store.select(EncounterState.selectedCombatantId).subscribe(id => this.selectedCombatantId = id);
@@ -278,6 +285,18 @@ export class GridComponent implements OnInit {
     this.onCellClick({ x: token.x, y: token.y });
   }
 
+  onTokenHover(token: TokenView | null): void {
+    this.hoveredCombatantId = token?.combatant.id ?? null;
+  }
+
+  /**
+   * Where the combatant's queued moves end and how many movement cells they use, counting ability
+   * moves (Dash, Charge) the way the server's PlanValidator does.
+   */
+  private walk(combatant: Combatant, queue: PlannedActionEntry[]) {
+    return walkQueue(this.positions[combatant.id], queue, combatant.abilities, combatant.movementRange, this.positions);
+  }
+
   isInRange(cell: Cell): boolean {
     if (this.armedAbility) return false; // the ability's reach is shown instead
     // GM enemy planning mode — show range around selected enemy
@@ -297,8 +316,9 @@ export class GridComponent implements OnInit {
   private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
     const start = this.positions[combatant.id];
     if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts, combatant.abilities)) return false;
-    const from = projectedPosition(start, queue)!;
-    const cellsLeft = combatant.movementRange - moveCellsUsed(start, queue);
+    const { position, cells } = this.walk(combatant, queue);
+    const from = position!;
+    const cellsLeft = combatant.movementRange - cells;
     const distance = chebyshev(from, cell);
     const occupant = this.tokenAt(cell);
     return distance > 0 && distance <= cellsLeft && (!occupant || occupant.id === combatant.id);
@@ -310,13 +330,13 @@ export class GridComponent implements OnInit {
 
   isEnemyGhostTarget(cell: Cell): boolean {
     return Object.values(this.enemyPlannedActions).some(queue => queue.some(a =>
-      a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
+      (a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
-  /** A cell one of your characters plans to move to. */
+  /** A cell one of your characters plans to move to (a move, or an ability that moves to a cell). */
   isGhostTarget(cell: Cell): boolean {
     return Object.values(this.myPlans).some(plan => plan.some(a =>
-      a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
+      (a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
   /** Queue step (1-based) of the selected character's move to this cell, for the marker on the grid. */
@@ -325,7 +345,7 @@ export class GridComponent implements OnInit {
     if (plan.length < 2) return null;
     for (let i = plan.length - 1; i >= 0; i--) {
       const a = plan[i];
-      if (a.type === 'move' && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y) return i + 1;
+      if ((a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y) return i + 1;
     }
     return null;
   }
@@ -365,14 +385,53 @@ export class GridComponent implements OnInit {
     return (this.armedAbilityId && user?.abilities.find(a => a.id === this.armedAbilityId)) || null;
   }
 
-  /** Cells within the armed ability's range of where the user's queued moves end. */
+  /** Cells within the armed ability's range of where the user's queued moves end (not for a move to a cell). */
   isInAbilityRange(cell: Cell): boolean {
     const ability = this.armedAbility;
     const user = this.abilityUser;
-    if (!ability || !user) return false;
-    const from = projectedPosition(this.positions[user.id], this.queueOf(user));
+    if (!ability || !user || abilityTakesCell(ability)) return false;
+    const from = this.walk(user, this.queueOf(user)).position;
     const distance = from ? chebyshev(from, cell) : Infinity;
     return distance > 0 && distance <= ability.targeting.range;
+  }
+
+  /**
+   * A free cell the armed move-to-cell ability (Dash) can go to: within its cells of where the
+   * user's queued moves end (and the budget left, if it uses it). Shown in its own colour, since
+   * Dash's cells come on top of the normal movement range.
+   */
+  isAbilityMoveTarget(cell: Cell): boolean {
+    const ability = this.armedAbility;
+    const user = this.abilityUser;
+    if (!ability || !user || !abilityTakesCell(ability)) return false;
+    const { position, cells } = this.walk(user, this.queueOf(user));
+    if (!position || chebyshev(position, cell) === 0) return false;
+    const occupant = this.tokenAt(cell);
+    if (occupant && occupant.id !== user.id) return false;
+    return abilityCellError(ability, position, cell, cells, user.movementRange, this.gridWidth, this.gridHeight) === null;
+  }
+
+  /**
+   * The expected path of the armed Charge to the hovered target: from where the user's queued
+   * moves end toward it until in melee reach, capped like the server caps it. The real cell is
+   * picked when the round resolves (the target may move, someone may block the way).
+   */
+  isChargePath(cell: Cell): boolean {
+    return this.chargePreview.some(p => p.x === cell.x && p.y === cell.y);
+  }
+
+  private get chargePreview(): Position[] {
+    const ability = this.armedAbility;
+    const user = this.abilityUser;
+    const target = this.combatants.find(c => c.id === this.hoveredCombatantId);
+    const move = ability?.move;
+    if (!ability || !user || !target || move?.to !== 'target' || !canTargetWithAbility(user, target, ability)) return [];
+    const { position, cells } = this.walk(user, this.queueOf(user));
+    const targetPos = this.positions[target.id];
+    if (!position || !targetPos || chebyshev(position, targetPos) > ability.targeting.range) return [];
+    const cap = move.usesMovementBudget ? Math.min(move.maxCells, Math.max(0, user.movementRange - cells)) : move.maxCells;
+    const { cells: steps } = estimateMoveToTarget(position, targetPos, cap);
+    return chebyshevPath(position, targetPos).slice(1, steps + 1);
   }
 
   /** A token the armed ability may be planned on (side and status; range is checked at resolution). */
@@ -389,6 +448,14 @@ export class GridComponent implements OnInit {
     const t = ability.targeting;
     const reach = t.range === 1 ? 'adjacent' : `up to ${t.range} cells away`;
     const cancel = 'Esc or click the button again to cancel.';
+    if (abilityTakesCell(ability) && ability.move) {
+      const extra = ability.move.usesMovementBudget ? '' : ', on top of your normal movement';
+      return `${ability.name}: click a highlighted cell up to ${ability.move.maxCells} away${extra}. ${cancel}`;
+    }
+    if (ability.move?.to === 'target') {
+      const who = t.filter === 'enemy' ? 'an enemy' : t.filter === 'ally' ? 'an ally' : 'a target';
+      return `${ability.name}: click ${who} up to ${t.range} cells away. You run next to them (path shown on hover) and act in the same tick; the run uses your movement. ${cancel}`;
+    }
     if (!abilityTakesTargets(ability)) {
       const whom = t.filter === 'enemy' ? 'enemy' : t.filter === 'downed_ally' ? 'downed ally' : t.filter === 'ally' ? 'ally' : 'combatant';
       const hits = t.count ? `the nearest ${t.count} ${whom === 'ally' ? 'allies' : whom + 's'}` : `every ${whom}`;
@@ -410,7 +477,7 @@ export class GridComponent implements OnInit {
    */
   get armedConfirmLabel(): string | null {
     const ability = this.armedAbility;
-    if (!ability) return null;
+    if (!ability || abilityTakesCell(ability)) return null;
     if (!abilityTakesTargets(ability)) return `Use ${ability.name}`;
     if (ability.targeting.kind === 'combatants') return `Done (${this.pickedTargetIds.length}/${maxTargets(ability)})`;
     return null;
@@ -418,7 +485,7 @@ export class GridComponent implements OnInit {
 
   get canConfirmArmed(): boolean {
     const ability = this.armedAbility;
-    return !!ability && (!abilityTakesTargets(ability) || this.pickedTargetIds.length > 0);
+    return !!ability && !abilityTakesCell(ability) && (!abilityTakesTargets(ability) || this.pickedTargetIds.length > 0);
   }
 
   /** Queues the armed ability as it stands: no targets (auto / self), or the targets picked so far. */
@@ -464,6 +531,11 @@ export class GridComponent implements OnInit {
   private useArmedAbility(user: Combatant, cell: Cell, enqueue: (action: PlannedActionEntry) => void): boolean {
     const ability = this.armedAbility;
     if (!ability) return false;
+    if (abilityTakesCell(ability)) {
+      if (this.isAbilityMoveTarget(cell)) enqueue(entry('ability', { abilityId: ability.id, targetCell: { x: cell.x, y: cell.y } }));
+      this.store.dispatch(new DisarmAbility());
+      return true;
+    }
     if (!abilityTakesTargets(ability)) {
       enqueue(entry('ability', { abilityId: ability.id }));
       this.store.dispatch(new DisarmAbility());
@@ -522,14 +594,14 @@ export class GridComponent implements OnInit {
   get moveCellsLeft(): number {
     const selected = this.selected;
     if (!selected) return 0;
-    return Math.max(0, selected.movementRange - moveCellsUsed(this.positions[selected.id], this.selectedPlan));
+    return Math.max(0, selected.movementRange - this.walk(selected, this.selectedPlan).cells);
   }
 
   /** Whether the planner's queued moves end next to (or on top of) the target: Stabilize's reach. */
-  private endsNextTo(plannerId: string, queue: PlannedActionEntry[], target: Combatant): boolean {
-    const from = projectedPosition(this.positions[plannerId], queue);
+  private endsNextTo(planner: Combatant, queue: PlannedActionEntry[], target: Combatant): boolean {
+    const from = this.walk(planner, queue).position;
     const targetPos = this.positions[target.id];
-    return !!from && !!targetPos && chebyshev(from, targetPos) <= 1;
+    return !!from && !!targetPos && chebyshev(from, targetPos) <= MELEE_REACH;
   }
 
   /** Downed allies of the party (3B.5), for the stabilize hint in the action bar. */
@@ -538,10 +610,10 @@ export class GridComponent implements OnInit {
   }
 
   /** Melee if the target is within reach of where the planner's queued moves end, otherwise ranged. */
-  private attackTypeAgainst(plannerId: string, queue: PlannedActionEntry[], target: Combatant): string {
-    const from = projectedPosition(this.positions[plannerId], queue);
+  private attackTypeAgainst(planner: Combatant, queue: PlannedActionEntry[], target: Combatant): string {
+    const from = this.walk(planner, queue).position;
     const targetPos = this.positions[target.id];
-    return from && targetPos && chebyshev(from, targetPos) <= 1 ? 'melee_attack' : 'ranged_attack';
+    return from && targetPos && chebyshev(from, targetPos) <= MELEE_REACH ? 'melee_attack' : 'ranged_attack';
   }
 
   // ----- Interaction -----
@@ -560,7 +632,7 @@ export class GridComponent implements OnInit {
       let action: PlannedActionEntry | null = null;
       // Anyone not dead can be attacked: a downed or stable target is finished off by a hit (3B.5).
       if (targetCombatant && targetCombatant.id !== enemy.id && targetCombatant.status !== 'dead') {
-        action = entry(this.attackTypeAgainst(enemy.id, queue, targetCombatant), { targetCombatantId: targetCombatant.id });
+        action = entry(this.attackTypeAgainst(enemy, queue, targetCombatant), { targetCombatantId: targetCombatant.id });
       } else if (this.isInRange(cell)) {
         action = entry('move', { targetCell: { x: cell.x, y: cell.y } });
       }
@@ -578,7 +650,7 @@ export class GridComponent implements OnInit {
 
     // A downed ally: stabilize them, if the selected character's queued moves end next to them (3B.5).
     if (targetCombatant && targetCombatant.status === 'downed' && targetCombatant.combatantType === 'player') {
-      if (me && me.id !== targetCombatant.id && this.endsNextTo(me.id, this.selectedPlan, targetCombatant))
+      if (me && me.id !== targetCombatant.id && this.endsNextTo(me, this.selectedPlan, targetCombatant))
         this.plan(me, entry('stabilize', { targetCombatantId: targetCombatant.id }));
       return;
     }
@@ -594,7 +666,7 @@ export class GridComponent implements OnInit {
 
     const queue = this.selectedPlan;
     if (targetCombatant && targetCombatant.status !== 'dead') {
-      const type = this.attackTypeAgainst(myCombatant.id, queue, targetCombatant);
+      const type = this.attackTypeAgainst(myCombatant, queue, targetCombatant);
       this.plan(myCombatant, entry(type, { targetCombatantId: targetCombatant.id }));
     } else if (!targetCombatant && this.isLastMoveTarget(cell)) {
       this.undoLast();

@@ -14,26 +14,36 @@ const USER_MONSTER = 'user-gm';
 
 const POWER_STRIKE: AbilityDto = {
   id: 'power_strike', name: 'Power Strike', description: 'A heavy melee blow: weapon damage +4.', apCost: 3, cooldown: 2,
-  tags: ['melee'], targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false },
+  tags: ['melee'], targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
 };
 const FIREBOLT: AbilityDto = {
   id: 'firebolt', name: 'Firebolt', description: 'A bolt of flame at a target up to 8 cells away: d8 + 1.', apCost: 3, cooldown: 1,
-  tags: ['flame', 'ranged', 'spell'], targeting: { kind: 'combatant', filter: 'enemy', range: 8, count: null, includeSelf: false },
+  tags: ['flame', 'ranged', 'spell'], targeting: { kind: 'combatant', filter: 'enemy', range: 8, count: null, includeSelf: false }, move: null,
 };
 /** Loadouts (3B.3), and Firebolt shown on cooldown. */
 const CLEAVE: AbilityDto = {
   id: 'cleave', name: 'Cleave', description: 'A wide swing that hits every adjacent enemy, each with its own roll.', apCost: 3, cooldown: 2,
-  tags: ['melee'], targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+  tags: ['melee'], targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
 };
 const TWIN_SHOT: AbilityDto = {
   id: 'twin_shot', name: 'Twin Shot', description: 'Two quick shots at up to two enemies within 8 cells.', apCost: 3, cooldown: 1,
-  tags: ['ranged'], targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+  tags: ['ranged'], targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
 };
 const MEND: AbilityDto = {
   id: 'mend', name: 'Mend', description: 'Heal an ally within 3 cells (or yourself) for d6 + 2.', apCost: 2, cooldown: 2,
-  tags: ['healing'], targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true },
+  tags: ['healing'], targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true }, move: null,
 };
-const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND], c4: [POWER_STRIKE] };
+const DASH: AbilityDto = {
+  id: 'dash', name: 'Dash', description: 'Sprint up to 3 cells, on top of your normal movement.', apCost: 1, cooldown: 2,
+  tags: ['movement'], targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
+  move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
+};
+const CHARGE: AbilityDto = {
+  id: 'charge', name: 'Charge', description: 'Run at an enemy up to 6 cells away and strike: weapon damage, +3 if you covered 2+ cells.', apCost: 3, cooldown: 2,
+  tags: ['melee', 'movement'], targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
+  move: { to: 'target', maxCells: 6, usesMovementBudget: true },
+};
+const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND, DASH, CHARGE], c4: [POWER_STRIKE, CHARGE] };
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
 
 const COMBATANTS_DTO: CombatantDto[] = [
@@ -119,12 +129,12 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       tickIndex: 0,
       abilityUses: [], heals: [],
       movements: [
-        { combatantId: 'c1', combatantName: 'Zara Forge', path: [{ x: 8, y: 10 }, { x: 7, y: 11 }, { x: 6, y: 12 }], finalPosition: { x: 6, y: 12 }, wasBlocked: false, blockedByCombatantId: null },
-        { combatantId: 'c4', combatantName: 'Goblin 2', path: [{ x: 6, y: 16 }, { x: 6, y: 15 }, { x: 6, y: 14 }], finalPosition: { x: 6, y: 14 }, wasBlocked: false, blockedByCombatantId: null },
+        { combatantId: 'c1', combatantName: 'Zara Forge', path: [{ x: 8, y: 10 }, { x: 7, y: 11 }, { x: 6, y: 12 }], finalPosition: { x: 6, y: 12 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null },
+        { combatantId: 'c4', combatantName: 'Goblin 2', path: [{ x: 6, y: 16 }, { x: 6, y: 15 }, { x: 6, y: 14 }], finalPosition: { x: 6, y: 14 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null },
       ],
       attacks: [
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: false, damage: 0, targetNewHp: 17, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
+        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: false, damage: 0, targetNewHp: 17, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
       ],
       effects: [],
     },
@@ -133,10 +143,10 @@ const MOCK_RESOLUTION: ResolutionPayload = {
       abilityUses: [], heals: [],
       movements: [],
       attacks: [
-        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c4', targetName: 'Goblin 2', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
-        { attackerId: 'c4', attackerName: 'Goblin 2', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", roll: null, wastedReason: 'out_of_melee_reach', targetStatus: 'standing', finishingBlow: false, abilityId: null },
+        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c4', targetName: 'Goblin 2', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        { attackerId: 'c4', attackerName: 'Goblin 2', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", roll: null, wastedReason: 'out_of_melee_reach', targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
       ],
       effects: [],
     },

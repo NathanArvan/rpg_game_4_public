@@ -31,10 +31,14 @@ internal static class ResolutionFeedFormatter
         return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
     }
 
-    /// <summary>An attack made by an ability (3B.3), named after it: "Brakka's Power Strike hits Goblin for 9 damage".</summary>
+    /// <summary>
+    /// An attack made by an ability (3B.3), named after it: "Brakka's Power Strike hits Goblin for 9 damage".
+    /// A bonus for moving first shows after the damage: "for 8 damage (+3 from moving)".
+    /// </summary>
     private static string AbilityAttack(AttackOutcome attack, string attackerName, string targetName, string abilityName)
     {
         var who = $"{attackerName}'s {abilityName}";
+        var damage = attack.MoveBonus > 0 ? $"{attack.Damage} damage (+{attack.MoveBonus} from moving)" : $"{attack.Damage} damage";
         if (attack.Wasted)
             return $"{who} on {targetName} fails — {WastedReasonText(attack.WastedReason)}";
         if (!attack.Hit)
@@ -42,10 +46,10 @@ internal static class ResolutionFeedFormatter
         if (attack.FinishingBlow)
             return $"{who} hits {targetName} — finished off!";
         if (attack.TargetStatus == CombatantStatus.Downed)
-            return $"{who} hits {targetName} for {attack.Damage} damage — goes down!";
+            return $"{who} hits {targetName} for {damage} — goes down!";
         if (attack.TargetDefeated)
-            return $"{who} hits {targetName} for {attack.Damage} damage — defeated!";
-        return $"{who} hits {targetName} for {attack.Damage} damage (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
+            return $"{who} hits {targetName} for {damage} — defeated!";
+        return $"{who} hits {targetName} for {damage} (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
     }
 
     /// <summary>

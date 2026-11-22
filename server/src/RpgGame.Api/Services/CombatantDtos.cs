@@ -56,5 +56,8 @@ internal static class CombatantDtos
 
     public static AbilityDto Ability(AbilityValues a) => new(
         a.Id, a.Name, a.Description, a.ApCost, a.Cooldown, a.Tags,
-        new AbilityTargetingDto(a.Target.Kind, a.Target.Filter, a.Target.Range, a.Target.Count, a.Target.IncludeSelf));
+        new AbilityTargetingDto(a.Target.Kind, a.Target.Filter, a.Target.Range, a.Target.Count, a.Target.IncludeSelf),
+        a.Effects.FirstOrDefault(e => e.Kind == "move") is { } move
+            ? new AbilityMoveDto(move.To ?? "cell", move.MaxCells, move.UsesMovementBudget)
+            : null);
 }

@@ -46,9 +46,9 @@ public class AbilityCatalogTests : IDisposable
     {
         string[] Ids(string profile) => TestProfiles.Catalog.Find(profile)!.Abilities.Select(a => a.Id).ToArray();
         Assert.Equal(["power_strike", "cleave"], Ids("bruiser"));
-        Assert.Equal(["power_strike"], Ids("brute"));
-        Assert.Equal(["mend"], Ids("skirmisher"));
-        Assert.Equal(["twin_shot"], Ids("scout"));
+        Assert.Equal(["power_strike", "charge"], Ids("brute"));
+        Assert.Equal(["mend", "dash", "charge"], Ids("skirmisher"));
+        Assert.Equal(["twin_shot", "dash"], Ids("scout"));
         Assert.Empty(Ids("grunt"));
     }
 
@@ -63,6 +63,21 @@ public class AbilityCatalogTests : IDisposable
         var mend = AbilityMapping.ToRules(catalog.Find("mend")!);
         Assert.Equal(new Targeting(TargetKind.Combatant, TargetFilter.Ally, 3, IncludeSelf: true), mend.Targeting);
         Assert.Equal(new HealEffect(DamageDie.D6, 2, CanRevive: true), Assert.Single(mend.Effects));
+    }
+
+    [Fact]
+    public void ShippedMovementAbilities_MapToTheRulesEngine()
+    {
+        var catalog = AbilityCatalog.FromAppDirectory();
+        var dash = AbilityMapping.ToRules(catalog.Find("dash")!);
+        Assert.Equal(new Targeting(TargetKind.Self, TargetFilter.Ally, 0), dash.Targeting);
+        Assert.Equal(new MoveEffect(MoveTo.Cell, 3, UsesMovementBudget: false), Assert.Single(dash.Effects));
+        Assert.True(dash.NeedsCell);
+
+        var charge = AbilityMapping.ToRules(catalog.Find("charge")!);
+        Assert.Equal(new Targeting(TargetKind.Combatant, TargetFilter.Enemy, 6), charge.Targeting);
+        Assert.Equal(new MoveEffect(MoveTo.Target, 6, UsesMovementBudget: true), charge.Effects[0]);
+        Assert.Equal(new DamageSpec(BonusIfMoved: new MovedBonus(2, 3)), ((AttackEffect)charge.Effects[1]).Damage);
     }
 
     [Fact]
@@ -89,7 +104,16 @@ public class AbilityCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "ap": 0, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'ap'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "cooldown": -1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'cooldown'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'target'")]
-    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self", "filter": "ally", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "a \"self\" ability can't attack")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self", "filter": "enemy" }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 3 } ] }""", "doesn't take a target 'filter'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "home", "maxCells": 3 } ] }""", "'to'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 0 } ] }""", "'maxCells'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 3, "path": "teleport" } ] }""", "'path'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 3 }, { "kind": "move", "to": "cell", "maxCells": 3 } ] }""", "only once")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 4 }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 3 } ] }""", "needs a \"self\" target kind")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "target", "maxCells": 3 } ] }""", "needs a \"combatant\" target kind")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee", "damage": { "bonusIfMoved": { "minCells": 2, "bonus": 3 } } } ] }""", "needs a \"move\" effect")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 4 }, "effects": [ { "kind": "move", "to": "target", "maxCells": 3 }, { "kind": "attack", "roll": "melee", "damage": { "bonusIfMoved": { "minCells": 0, "bonus": 3 } } } ] }""", "'bonusIfMoved'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "cell", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "isn't supported yet")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatants", "filter": "enemy", "range": 4 }, "effects": [ { "kind": "attack", "roll": "ranged" } ] }""", "'count' between 1 and")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "auto", "filter": "enemy", "range": 1, "count": 0 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'count' must be at least 1")]
@@ -150,7 +174,7 @@ public class AbilityCatalogTests : IDisposable
         var combatants = Assert.Single(new BattlePresetCatalog(dir, TestProfiles.Catalog).All).Combatants;
         Assert.Equal(["firebolt"], combatants.Single(c => c.Name == "Mage").Profile.Abilities!.Select(a => a.Id));
         Assert.Empty(combatants.Single(c => c.Name == "Plain").Profile.Abilities!);
-        Assert.Equal(["power_strike"], combatants.Single(c => c.Name == "Ogre").Profile.Abilities!.Select(a => a.Id));
+        Assert.Equal(["power_strike", "charge"], combatants.Single(c => c.Name == "Ogre").Profile.Abilities!.Select(a => a.Id));
     }
 
     [Fact]

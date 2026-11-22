@@ -655,7 +655,13 @@ namespace RpgGame.Infrastructure.Data.Migrations
                                             b3.Property<string>("Kind")
                                                 .IsRequired();
 
+                                            b3.Property<int>("MaxCells");
+
                                             b3.Property<string>("Roll");
+
+                                            b3.Property<string>("To");
+
+                                            b3.Property<bool>("UsesMovementBudget");
 
                                             b3.HasKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal", "__synthesizedOrdinal");
 
@@ -707,6 +713,30 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                                                     b4.WithOwner()
                                                         .HasForeignKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.OwnsOne("RpgGame.Domain.Entities.AbilityMovedBonusValues", "BonusIfMoved", b5 =>
+                                                        {
+                                                            b5.Property<Guid>("AbilityDamageValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                                .HasColumnName("AbilityDamageValuesAbilityEffectValuesAbilityValuesCombatProfi~");
+
+                                                            b5.Property<int>("AbilityDamageValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal")
+                                                                .HasColumnName("AbilityDamageValuesAbilityEffectValuesAbilityValues__synthesiz~");
+
+                                                            b5.Property<int>("AbilityDamageValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                            b5.Property<int>("Bonus");
+
+                                                            b5.Property<int>("MinCells");
+
+                                                            b5.HasKey("AbilityDamageValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityDamageValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityDamageValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                            b5.ToTable("EncounterCombatants");
+
+                                                            b5.WithOwner()
+                                                                .HasForeignKey("AbilityDamageValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityDamageValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityDamageValuesAbilityEffectValues__synthesizedOrdinal");
+                                                        });
+
+                                                    b4.Navigation("BonusIfMoved");
                                                 });
 
                                             b3.Navigation("Amount");

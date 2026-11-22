@@ -61,12 +61,14 @@ public sealed record AbilityUse(
 
 /// <param name="Path">Cells actually traversed, starting with the origin cell. A single cell means the combatant stayed put.</param>
 /// <param name="BlockedById">Who stopped this mover.</param>
+/// <param name="AbilityId">The ability that made this move (Dash, Charge), or null for a plain move (3B.3).</param>
 public sealed record MovementOutcome(
     string CombatantId,
     IReadOnlyList<GridPosition> Path,
     GridPosition FinalPosition,
     bool WasBlocked,
-    string? BlockedById);
+    string? BlockedById,
+    string? AbilityId = null);
 
 public enum WastedReason
 {
@@ -107,6 +109,7 @@ public sealed record AttackRoll(int D20, int Accuracy, int TargetDodge)
 /// <param name="TargetStatus">The target's status after this tick's attacks (3B.5): Downed or Dead if it fell.</param>
 /// <param name="FinishingBlow">The target was already Downed or Stable: a hit kills it outright, with no damage roll.</param>
 /// <param name="AbilityId">The ability that made this attack, or null for a basic melee / ranged attack (3B.3).</param>
+/// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved the caster far enough (Charge's <see cref="DamageSpec.BonusIfMoved"/>).</param>
 public sealed record AttackOutcome(
     string AttackerId,
     string TargetId,
@@ -121,7 +124,8 @@ public sealed record AttackOutcome(
     AttackRoll? Roll = null,
     CombatantStatus TargetStatus = CombatantStatus.Standing,
     bool FinishingBlow = false,
-    string? AbilityId = null)
+    string? AbilityId = null,
+    int MoveBonus = 0)
 {
     public bool Wasted => WastedReason != WastedReason.None;
 }

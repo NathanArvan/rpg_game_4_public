@@ -168,8 +168,9 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         foreach (var entry in action.Actions)
             await ValidateActionEntry(entry, combatantId, activeEncounter);
 
-        // The map only matters for moves (bounds and the starting cell).
-        var hasMove = action.Actions.Any(e => e.Type == "move");
+        // The map only matters for moves (bounds and the starting cell), including abilities that
+        // move (Dash, Charge; checked against the profile below).
+        var hasMove = action.Actions.Any(e => e.Type is "move" or "ability");
         var map = hasMove
             ? await redisState.GetMapAsync(encounterId)
                 ?? throw new GameActionException("Map data not found.", isActionRejected: true)
@@ -194,8 +195,9 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         var cooldowns = queue.Any(a => a.Type == ActionType.Ability)
             ? await redisState.GetCooldownsAsync(encounterId, combatantId) ?? []
             : [];
+        var positions = map?.Positions.ToDictionary(kv => kv.Key, kv => new GridPosition(kv.Value.X, kv.Value.Y));
         var check = PlanValidator.Validate(start, rulesProfile, queue,
-            map?.GridWidth ?? 0, map?.GridHeight ?? 0, cooldowns: cooldowns);
+            map?.GridWidth ?? 0, map?.GridHeight ?? 0, cooldowns: cooldowns, positions: positions);
         if (!check.IsValid)
             throw new GameActionException(check.Error!, isActionRejected: true);
 

@@ -9,6 +9,13 @@ export interface AbilityDto {
   cooldown: number;
   tags: string[];
   targeting: AbilityTargetingDto;
+  move: AbilityMoveDto | null;
+}
+
+export interface AbilityMoveDto {
+  to: string;
+  maxCells: number;
+  usesMovementBudget: boolean;
 }
 
 export interface AbilityTargetingDto {
@@ -211,6 +218,7 @@ export interface MovementResult {
   finalPosition: PositionDto;
   wasBlocked: boolean;
   blockedByCombatantId: string | null;
+  abilityId: string | null;
 }
 
 export interface AttackResult {
@@ -230,6 +238,7 @@ export interface AttackResult {
   targetStatus: string;
   finishingBlow: boolean;
   abilityId: string | null;
+  moveBonus: number;
 }
 
 export interface AttackRollDto {

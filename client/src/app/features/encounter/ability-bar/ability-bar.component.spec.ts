@@ -11,11 +11,11 @@ describe('AbilityBarComponent', () => {
 
   const powerStrike: AbilityDto = {
     id: 'power_strike', name: 'Power Strike', description: 'A heavy blow.', apCost: 3, cooldown: 2, tags: ['melee'],
-    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false },
+    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
   };
   const firebolt: AbilityDto = {
     ...powerStrike, id: 'firebolt', name: 'Firebolt', cooldown: 1,
-    targeting: { ...powerStrike.targeting, range: 8 },
+    targeting: { ...powerStrike.targeting, range: 8 }, move: null,
   };
   const hero = (cooldowns: Record<string, number> = {}): Combatant => ({
     id: 'h', userId: 'me', characterId: '', characterName: 'Hero', currentHp: 10, maxHp: 10, isDefeated: false,

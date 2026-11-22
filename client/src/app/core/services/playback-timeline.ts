@@ -118,9 +118,16 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   floatMs: 2500,
 };
 
-/** Feed line for one movement result. A one-cell path that wasn't blocked means the combatant chose to stay put. */
-export function movementFeedText(movement: MovementResult): string {
+/**
+ * Feed line for one movement result. A one-cell path that wasn't blocked means the combatant chose
+ * to stay put. A move made by an ability (Dash, Charge) names it: "Scout moves to (9, 5) with Dash".
+ */
+export function movementFeedText(movement: MovementResult, abilityName?: string): string {
   const { x, y } = movement.finalPosition;
+  if (abilityName) {
+    if (movement.path.length <= 1 && !movement.wasBlocked) return `${movement.combatantName} stays at (${x}, ${y}) (${abilityName})`;
+    return `${movement.combatantName} moves to (${x}, ${y}) with ${abilityName}${movement.wasBlocked ? ' (blocked)' : ''}`;
+  }
   if (movement.path.length <= 1 && !movement.wasBlocked) {
     return `${movement.combatantName} stays put at (${x}, ${y})`;
   }
@@ -182,22 +189,34 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
     if (severalTicks) pendingFeed.push(`Tick ${t + 1}`);
 
     // Movement: one beat per cell, every mover stepping in lockstep (as the rules resolve it).
-    pendingFeed.push(...tick.movements.map(movementFeedText));
+    const uses = tick.abilityUses ?? [];
+    const abilityNameOf = (m: MovementResult) => m.abilityId
+      ? uses.find(u => u.combatantId === m.combatantId && u.abilityId === m.abilityId)?.abilityName ?? m.abilityId
+      : undefined;
+    pendingFeed.push(...tick.movements.map(m => movementFeedText(m, abilityNameOf(m))));
     const steps = Math.max(0, ...tick.movements.map(m => m.path.length - 1));
+    // An ability that moves its user (Dash, Charge) shows its name as the move starts.
+    const movedByAbility = new Set(tick.movements.filter(m => m.abilityId && m.path.length > 1).map(m => m.combatantId));
     if (steps > 0) {
       const stepMs = Math.min(timing.maxStepMs, Math.max(timing.minStepMs, Math.floor(timing.moveTotalMs / steps)));
       for (let step = 1; step <= steps; step++) {
         const positions: Record<string, PositionDto> = {};
         for (const m of tick.movements)
           if (step < m.path.length) positions[m.combatantId] = m.path[step];
-        beats.push({ tick: t, phase: 'movement', durationMs: stepMs, moveMs: stepMs, positions, feed: takeFeed() });
+        const beat: PlaybackBeat = { tick: t, phase: 'movement', durationMs: stepMs, moveMs: stepMs, positions, feed: takeFeed() };
+        if (step === 1 && movedByAbility.size > 0)
+          beat.floats = uses.filter(u => !u.wastedReason && movedByAbility.has(u.combatantId))
+            .map(u => ({ combatantId: u.combatantId, text: u.abilityName, kind: 'ability' as const }));
+        beats.push(beat);
       }
     }
 
-    // Abilities used this tick (3B.3): the name floats over the user as its attacks land. A refused
-    // one (e.g. still on cooldown) made no attacks, so it gets its own feed line and label.
+    // Abilities used this tick (3B.3): the name floats over the user as its attacks land (unless it
+    // already showed as the user moved). A refused one (e.g. still on cooldown) made no attacks, so
+    // it gets its own feed line and label.
     const abilityFloats: FloatCue[] = [];
-    for (const use of tick.abilityUses ?? []) {
+    for (const use of uses) {
+      if (!use.wastedReason && movedByAbility.has(use.combatantId)) continue;
       if (use.wastedReason) {
         pendingFeed.push(use.feedText);
         abilityFloats.push({ combatantId: use.combatantId, text: wastedLabel(use.wastedReason), kind: 'wasted' });

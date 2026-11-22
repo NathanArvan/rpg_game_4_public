@@ -73,15 +73,18 @@ public record HealResult(
     string? WastedReason,
     string FeedText);
 
+/// <param name="AbilityId">The ability that made this move (Dash, Charge), or null for a plain move (3B.3).</param>
 public record MovementResult(
     string CombatantId,
     string CombatantName,
     IReadOnlyList<PositionDto> Path,
     PositionDto FinalPosition,
     bool WasBlocked,
-    string? BlockedByCombatantId);
+    string? BlockedByCombatantId,
+    string? AbilityId = null);
 
 /// <param name="AbilityId">The ability that made this attack, or null for a basic attack (3B.3).</param>
+/// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved its caster far enough (Charge).</param>
 public record AttackResult(
     string AttackerId,
     string AttackerName,
@@ -98,7 +101,8 @@ public record AttackResult(
     string? WastedReason,
     string TargetStatus,
     bool FinishingBlow,
-    string? AbilityId = null);
+    string? AbilityId = null,
+    int MoveBonus = 0);
 
 /// <summary>The hit check: hit when D20 + Accuracy ≥ TargetDodge. Null on a wasted attack.</summary>
 public record AttackRollDto(

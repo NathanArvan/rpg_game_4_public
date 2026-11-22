@@ -24,7 +24,7 @@ describe('GridComponent', () => {
 
   const powerStrike: AbilityDto = {
     id: 'power_strike', name: 'Power Strike', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false },
+    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
   };
 
   beforeEach(async () => {
@@ -196,8 +196,8 @@ describe('GridComponent', () => {
         newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
         ticks: [{
           tickIndex: 0,
-          movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null }],
+          movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null }],
+          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 }],
           effects: [], abilityUses: [], heals: [],
         }],
       });
@@ -269,15 +269,15 @@ describe('GridComponent', () => {
   describe('multi-target & healing (3B.3)', () => {
     const twinShot: AbilityDto = {
       id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: ['ranged'],
-      targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+      targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
     };
     const cleave: AbilityDto = {
       id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-      targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+      targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
     };
     const mend: AbilityDto = {
       id: 'mend', name: 'Mend', description: '', apCost: 2, cooldown: 2, tags: ['healing'],
-      targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true },
+      targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true }, move: null,
     };
 
     beforeEach(() => {
@@ -345,6 +345,71 @@ describe('GridComponent', () => {
       grid.toggleAbility('mend');
       grid.onCellClick({ x: 5, y: 5 }); // yourself
       expect(sent()).toEqual([jasmine.objectContaining({ abilityId: 'mend', targetCombatantId: 'bruiser' })]);
+    });
+  });
+  describe('movement abilities (3B.3)', () => {
+    const dash: AbilityDto = {
+      id: 'dash', name: 'Dash', description: '', apCost: 1, cooldown: 2, tags: ['movement'],
+      targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
+      move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
+    };
+    const charge: AbilityDto = {
+      id: 'charge', name: 'Charge', description: '', apCost: 3, cooldown: 2, tags: ['melee', 'movement'],
+      targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
+      move: { to: 'target', maxCells: 6, usesMovementBudget: true },
+    };
+
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('scout', 'Scout', 'player', false, 4, 5, [dash, charge]),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { scout: { x: 0, y: 5 }, goblin: { x: 6, y: 5 } }));
+      hub.planAction.calls.reset();
+    });
+
+    const sent = () => hub.planAction.calls.mostRecent().args[1].actions;
+
+    it('highlights Dash cells from where the queued moves end, beyond the movement budget, and queues a click on one', () => {
+      grid.onCellClick({ x: 4, y: 5 }); // the whole 4-cell budget
+      expect(grid.moveCellsLeft).toBe(0);
+      grid.toggleAbility('dash');
+
+      expect(grid.isInRange({ x: 5, y: 5 })).toBeFalse();
+      expect(grid.isAbilityMoveTarget({ x: 7, y: 5 })).toBeTrue();
+      expect(grid.isAbilityMoveTarget({ x: 8, y: 5 })).toBeFalse();
+      expect(grid.isInAbilityRange({ x: 5, y: 5 })).toBeFalse();
+      expect(grid.armedConfirmLabel).toBeNull();
+
+      grid.onCellClick({ x: 7, y: 5 });
+      expect(sent()).toEqual([
+        jasmine.objectContaining({ type: 'move' }),
+        jasmine.objectContaining({ type: 'ability', abilityId: 'dash', targetCell: { x: 7, y: 5 } }),
+      ]);
+      expect(grid.armedAbilityId).toBeNull();
+      expect(grid.plannedActionSummary).toBe('1. Move to (4, 5) → 2. Dash to (7, 5)');
+      // Later moves start where the Dash ends; the budget is still spent.
+      expect(grid.moveCellsLeft).toBe(0);
+    });
+
+    it('cancels Dash on a click outside its reach', () => {
+      grid.toggleAbility('dash');
+      grid.onCellClick({ x: 9, y: 9 });
+      expect(hub.planAction).not.toHaveBeenCalled();
+      expect(grid.armedAbilityId).toBeNull();
+    });
+
+    it('previews the Charge path to a hovered target and counts its cells toward the budget', () => {
+      grid.toggleAbility('charge');
+      const goblin = grid.tokens.find(t => t.combatant.id === 'goblin')!;
+      grid.onTokenHover(goblin);
+      // From (0,5) toward (6,5): 5 cells to get next to it, capped at the 4-cell movement budget.
+      expect([1, 2, 3, 4].every(x => grid.isChargePath({ x, y: 5 }))).toBeTrue();
+      expect(grid.isChargePath({ x: 5, y: 5 })).toBeFalse();
+
+      grid.onCellClick({ x: 6, y: 5 });
+      expect(sent()).toEqual([jasmine.objectContaining({ type: 'ability', abilityId: 'charge', targetCombatantId: 'goblin' })]);
+      expect(grid.moveCellsLeft).toBe(0);
     });
   });
 });

@@ -224,7 +224,7 @@ public partial class ScenarioTests
         ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
         ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
         ActionType.Stabilize => $"\"stabilize {a.TargetCombatantId}\"",
-        ActionType.Ability => $"\"ability {a.AbilityId}{(a.TargetCombatantIds is { } ids ? " " + string.Join(",", ids) : a.TargetCombatantId is null ? "" : " " + a.TargetCombatantId)}\"",
+        ActionType.Ability => $"\"ability {a.AbilityId}{(a.TargetCombatantIds is { } ids ? " " + string.Join(",", ids) : a.TargetCell is { } c ? $" {c.X},{c.Y}" : a.TargetCombatantId is null ? "" : " " + a.TargetCombatantId)}\"",
         _ => "\"defend\"",
     };
 
@@ -237,7 +237,11 @@ public partial class ScenarioTests
     [GeneratedRegex(@"^\s*stabilize\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex StabilizeRegex();
 
-    /// <summary>"ability ID", "ability ID TARGET" or "ability ID T1,T2" (several chosen targets) (3B.3).</summary>
+    /// <summary>"X,Y": an ability aimed at a cell (Dash).</summary>
+    [GeneratedRegex(@"^(-?\d+),(-?\d+)$")]
+    private static partial Regex CellRegex();
+
+    /// <summary>"ability ID", "ability ID TARGET", "ability ID T1,T2" (several chosen targets) or "ability ID X,Y" (a cell) (3B.3).</summary>
     [GeneratedRegex(@"^\s*ability\s+(\S+)(?:\s+(\S+))?\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex AbilityRegex();
 
@@ -254,6 +258,8 @@ public partial class ScenarioTests
         if (AbilityRegex().Match(text) is { Success: true } ab)
         {
             var target = ab.Groups[2].Success ? ab.Groups[2].Value : null;
+            if (target is not null && CellRegex().Match(target) is { Success: true } cell)
+                return PlannedAction.AbilityAt(ab.Groups[1].Value, int.Parse(cell.Groups[1].Value), int.Parse(cell.Groups[2].Value));
             return target is not null && target.Contains(',')
                 ? new PlannedAction(ActionType.Ability, AbilityId: ab.Groups[1].Value, TargetCombatantIds: target.Split(','))
                 : PlannedAction.Ability(ab.Groups[1].Value, target);
@@ -261,7 +267,7 @@ public partial class ScenarioTests
         if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
             return PlannedAction.Defend();
         throw new FormatException(
-            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET[,TARGET…]]\" or \"defend\".");
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET[,TARGET…] | X,Y]\" or \"defend\".");
     }
 
     /// <summary>An inline ability definition, in the same shape as the server's abilities.json (3B.3).</summary>
@@ -280,8 +286,13 @@ public partial class ScenarioTests
                 new DamageSpec(
                     e.Damage?.Die is null or "weapon" ? null : DamageDie.Parse(e.Damage.Die),
                     e.Damage?.Bonus ?? 0,
-                    e.Damage?.Multiplier ?? 1),
+                    e.Damage?.Multiplier ?? 1,
+                    e.Damage?.BonusIfMoved is { } m ? new MovedBonus(m.MinCells, m.Bonus) : null),
                 e.AccuracyBonus ?? 0),
+            "move" => new MoveEffect(
+                Enum.Parse<MoveTo>(e.To ?? "cell", ignoreCase: true),
+                e.MaxCells ?? 1,
+                e.UsesMovementBudget ?? true),
             "heal" => new HealEffect(
                 e.Amount?.Die is null ? null : DamageDie.Parse(e.Amount.Die),
                 e.Amount?.Bonus ?? 0,
@@ -429,9 +440,10 @@ public partial class ScenarioTests
             foreach (var m in t.Movements)
             {
                 var end = $"{m.FinalPosition.X},{m.FinalPosition.Y}";
-                log.Add(m.WasBlocked ? $"{at} {m.CombatantId} moves to {end} (blocked by {m.BlockedById})"
-                    : m.Path.Count <= 1 ? $"{at} {m.CombatantId} stays at {end}"
-                    : $"{at} {m.CombatantId} moves to {end}");
+                var by = m.AbilityId is null ? "" : $" ({m.AbilityId})";
+                log.Add(m.WasBlocked ? $"{at} {m.CombatantId} moves to {end}{by} (blocked by {m.BlockedById})"
+                    : m.Path.Count <= 1 ? $"{at} {m.CombatantId} stays at {end}{by}"
+                    : $"{at} {m.CombatantId} moves to {end}{by}");
             }
             foreach (var a in t.Attacks)
             {
@@ -439,6 +451,7 @@ public partial class ScenarioTests
                 var result = a.Wasted ? $"wasted {Snake(a.WastedReason)}"
                     : !a.Hit ? "miss"
                     : a.FinishingBlow ? "finishing blow"
+                    : a.MoveBonus > 0 ? $"hit {a.Damage} (+{a.MoveBonus} moved)"
                     : $"hit {a.Damage}";
                 var fell = a.TargetDefeated ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
                 log.Add($"{at} {a.AttackerId} {what} {a.TargetId}: {result}{fell}");
@@ -536,6 +549,16 @@ public partial class ScenarioTests
         public DamageDto? Amount { get; set; }
         /// <summary>Heal: brings a Downed or Stable target back up (default true).</summary>
         public bool? CanRevive { get; set; }
+        /// <summary>Move: "cell" or "target".</summary>
+        public string? To { get; set; }
+        public int? MaxCells { get; set; }
+        public bool? UsesMovementBudget { get; set; }
+    }
+
+    private sealed class MovedBonusDto
+    {
+        public int MinCells { get; set; }
+        public int Bonus { get; set; }
     }
 
     private sealed class DamageDto
@@ -543,6 +566,7 @@ public partial class ScenarioTests
         public string? Die { get; set; }
         public int? Bonus { get; set; }
         public int? Multiplier { get; set; }
+        public MovedBonusDto? BonusIfMoved { get; set; }
     }
 
     private sealed class CombatantDto

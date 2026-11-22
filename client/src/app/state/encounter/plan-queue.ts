@@ -8,7 +8,10 @@ import { Position } from '../map/map.state.model';
  *  - all of a round's moves share the combatant's movementRange cells, each move measured from
  *    where the previous queued move ends;
  *  - an ability (3B.3) costs its own AP, can't be queued while on cooldown, and one with a
- *    cooldown can be queued at most once per round.
+ *    cooldown can be queued at most once per round;
+ *  - an ability that moves (Dash, Charge) moves the planner too: a move to a cell within its
+ *    maxCells of where the earlier moves end, a move to a target estimated toward it; cells of a
+ *    move that uses the movement budget count toward it.
  */
 
 /** A queue entry with every optional field empty, so callers only give what their action uses. */
@@ -79,6 +82,11 @@ export function abilityUnavailableReason(
   return null;
 }
 
+/** The ability is aimed at a cell the player picks: it moves its user there (Dash). */
+export function abilityTakesCell(ability: AbilityDto): boolean {
+  return ability.move?.to === 'cell';
+}
+
 /** The ability's targets are picked by the player ("combatant", "combatants"), not found when it resolves. */
 export function abilityTakesTargets(ability: AbilityDto): boolean {
   return ability.targeting.kind === 'combatant' || ability.targeting.kind === 'combatants';
@@ -99,6 +107,8 @@ export function targetShapeError(ability: AbilityDto, action: PlannedActionEntry
   const hasOne = !!action.targetCombatantId;
   const listed = action.targetCombatantIds?.length ?? 0;
   const count = ability.targeting.count ?? 1;
+  if (action.targetCell && !abilityTakesCell(ability)) return `${ability.name} doesn't take a target cell.`;
+  if (!action.targetCell && abilityTakesCell(ability) && !hasOne && listed === 0) return `${ability.name} needs a target cell.`;
   switch (ability.targeting.kind) {
     case 'combatant':
       return !hasOne || listed > 0 ? `${ability.name} needs one target.` : null;
@@ -119,24 +129,101 @@ export function chebyshev(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
-/** Where the combatant would stand after its queued moves (ignoring anyone who might block it). */
-export function projectedPosition(start: Position | undefined, queue: readonly PlannedActionEntry[]): Position | undefined {
-  let pos = start;
-  for (const a of queue)
-    if (a.type === 'move' && a.targetCell) pos = a.targetCell;
-  return pos;
+/** Melee reach (the server's RulesConfig.MeleeReach): how close a move to a target gets. */
+export const MELEE_REACH = 1;
+
+/** The shortest king-move path from `from` to `to` (diagonal steps first), origin included; mirrors the server's. */
+export function chebyshevPath(from: Position, to: Position): Position[] {
+  const path = [from];
+  let { x, y } = from;
+  while (x !== to.x || y !== to.y) {
+    x += Math.sign(to.x - x);
+    y += Math.sign(to.y - y);
+    path.push({ x, y });
+  }
+  return path;
 }
 
-/** Cells the queued moves cover, each measured from where the previous one ends. */
-export function moveCellsUsed(start: Position | undefined, queue: readonly PlannedActionEntry[]): number {
+/**
+ * Where a move to a target (Charge) is expected to end, and the cells it covers: toward the
+ * target's current position until within melee reach, at most `cap` cells (mirrors the server's
+ * PlanValidator estimate; the real cell is picked when the round resolves).
+ */
+export function estimateMoveToTarget(from: Position, target: Position, cap: number): { end: Position; cells: number } {
+  const cells = Math.max(0, Math.min(cap, chebyshev(from, target) - MELEE_REACH));
+  const path = chebyshevPath(from, target);
+  return { end: path[Math.min(cells, path.length - 1)], cells };
+}
+
+/**
+ * Walks a queue the way the server's PlanValidator does: where each move (plain or by an ability)
+ * leaves the planner, and how many of the round's movement cells they use. Ability moves off the
+ * budget (Dash) move the planner without using cells; a move to a target is estimated from the
+ * target's current position (`positions`), capped at its maxCells and the budget left.
+ */
+export function walkQueue(
+  start: Position | undefined, queue: readonly PlannedActionEntry[], abilities: readonly AbilityDto[] = [],
+  movementRange = Infinity, positions: Readonly<Record<string, Position>> = {},
+): { position: Position | undefined; cells: number } {
   let pos = start;
   let cells = 0;
   for (const a of queue) {
-    if (a.type !== 'move' || !a.targetCell) continue;
-    if (pos) cells += chebyshev(pos, a.targetCell);
-    pos = a.targetCell;
+    if (a.type === 'move' && a.targetCell) {
+      if (pos) cells += chebyshev(pos, a.targetCell);
+      pos = a.targetCell;
+      continue;
+    }
+    const move = a.type === 'ability' ? abilities.find(x => x.id === a.abilityId)?.move : undefined;
+    if (!move || !pos) continue;
+    if (move.to === 'cell') {
+      if (!a.targetCell) continue;
+      if (move.usesMovementBudget) cells += chebyshev(pos, a.targetCell);
+      pos = a.targetCell;
+    } else {
+      const target = a.targetCombatantId ? positions[a.targetCombatantId] : undefined;
+      if (!target) continue;
+      const cap = move.usesMovementBudget ? Math.min(move.maxCells, Math.max(0, movementRange - cells)) : move.maxCells;
+      const estimate = estimateMoveToTarget(pos, target, cap);
+      if (move.usesMovementBudget) cells += estimate.cells;
+      pos = estimate.end;
+    }
   }
-  return cells;
+  return { position: pos, cells };
+}
+
+/** Where the combatant would stand after its queued moves (ignoring anyone who might block it). */
+export function projectedPosition(
+  start: Position | undefined, queue: readonly PlannedActionEntry[], abilities: readonly AbilityDto[] = [],
+  movementRange = Infinity, positions: Readonly<Record<string, Position>> = {},
+): Position | undefined {
+  return walkQueue(start, queue, abilities, movementRange, positions).position;
+}
+
+/** Cells of the round's movement budget the queued moves cover, each measured from where the previous one ends. */
+export function moveCellsUsed(
+  start: Position | undefined, queue: readonly PlannedActionEntry[], abilities: readonly AbilityDto[] = [],
+  movementRange = Infinity, positions: Readonly<Record<string, Position>> = {},
+): number {
+  return walkQueue(start, queue, abilities, movementRange, positions).cells;
+}
+
+/**
+ * Why a move-to-cell ability (Dash) can't go to `cell` from where the queue's moves end, or null
+ * (mirrors the server's PlanValidator): on the grid, within its maxCells, and within the budget
+ * left if it uses the movement budget.
+ */
+export function abilityCellError(
+  ability: AbilityDto, from: Position, cell: Position, cellsUsed: number, movementRange: number,
+  gridWidth: number, gridHeight: number,
+): string | null {
+  const move = ability.move;
+  if (!move || move.to !== 'cell') return `${ability.name} doesn't take a target cell.`;
+  if (cell.x < 0 || cell.y < 0 || cell.x >= gridWidth || cell.y >= gridHeight) return 'Target cell is out of bounds.';
+  const steps = chebyshev(from, cell);
+  if (steps > move.maxCells) return `${ability.name} moves at most ${move.maxCells} ${move.maxCells === 1 ? 'square' : 'squares'}.`;
+  if (move.usesMovementBudget && cellsUsed + steps > movementRange)
+    return `Moves this round exceed maximum range (${movementRange} squares).`;
+  return null;
 }
 
 /** Text for one queued action, e.g. "Move to (3, 4)", "Melee Attack on Goblin" or "Power Strike on Goblin". */
@@ -153,6 +240,7 @@ export function describeAction(
   if (action.type === 'stabilize') return target ? `Stabilize ${target}` : 'Stabilize';
   if (action.type === 'ability') {
     const name = (action.abilityId && abilityNameOf(action.abilityId)) || action.abilityId || 'Ability';
+    if (action.targetCell) return `${name} to (${action.targetCell.x}, ${action.targetCell.y})`;
     const targets = action.targetCombatantIds?.length
       ? action.targetCombatantIds.map(id => nameOf(id) ?? '?').join(', ')
       : target;
