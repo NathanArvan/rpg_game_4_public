@@ -1,5 +1,5 @@
 <!-- Lobby mode -->
-<div class="lobby" *ngIf="!(encounterActive$ | async)">
+<div class="lobby" *ngIf="!(inCombat$ | async)">
   <h1>RPG Game Lobby</h1>
 
   <app-auth-panel *ngIf="!auth.isLoggedIn()" (authenticated)="onAuthenticated()"></app-auth-panel>
@@ -30,7 +30,7 @@
 
 <!-- Combat mode -->
 <app-combat-layout
-  *ngIf="encounterActive$ | async"
+  *ngIf="inCombat$ | async"
   [isGm]="(isGm$ | async) ?? false"
   [joinCode]="(joinCode$ | async) ?? ''"
   [myUserId]="auth.getUserId()">

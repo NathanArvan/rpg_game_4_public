@@ -73,9 +73,10 @@ public partial class ResolutionServiceTests
         AppDbContext db, Guid sessionId, params (Guid id, string name)[] monsters)
     {
         var encounterId = Guid.NewGuid();
-        var combatants = monsters.Select(m => new EncounterCombatant
+        var combatants = monsters.Select((m, i) => new EncounterCombatant
         {
             Id = m.id,
+            SortOrder = i,
             EncounterId = encounterId,
             UserId = "gm",
             CharacterId = null,
@@ -121,9 +122,10 @@ public partial class ResolutionServiceTests
             new() { Id = playerCombatantId, EncounterId = encounterId, UserId = userId, CharacterId = characterId, CharacterName = "Frodo", CombatantType = "player",
                 Profile = TestProfiles.Values(speed: speed) },
         };
-        combatants.AddRange(monsters.Select(m => new EncounterCombatant
+        combatants.AddRange(monsters.Select((m, i) => new EncounterCombatant
         {
             Id = m.id,
+            SortOrder = i + 1,
             EncounterId = encounterId,
             UserId = "gm",
             CharacterId = null,
@@ -501,7 +503,7 @@ public partial class ResolutionServiceTests
             [
                 new EncounterCombatant { Id = scoutId, EncounterId = encounterId, UserId = "u", CharacterName = "Scout",
                     CombatantType = "player", Profile = TestProfiles.Values(maxHp: 12, speed: 12, damage: "d12") },
-                new EncounterCombatant { Id = goblinId, EncounterId = encounterId, UserId = "u", CharacterName = "Goblin",
+                new EncounterCombatant { Id = goblinId, EncounterId = encounterId, UserId = "u", CharacterName = "Goblin", SortOrder = 1,
                     CombatantType = "monster", IsAiControlled = true, Profile = TestProfiles.Values(maxHp: 10, damage: "d4") },
             ],
         });

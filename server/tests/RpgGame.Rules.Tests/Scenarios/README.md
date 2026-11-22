@@ -130,7 +130,7 @@ A scenario's own `abilities` block adds abilities or **overrides** a library ent
 Target kinds: `combatant` (one chosen target), `combatants` (up to `count` chosen targets, each
 checked on its own: one out of range or already down is wasted, the rest still resolve) and `auto`
 (found when the ability resolves, after the tick's movement: every **standing** combatant matching
-`filter` within `range` of the caster, nearest first, ties by id, at most `count` if given). An
+`filter` within `range` of the caster, nearest first, ties in the order the scenario lists combatants, at most `count` if given). An
 `auto` ability that finds nobody is a use wasted with `no_targets`; its cooldown still starts.
 `includeSelf: true` lets an ally ability target the caster.
 

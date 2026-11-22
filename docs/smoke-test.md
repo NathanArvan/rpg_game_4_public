@@ -24,6 +24,8 @@ npm run test:ui                       # Playwright UI mode: step through, time-t
 
 Set `E2E_BASE_URL` to target something other than `http://localhost:4200` (for example the Angular dev server when the API runs on the host).
 
+**Seeded dice.** `e2e/tests/seeded-dice.spec.ts` asserts exact rolls, so the API must run with `Dice:Seed=1`. `docker-compose.override.yml` (local `docker compose up`) and `docker-compose.e2e.yml` (CI: `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up`) set it. For an API run on the host, set `Dice__Seed=1` (with `ASPNETCORE_ENVIRONMENT=Development`). The API refuses to start with a seed outside the Development and E2E environments.
+
 **What it covers**
 
 | Step | Asserts |

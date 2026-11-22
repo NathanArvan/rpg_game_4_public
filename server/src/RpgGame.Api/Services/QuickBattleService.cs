@@ -32,9 +32,10 @@ public class QuickBattleService(
         };
 
         // The caller owns every row: party combatants are theirs to plan, enemies are run by the AI.
-        var placed = preset.Combatants.Select(p => (Preset: p, Combatant: new EncounterCombatant
+        var placed = preset.Combatants.Select((p, i) => (Preset: p, Combatant: new EncounterCombatant
         {
             Id = Guid.NewGuid(),
+            SortOrder = i, // the preset's order
             UserId = userId,
             CharacterId = null,
             CharacterName = p.Name,

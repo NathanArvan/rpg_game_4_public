@@ -51,6 +51,7 @@ public class AiPlanningServiceTests
         {
             Id = id,
             EncounterId = _encounterId,
+            SortOrder = _db.EncounterCombatants.Count(c => c.EncounterId == _encounterId), // creation order
             UserId = type == "player" ? "player-user" : "gm-user",
             CharacterId = type == "player" ? _heroCharacterId : null,
             CharacterName = name,

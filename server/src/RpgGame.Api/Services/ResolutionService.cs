@@ -48,8 +48,13 @@ public class ResolutionService(
 
         // ----- Resolve (pure) -----
 
+        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr);
+        var roundNumber = activeEncounter?.RoundNumber ?? 1;
+
         var state = loaded.ToRulesState();
-        var outcome = RoundResolver.Resolve(state, plans, dice);
+        // Seeded test dice (Dice:Seed) start afresh each round, so a round's rolls don't depend on earlier ones.
+        var roundDice = dice is RoundSeededDice seeded ? seeded.ForRound(roundNumber) : dice;
+        var outcome = RoundResolver.Resolve(state, plans, roundDice);
         logger.LogInformation("ResolveRound: {TickCount} tick(s) resolved, {DefeatedCount} defeated this round",
             outcome.Ticks.Count, outcome.DefeatedThisRound.Count);
 
@@ -58,8 +63,7 @@ public class ResolutionService(
 
         // ----- Build payload -----
 
-        var activeEncounter = await redisState.GetActiveEncounterAsync(sessionIdStr);
-        var newRoundNumber = (activeEncounter?.RoundNumber ?? 1) + 1;
+        var newRoundNumber = roundNumber + 1;
 
         var updatedCombatants = encounter.Combatants.Select(c =>
         {
@@ -150,25 +154,26 @@ public class ResolutionService(
     // ----- Inbound mapping -----
 
     /// <summary>
-    /// Deserializes Redis plans, preserving Redis order (the engine treats plan order as meaningful).
+    /// Deserializes Redis plans in combatant order (the engine treats plan order as meaningful).
     /// Plans for ids that aren't combatants in this encounter are dropped; PlanningService never
     /// stores those. Unrecognized action types are dropped (PlanningService rejects them too).
     /// </summary>
     private Dictionary<string, IReadOnlyList<PlannedAction>> MapPlans(
         Dictionary<string, string> plannedActionsJson, Dictionary<string, CombatantRecord> records)
     {
+        foreach (var unknown in plannedActionsJson.Keys.Where(id => !records.ContainsKey(id)))
+            logger.LogWarning("ResolveRound: ignoring plan for unknown combatant {CombatantId}", unknown);
+
+        // Plan order decides roll order, result order and same-Speed contested cells, so it follows the
+        // combatants' creation order (records come in SortOrder), not the Redis hash: a hash of long
+        // values iterates in hash order of its keys (random ids), which made rolls unrepeatable.
         var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
-        foreach (var (combatantId, actionJson) in plannedActionsJson)
+        foreach (var combatantId in records.Keys)
         {
+            if (!plannedActionsJson.TryGetValue(combatantId, out var actionJson)) continue;
             logger.LogDebug("ResolveRound: combatant={CombatantId} action={ActionJson}", combatantId, actionJson);
             var array = JsonSerializer.Deserialize<PlannedActionArray>(actionJson, _jsonOptions);
             if (array is null) continue;
-
-            if (!records.ContainsKey(combatantId))
-            {
-                logger.LogWarning("ResolveRound: ignoring plan for unknown combatant {CombatantId}", combatantId);
-                continue;
-            }
 
             var queue = new List<PlannedAction>();
             foreach (var entry in array.Actions)

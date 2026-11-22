@@ -33,7 +33,8 @@ internal static class EncounterStateLoader
     public static async Task<LoadedEncounter> LoadAsync(AppDbContext db, IRedisGameState redisState, Guid encounterId)
     {
         var encounter = await db.Encounters
-            .Include(e => e.Combatants)
+            // In creation order, not by (random) id: AI planning order, and so roll order, follows it.
+            .Include(e => e.Combatants.OrderBy(c => c.SortOrder).ThenBy(c => c.Id))
             .FirstOrDefaultAsync(e => e.Id == encounterId)
             ?? throw new InvalidOperationException($"Encounter {encounterId} not found.");
 

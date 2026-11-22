@@ -149,7 +149,8 @@ public static class RoundResolver
 
     /// <summary>
     /// Targets of an <see cref="TargetKind.Auto"/> ability (ABILITIES.md A4): everyone who passes the
-    /// filter and is within range of the caster right now, nearest first, ties by id (ordinal), at
+    /// filter and is within range of the caster right now, nearest first, ties in the state's combatant
+    /// order (the Api loads combatants in creation order, so this repeats from run to run), at
     /// most <see cref="Targeting.Count"/>. Only standing combatants count, except for a
     /// <see cref="TargetFilter.DownedAlly"/> filter, which looks for Downed ones; nobody is finished
     /// off or revived by accident.
@@ -163,8 +164,7 @@ public static class RoundResolver
             .Where(c => round.Status[c.Id] == wanted
                         && Relations.Matches(caster, c, targeting)
                         && round.WithinRange(casterId, c.Id, targeting.Range))
-            .OrderBy(c => from.ChebyshevDistanceTo(round.Positions[c.Id]))
-            .ThenBy(c => c.Id, StringComparer.Ordinal)
+            .OrderBy(c => from.ChebyshevDistanceTo(round.Positions[c.Id])) // stable: ties keep the state's order
             .Select(c => c.Id);
         return (targeting.Count is { } n ? found.Take(n) : found).ToList();
     }

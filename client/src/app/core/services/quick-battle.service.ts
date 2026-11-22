@@ -21,8 +21,10 @@ export class QuickBattleService {
   /** Starts a fresh battle from the preset, replacing whatever is on screen. */
   async start(presetId: string): Promise<void> {
     await this.hub.connect();
-    // Clear first: EncounterStarted for the new battle can arrive before the call returns.
-    this.store.dispatch([new ClearEncounter(), new ClearFeed()]);
+    // Clear first: EncounterStarted for the new battle can arrive before the call returns. Dropping the
+    // old battle's session too keeps the combat screen down (the lobby shows it only once a join code is
+    // known), so nothing can be planned against the previous battle's join code in that gap.
+    this.store.dispatch([new ClearEncounter(), new ClearFeed(), new LeaveQuickBattle()]);
     const session = await this.hub.startQuickBattle(presetId);
     this.store.dispatch(new SetQuickBattleSession(
       session.campaignId, session.gameSessionId, session.joinCode, session.presetId));

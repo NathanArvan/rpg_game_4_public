@@ -84,7 +84,8 @@ builder.Services.AddSingleton<IRedisGameState, RedisGameState>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IEncounterService, EncounterService>();
 builder.Services.AddScoped<IPlanningService, PlanningService>();
-builder.Services.AddSingleton<IDiceRoller, RandomDice>();
+// RandomDice, or seeded dice for E2E (Dice:Seed; Development and E2E only).
+builder.Services.AddSingleton(DiceSetup.Create(builder.Configuration, builder.Environment));
 builder.Services.AddScoped<IResolutionService, ResolutionService>();
 builder.Services.AddSingleton<IPlanningTimer, PlanningTimerService>();
 builder.Services.AddScoped<IRoundOrchestrator, RoundOrchestrator>();

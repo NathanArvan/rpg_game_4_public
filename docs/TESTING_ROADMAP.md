@@ -2,7 +2,7 @@
 
 > **Purpose:** Planned improvements to the test suite, so it keeps up with the detail abilities are adding and with the next slices (3B.4 conditions, 3B.6 reactions, 3M maps, 3C hidden information). Hand an item to Claude Code alongside `CLAUDE.md`. Each item says what's wrong today, what to build, when it should land relative to the roadmap, and how to know it's done.
 >
-> **Status (2026-11-22):** items 1–5 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders; shared client/server plan-validation cases). Items 6–7 are open.
+> **Status (2026-11-22):** items 1–6 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders; shared client/server plan-validation cases; seeded dice for E2E). Item 7 is open.
 
 ---
 
@@ -14,7 +14,7 @@
 | Api services (xUnit + Moq + EF InMemory) | ~222 tests | ~8 s | Characterization tests pin feed text, roll order and write order | Redis and the hub are mocked (covered by the integration layer) |
 | Api integration (Testcontainers Postgres + Redis, `WebApplicationFactory` + `HubConnection`) | 37 tests | ~5 s + ~20 s container start | Real Redis keys and formats, whole rounds over the wire with exact rolls, wire JSON vs the client's TS contracts | One user per test so far (no per-player assertions yet) |
 | Client unit tests (Karma) | ~183 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`); contract fixtures come from shared builders | `game-hub.service` has no spec |
-| E2E (Playwright) | 7 tests | ~1.3 min local, ~3.5 min CI | Proves the stack works together | Random dice, tied to preset layouts, awkward to run locally |
+| E2E (Playwright) | 9 tests | ~1.5 min local, ~3.5 min CI | Proves the stack works together; exact outcomes with seeded dice | Tied to preset layouts, awkward to run locally |
 
 Item 3 closed most of the gap between the mocked service tests and E2E (real Redis code, the hub, JSON on the wire). Items 6 and 7 close the rest.
 
@@ -56,19 +56,22 @@ For 3C, add a second `HubClient` in the same session and assert what each one re
 
 A new plan rule is a row (or a few) in the table, plus the rule on each side.
 
+### 6. Seeded dice for E2E ✅
+
+- **Setting.** `Dice:Seed` (env `Dice__Seed`), read by `DiceSetup`. It's honoured only in the Development and E2E environments; anywhere else the API refuses to start. `docker-compose.override.yml` (local) and a new `docker-compose.e2e.yml` (CI: E2E environment on the production-style stack) set it to 1.
+- **Per-round seeding.** `RoundSeededDice.ForRound(n)` gives each round's resolution its own `SeededDice`, so a round's rolls depend only on the seed and round number, not on what other tests or encounters rolled first.
+- **Stable order (the bigger fix).** Seeding alone wasn't enough. The same plan still rolled differently from run to run, because three things followed random combatant GUIDs:
+  - EF loaded an encounter's combatants ordered by Id, so the AI planned in GUID order.
+  - Redis stores the plans hash as a hashtable (its values are longer than 64 bytes), so `HGETALL` returned plans in hash order of their GUID keys.
+  - Auto targets (Cleave) broke distance ties by id.
+
+  Now `EncounterCombatant.SortOrder` (new column and migration) records creation order, combatants load in it, `ResolutionService` hands plans to the resolver in that order, and auto-target ties keep the state's order. This also makes production roll order and same-tick tiebreaks repeatable, where before they were effectively random.
+- **Cold-start race (found on the way).** Quick Battle's `EncounterStarted` arrives before `StartQuickBattle` returns the join code. A fast first click could plan with an empty join code (or, on Restart, the previous battle's), and the server rejected it. The lobby now shows combat only once the join code is known, and starting a battle clears the old session first.
+- **Test.** `e2e/tests/seeded-dice.spec.ts` plays the Abilities preset's Cleave + Mend round and asserts exact feed lines and HP (Goblin 2 10 → 5, Ogre 28 → 21, Scout 5 → 10, Bruiser 13/24). It passed every run, including the first one after an API restart.
+
 ---
 
 ## Open
-
-### 6. Seeded dice for E2E
-
-**Problem.** E2E uses `RandomDice`, so it can only assert that something happened ("a Cleave line exists"), never the outcome. Tests that need a hit, a kill or a revive need lucky rolls or very forgiving presets.
-
-**Build.** A setting such as `Dice:Seed` (or `Dice:Script` for a fixed list) that registers `SeededDice` / `ScriptedDice` instead of `RandomDice`, honoured only in `Development` and a new `E2E` environment, never in Production. `docker-compose.override.yml` and the CI e2e job set it. Optionally a per-preset script for tests that need an exact sequence.
-
-**When.** As soon as an E2E test needs an exact outcome (a revive E2E would).
-
-**Done when.** An E2E test can assert "Goblin 1 goes from 10 to 2" and pass every run.
 
 ### 7. `game-hub.service` spec
 
@@ -85,11 +88,11 @@ A new plan rule is a row (or a few) in the table, plus the rule on each side.
 ## Not planned
 
 - **Coverage percentage targets.** None of the gaps above would show up as low coverage; they're about real infrastructure and cross-boundary agreement.
-- **More E2E tests by default.** Prefer the integration tests (item 3) and seeded dice (item 6) for anything that needs exact outcomes; keep E2E as the smoke test of each slice.
+- **More E2E tests by default.** Prefer the integration tests (item 3) for exact outcomes; when it has to be E2E, seeded dice (item 6) make them exact; keep E2E as the smoke test of each slice.
 
 ## Suggested order
 
 | When | Items |
 |---|---|
 | Before 3B.6 | 7 (hub service spec) |
-| Before 3C | 6 (seeded dice); per-player assertions on the item 3 hub harness |
+| Before 3C | per-player assertions on the item 3 hub harness |
