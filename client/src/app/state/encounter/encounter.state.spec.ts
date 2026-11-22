@@ -15,45 +15,20 @@ import {
   SelectMyCombatant,
   GmSetEnemyPlan,
 } from './encounter.actions';
-import { ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import { ResolutionPayload } from '../../contracts/hub-contracts.generated';
 import { entry } from './plan-queue';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
+import { makeAttack, makeCombatantDto as makeDto, makePayload, makePlanningCombatant, makeTick } from '../../testing/builders';
 
-const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto => ({
-  id: 'c1',
-  userId: 'u1',
-  characterId: 'ch1',
-  characterName: 'Frodo',
-  currentHp: 20,
-  maxHp: 20,
-  combatantType: 'player',
-  isAiControlled: false,
-  profileId: 'bruiser',
-  profileName: 'Bruiser',
-  movementRange: 4,
-  maxAp: 4,
-  abilities: [],
-  ...overrides,
+// Frodo (a 20-HP Bruiser) unless a test says otherwise.
+const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto => makeDto({
+  id: 'c1', userId: 'u1', characterId: 'ch1', characterName: 'Frodo', currentHp: 20, maxHp: 20,
+  profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, ...overrides,
 });
 
-const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {}): PlanningCombatantDto => ({
-  id: 'c1',
-  userId: 'user-1',
-  characterName: 'Frodo',
-  currentHp: 20,
-  maxHp: 20,
-  isDefeated: false,
-  combatantType: 'player',
-  isAiControlled: false,
-  profileId: 'bruiser',
-  profileName: 'Bruiser',
-  movementRange: 4,
-  maxAp: 4,
-  status: 'standing',
-  bleedoutRoundsLeft: 0,
-  abilities: [],
-  cooldowns: {},
-  ...overrides,
+const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {}): PlanningCombatantDto => makePlanningCombatant({
+  id: 'c1', userId: 'user-1', characterName: 'Frodo', currentHp: 20, maxHp: 20,
+  profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, ...overrides,
 });
 
 describe('EncounterState', () => {
@@ -231,32 +206,14 @@ describe('EncounterState', () => {
   });
 
   describe('ResolutionCompleted', () => {
-    const makeResolutionPayload = (overrides: Partial<ResolutionPayload> = {}): ResolutionPayload => ({
-      ticks: [{
-        tickIndex: 0,
-        movements: [],
-        attacks: [{
-          attackerId: 'c2',
-          attackerName: 'Sam',
-          targetId: 'c1',
-          targetName: 'Frodo',
-          attackType: 'melee_attack',
-          hit: true,
-          damage: 5,
-          targetNewHp: 15,
-          targetDefeated: false,
-          wasted: false,
-          feedText: 'Sam strikes Frodo for 5 damage',
-          roll: { d20: 15, accuracy: 0, targetDodge: 10 },
-          wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
-        }],
-        effects: [], abilityUses: [], heals: [],
-      }],
-      newRoundNumber: 2,
-      defeatedCombatantIds: [],
-      updatedCombatants: [],
-      queues: [],
-      endOfRound: [], revivedCombatantIds: [],
+    // Sam hits Frodo for 5 in the only tick.
+    const makeResolutionPayload = (overrides: Partial<ResolutionPayload> = {}): ResolutionPayload => makePayload({
+      ticks: [makeTick({
+        attacks: [makeAttack({
+          attackerId: 'c2', attackerName: 'Sam', targetId: 'c1', targetName: 'Frodo', hit: true, damage: 5, targetNewHp: 15,
+          feedText: 'Sam strikes Frodo for 5 damage', roll: { d20: 15, accuracy: 0, targetDodge: 10 },
+        })],
+      })],
       ...overrides,
     });
 

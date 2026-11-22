@@ -6,71 +6,60 @@ import { EncounterStarted, PlanningPhaseStarted, ClearEncounter, PlayerLockedIn 
 import { MapInitialized } from '../../../../state/map/map.actions';
 import { AddFeedBatch, ClearFeed } from '../../../../state/feed/feed.actions';
 import { ResolutionPlaybackService } from '../../../../core/services/resolution-playback.service';
-import { AbilityDto, CombatantDto, PlanningCombatantDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
+import { AbilityDto, AttackResult, CombatantDto, PlanningCombatantDto, QueuedActionDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
+import {
+  makeAbility, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeTick,
+} from '../../../../testing/builders';
 
 const ENCOUNTER_ID = 'preview-encounter-1';
 const USER_PLAYER = 'user-player-1';
 const USER_MONSTER = 'user-gm';
 
-const POWER_STRIKE: AbilityDto = {
-  id: 'power_strike', name: 'Power Strike', description: 'A heavy melee blow: weapon damage +4.', apCost: 3, cooldown: 2,
-  tags: ['melee'], targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-};
-const FIREBOLT: AbilityDto = {
+// Mock data is built with the test builders, so a contract that grows only needs a new default there.
+const POWER_STRIKE: AbilityDto = makeAbility({
+  id: 'power_strike', name: 'Power Strike', description: 'A heavy melee blow: weapon damage +4.', apCost: 3, cooldown: 2, tags: ['melee'],
+});
+const FIREBOLT: AbilityDto = makeAbility({
   id: 'firebolt', name: 'Firebolt', description: 'A bolt of flame at a target up to 8 cells away: d8 + 1.', apCost: 3, cooldown: 1,
-  tags: ['flame', 'ranged', 'spell'], targeting: { kind: 'combatant', filter: 'enemy', range: 8, count: null, includeSelf: false }, move: null,
-};
+  tags: ['flame', 'ranged', 'spell'], targeting: { range: 8 },
+});
 /** Loadouts (3B.3), and Firebolt shown on cooldown. */
-const CLEAVE: AbilityDto = {
+const CLEAVE: AbilityDto = makeAbility({
   id: 'cleave', name: 'Cleave', description: 'A wide swing that hits every adjacent enemy, each with its own roll.', apCost: 3, cooldown: 2,
-  tags: ['melee'], targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-};
-const TWIN_SHOT: AbilityDto = {
+  tags: ['melee'], targeting: { kind: 'auto' },
+});
+const TWIN_SHOT: AbilityDto = makeAbility({
   id: 'twin_shot', name: 'Twin Shot', description: 'Two quick shots at up to two enemies within 8 cells.', apCost: 3, cooldown: 1,
-  tags: ['ranged'], targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
-};
-const MEND: AbilityDto = {
+  tags: ['ranged'], targeting: { kind: 'combatants', range: 8, count: 2 },
+});
+const MEND: AbilityDto = makeAbility({
   id: 'mend', name: 'Mend', description: 'Heal an ally within 3 cells (or yourself) for d6 + 2.', apCost: 2, cooldown: 2,
-  tags: ['healing'], targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true }, move: null,
-};
-const DASH: AbilityDto = {
+  tags: ['healing'], targeting: { filter: 'ally', range: 3, includeSelf: true },
+});
+const DASH: AbilityDto = makeAbility({
   id: 'dash', name: 'Dash', description: 'Sprint up to 3 cells, on top of your normal movement.', apCost: 1, cooldown: 2,
-  tags: ['movement'], targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
+  tags: ['movement'], targeting: { kind: 'self', filter: 'ally', range: 0 },
   move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
-};
-const CHARGE: AbilityDto = {
+});
+const CHARGE: AbilityDto = makeAbility({
   id: 'charge', name: 'Charge', description: 'Run at an enemy up to 6 cells away and strike: weapon damage, +3 if you covered 2+ cells.', apCost: 3, cooldown: 2,
-  tags: ['melee', 'movement'], targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
+  tags: ['melee', 'movement'], targeting: { range: 6 },
   move: { to: 'target', maxCells: 6, usesMovementBudget: true },
-};
+});
 const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND, DASH, CHARGE], c4: [POWER_STRIKE, CHARGE] };
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
 
 const COMBATANTS_DTO: CombatantDto[] = [
-  { id: 'c1', abilities: ABILITIES['c1'] ?? [], userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, combatantType: 'player', isAiControlled: false, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, maxAp: 4 },
-  { id: 'c2', abilities: ABILITIES['c2'] ?? [], userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, combatantType: 'player', isAiControlled: false, profileId: 'scout', profileName: 'Scout', movementRange: 8, maxAp: 5 },
-  { id: 'c3', abilities: ABILITIES['c3'] ?? [], userId: USER_MONSTER, characterId: '', characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5, maxAp: 4 },
-  { id: 'c4', abilities: ABILITIES['c4'] ?? [], userId: USER_MONSTER, characterId: '', characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false, profileId: 'brute', profileName: 'Brute', movementRange: 4, maxAp: 4 },
-];
+  makeCombatantDto({ id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, maxAp: 4 }),
+  makeCombatantDto({ id: 'c2', userId: 'user-player-2', characterId: 'ch2', characterName: 'Isolde Blade', currentHp: 4, maxHp: 6, profileId: 'scout', profileName: 'Scout', movementRange: 8, maxAp: 5 }),
+  makeCombatantDto({ id: 'c3', userId: USER_MONSTER, characterName: 'Goblin 1', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: true, profileId: 'grunt', profileName: 'Grunt', movementRange: 5, maxAp: 4 }),
+  makeCombatantDto({ id: 'c4', userId: USER_MONSTER, characterName: 'Goblin 2', currentHp: 17, maxHp: 20, combatantType: 'monster', isAiControlled: false, profileId: 'brute', profileName: 'Brute', movementRange: 4, maxAp: 4 }),
+].map(c => ({ ...c, abilities: ABILITIES[c.id] ?? [] }));
 
-const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(c => ({
-  id: c.id,
-  userId: c.userId,
-  characterName: c.characterName,
-  currentHp: c.currentHp,
-  maxHp: c.maxHp,
-  isDefeated: false,
-  combatantType: c.combatantType,
-  isAiControlled: c.isAiControlled,
-  profileId: c.profileId,
-  profileName: c.profileName,
-  movementRange: c.movementRange,
-  maxAp: c.maxAp,
-  status: 'standing',
-  bleedoutRoundsLeft: 0,
-  abilities: ABILITIES[c.id] ?? [],
-  cooldowns: COOLDOWNS[c.id] ?? {},
-}));
+const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(({ characterId, ...c }) =>
+  makePlanningCombatant({ ...c, cooldowns: COOLDOWNS[c.id] ?? {} }));
+
+const NAMES: Record<string, string> = Object.fromEntries(COMBATANTS_DTO.map(c => [c.id, c.characterName]));
 
 const MOCK_POSITIONS: Record<string, { x: number; y: number }> = {
   c1: { x: 8, y: 10 },
@@ -91,6 +80,14 @@ const MOCK_FEED = [
   'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 6 → 4)',
 ];
 
+const queue = (id: string, maxAp: number, ...actions: Partial<QueuedActionDto>[]) =>
+  makeQueue({ combatantId: id, combatantName: NAMES[id], maxAp, actions: actions.map(a => makeQueuedAction(a)) });
+const walk = (id: string, ...cells: [number, number][]) =>
+  makeMove({ combatantId: id, combatantName: NAMES[id], path: cells.map(([x, y]) => ({ x, y })) });
+const strike = (attackerId: string, targetId: string, a: Partial<AttackResult>) =>
+  makeAttack({ attackerId, attackerName: NAMES[attackerId], targetId, targetName: NAMES[targetId], ...a });
+const defends = (id: string) => makeEffect({ combatantId: id, effectType: 'defend', description: `${NAMES[id]} defends` });
+
 /**
  * A three-tick round (3B.2 queues): action i of every queue resolves in tick i.
  *   Zara (4 AP):   move → melee Goblin 1 → defend
@@ -98,71 +95,47 @@ const MOCK_FEED = [
  *   Goblin 1 (4):  ranged Isolde → melee Zara           (done after tick 2)
  *   Goblin 2 (4):  move → melee Zara (out of reach: wasted) → defend
  */
-const MOCK_RESOLUTION: ResolutionPayload = {
+const MOCK_RESOLUTION: ResolutionPayload = makePayload({
   newRoundNumber: 4,
-  defeatedCombatantIds: [],
   updatedCombatants: PLANNING_COMBATANTS,
-  endOfRound: [], revivedCombatantIds: [],
   queues: [
-    { combatantId: 'c1', combatantName: 'Zara Forge', maxAp: 4, actions: [
-      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 12 }, abilityId: null, targetCombatantIds: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null, targetCombatantIds: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
-    ] },
-    { combatantId: 'c2', combatantName: 'Isolde Blade', maxAp: 5, actions: [
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null, targetCombatantIds: null },
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c4', targetCell: null, abilityId: null, targetCombatantIds: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
-    ] },
-    { combatantId: 'c3', combatantName: 'Goblin 1', maxAp: 4, actions: [
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c2', targetCell: null, abilityId: null, targetCombatantIds: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null, targetCombatantIds: null },
-    ] },
-    { combatantId: 'c4', combatantName: 'Goblin 2', maxAp: 4, actions: [
-      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 14 }, abilityId: null, targetCombatantIds: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null, targetCombatantIds: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
-    ] },
+    queue('c1', 4,
+      { type: 'move', apCost: 1, targetCell: { x: 6, y: 12 } },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c3' },
+      { type: 'defend', apCost: 1 }),
+    queue('c2', 5,
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c3' },
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c4' },
+      { type: 'defend', apCost: 1 }),
+    queue('c3', 4,
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c2' },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1' }),
+    queue('c4', 4,
+      { type: 'move', apCost: 1, targetCell: { x: 6, y: 14 } },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1' },
+      { type: 'defend', apCost: 1 }),
   ],
   ticks: [
-    {
+    makeTick({
       tickIndex: 0,
-      abilityUses: [], heals: [],
-      movements: [
-        { combatantId: 'c1', combatantName: 'Zara Forge', path: [{ x: 8, y: 10 }, { x: 7, y: 11 }, { x: 6, y: 12 }], finalPosition: { x: 6, y: 12 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null },
-        { combatantId: 'c4', combatantName: 'Goblin 2', path: [{ x: 6, y: 16 }, { x: 6, y: 15 }, { x: 6, y: 14 }], finalPosition: { x: 6, y: 14 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null },
-      ],
+      movements: [walk('c1', [8, 10], [7, 11], [6, 12]), walk('c4', [6, 16], [6, 15], [6, 14])],
       attacks: [
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c3', targetName: 'Goblin 1', attackType: 'ranged_attack', hit: false, damage: 0, targetNewHp: 17, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c2', targetName: 'Isolde Blade', attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, targetDefeated: false, wasted: false, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        strike('c2', 'c3', { attackType: 'ranged_attack', hit: false, targetNewHp: 17, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 } }),
+        strike('c3', 'c2', { attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 } }),
       ],
-      effects: [],
-    },
-    {
+    }),
+    makeTick({
       tickIndex: 1,
-      abilityUses: [], heals: [],
-      movements: [],
       attacks: [
-        { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
-        { attackerId: 'c2', attackerName: 'Isolde Blade', targetId: 'c4', targetName: 'Goblin 2', attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, targetDefeated: false, wasted: false, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
-        { attackerId: 'c3', attackerName: 'Goblin 1', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
-        { attackerId: 'c4', attackerName: 'Goblin 2', targetId: 'c1', targetName: 'Zara Forge', attackType: 'melee_attack', hit: false, damage: 0, targetNewHp: 8, targetDefeated: false, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", roll: null, wastedReason: 'out_of_melee_reach', targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 },
+        strike('c1', 'c3', { hit: true, damage: 5, targetNewHp: 12, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 } }),
+        strike('c2', 'c4', { attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 } }),
+        strike('c3', 'c1', { hit: false, targetNewHp: 8, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 } }),
+        strike('c4', 'c1', { hit: false, targetNewHp: 8, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", wastedReason: 'out_of_melee_reach' }),
       ],
-      effects: [],
-    },
-    {
-      tickIndex: 2,
-      abilityUses: [], heals: [],
-      movements: [],
-      attacks: [],
-      effects: [
-        { combatantId: 'c1', effectType: 'defend', description: 'Zara Forge defends', targetCombatantId: null, wastedReason: null },
-        { combatantId: 'c2', effectType: 'defend', description: 'Isolde Blade defends', targetCombatantId: null, wastedReason: null },
-        { combatantId: 'c4', effectType: 'defend', description: 'Goblin 2 defends', targetCombatantId: null, wastedReason: null },
-      ],
-    },
+    }),
+    makeTick({ tickIndex: 2, effects: [defends('c1'), defends('c2'), defends('c4')] }),
   ],
-};
+});
 
 @Component({
   selector: 'app-encounter-preview',

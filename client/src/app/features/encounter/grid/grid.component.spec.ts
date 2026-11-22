@@ -9,6 +9,7 @@ import { PlanningCombatantDto, AbilityDto } from '../../../contracts/hub-contrac
 import { MapInitialized } from '../../../state/map/map.actions';
 import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 import { PLAYBACK_TIMING } from '../../../core/services/playback-timeline';
+import { makeAbility, makeAttack, makeMove, makePayload, makePlanningCombatant, makeTick } from '../../../testing/builders';
 
 describe('GridComponent', () => {
   let fixture: ComponentFixture<GridComponent>;
@@ -19,13 +20,10 @@ describe('GridComponent', () => {
   // Quick Battle: the user's ID is on every row, but only the "player" rows are theirs to plan.
   const row = (id: string, name: string, combatantType: string, isDefeated = false, movementRange = 6, maxAp = 4,
     abilities: AbilityDto[] = [], cooldowns: Record<string, number> = {}): PlanningCombatantDto =>
-    ({ id, userId: 'me', characterName: name, currentHp: 10, maxHp: 10, isDefeated, combatantType, isAiControlled: combatantType === 'monster',
-       profileId: 'test', profileName: 'Test', movementRange, maxAp, status: 'standing', bleedoutRoundsLeft: 0, abilities, cooldowns });
+    makePlanningCombatant({ id, characterName: name, isDefeated, combatantType, isAiControlled: combatantType === 'monster',
+      movementRange, maxAp, abilities, cooldowns });
 
-  const powerStrike: AbilityDto = {
-    id: 'power_strike', name: 'Power Strike', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-  };
+  const powerStrike: AbilityDto = makeAbility({ id: 'power_strike', name: 'Power Strike', apCost: 3, cooldown: 2, tags: ['melee'] });
 
   beforeEach(async () => {
     hub.planAction.calls.reset();
@@ -150,7 +148,7 @@ describe('GridComponent', () => {
 
   describe('bleedout (3B.5)', () => {
     const downed = (r: PlanningCombatantDto): PlanningCombatantDto =>
-      ({ ...r, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2, abilities: [], cooldowns: {} });
+      ({ ...r, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2 });
 
     beforeEach(() => {
       store.dispatch(new PlanningPhaseStarted(1, 0, [
@@ -192,15 +190,13 @@ describe('GridComponent', () => {
       store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, goblin: { x: 2, y: 0 } }));
       fixture.detectChanges();
 
-      TestBed.inject(ResolutionPlaybackService).receiveResolution({
-        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
-        ticks: [{
-          tickIndex: 0,
-          movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null }],
-          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 }],
-          effects: [], abilityUses: [], heals: [],
-        }],
-      });
+      TestBed.inject(ResolutionPlaybackService).receiveResolution(makePayload({
+        ticks: [makeTick({
+          movements: [makeMove({ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] })],
+          attacks: [makeAttack({ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser',
+            hit: true, damage: 2, targetNewHp: 8, feedText: 'Goblin hits Bruiser' })],
+        })],
+      }));
       fixture.detectChanges();
       expect(tokenCells()).toEqual(['B@1,0', 'G@2,0']);
 
@@ -267,18 +263,12 @@ describe('GridComponent', () => {
   });
 
   describe('multi-target & healing (3B.3)', () => {
-    const twinShot: AbilityDto = {
-      id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: ['ranged'],
-      targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
-    };
-    const cleave: AbilityDto = {
-      id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-      targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-    };
-    const mend: AbilityDto = {
-      id: 'mend', name: 'Mend', description: '', apCost: 2, cooldown: 2, tags: ['healing'],
-      targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true }, move: null,
-    };
+    const twinShot: AbilityDto = makeAbility({ id: 'twin_shot', name: 'Twin Shot', apCost: 3, cooldown: 1, tags: ['ranged'],
+      targeting: { kind: 'combatants', range: 8, count: 2 } });
+    const cleave: AbilityDto = makeAbility({ id: 'cleave', name: 'Cleave', apCost: 3, cooldown: 2, tags: ['melee'],
+      targeting: { kind: 'auto' } });
+    const mend: AbilityDto = makeAbility({ id: 'mend', name: 'Mend', apCost: 2, cooldown: 2, tags: ['healing'],
+      targeting: { filter: 'ally', range: 3, includeSelf: true } });
 
     beforeEach(() => {
       store.dispatch(new PlanningPhaseStarted(1, 0, [
@@ -348,16 +338,10 @@ describe('GridComponent', () => {
     });
   });
   describe('movement abilities (3B.3)', () => {
-    const dash: AbilityDto = {
-      id: 'dash', name: 'Dash', description: '', apCost: 1, cooldown: 2, tags: ['movement'],
-      targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
-      move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
-    };
-    const charge: AbilityDto = {
-      id: 'charge', name: 'Charge', description: '', apCost: 3, cooldown: 2, tags: ['melee', 'movement'],
-      targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
-      move: { to: 'target', maxCells: 6, usesMovementBudget: true },
-    };
+    const dash: AbilityDto = makeAbility({ id: 'dash', name: 'Dash', apCost: 1, cooldown: 2, tags: ['movement'],
+      targeting: { kind: 'self', filter: 'ally', range: 0 }, move: { to: 'cell', maxCells: 3, usesMovementBudget: false } });
+    const charge: AbilityDto = makeAbility({ id: 'charge', name: 'Charge', apCost: 3, cooldown: 2, tags: ['melee', 'movement'],
+      targeting: { range: 6 }, move: { to: 'target', maxCells: 6, usesMovementBudget: true } });
 
     beforeEach(() => {
       store.dispatch(new PlanningPhaseStarted(1, 0, [
