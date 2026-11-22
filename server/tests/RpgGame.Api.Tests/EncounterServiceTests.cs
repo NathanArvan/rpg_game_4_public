@@ -148,8 +148,15 @@ public class EncounterServiceTests
 
         var service = new EncounterService(db, mockRedis.Object, TestProfiles.Catalog, NullLogger<EncounterService>.Instance);
 
+        // Two combatants already in the fight: the new monster goes after them.
+        db.EncounterCombatants.AddRange(
+            new EncounterCombatant { Id = Guid.Parse(existingCombatantId), EncounterId = encounterId, UserId = gmUserId, SortOrder = 0 },
+            new EncounterCombatant { Id = Guid.Parse(existingCombatantId2), EncounterId = encounterId, UserId = gmUserId, SortOrder = 1 });
+        await db.SaveChangesAsync();
+
         var result = await service.AddMonsterAsync(joinCode, gmUserId, "Goblin", isAiControlled: false);
 
+        Assert.Equal(2, (await db.EncounterCombatants.SingleAsync(c => c.Id == Guid.Parse(result.MonsterDto.Id))).SortOrder);
         Assert.Equal(2, result.SpawnPosition.X);
         Assert.Equal(19, result.SpawnPosition.Y);
         Assert.Equal("monster", result.MonsterDto.CombatantType);
@@ -258,6 +265,11 @@ public class EncounterServiceTests
 
         Assert.True(stored!.Combatants.Single(c => c.Id == goblin.Id.ToString()).IsAiControlled);
         Assert.False(stored.Combatants.Single(c => c.Id == puppet.Id.ToString()).IsAiControlled);
+
+        // Created in order: players, then the staged monsters.
+        Assert.Equal(["Hero", "Goblin", "Puppet"],
+            await db.EncounterCombatants.OrderBy(c => c.SortOrder).Select(c => c.CharacterName).ToListAsync());
+        Assert.Equal([0, 1, 2], await db.EncounterCombatants.OrderBy(c => c.SortOrder).Select(c => c.SortOrder).ToListAsync());
 
         Assert.True(result.Payload.Combatants.Single(c => c.CharacterName == "Goblin").IsAiControlled);
         Assert.True(result.PlanningPayload.Combatants.Single(c => c.CharacterName == "Goblin").IsAiControlled);

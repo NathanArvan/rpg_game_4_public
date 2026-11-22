@@ -89,6 +89,8 @@ public class EncounterService(
             });
         }
 
+        for (var i = 0; i < combatants.Count; i++) combatants[i].SortOrder = i;
+
         var encounter = new Encounter
         {
             Id = Guid.NewGuid(),
@@ -175,10 +177,15 @@ public class EncounterService(
         var encounterGuid = GuidParser.TryParse(activeEncounter.EncounterId)
             ?? throw new GameActionException("Invalid encounter ID.", isActionRejected: true);
 
+        var lastSortOrder = await db.EncounterCombatants
+            .Where(c => c.EncounterId == encounterGuid)
+            .MaxAsync(c => (int?)c.SortOrder) ?? -1;
+
         var monster = new EncounterCombatant
         {
             Id = Guid.NewGuid(),
             EncounterId = encounterGuid,
+            SortOrder = lastSortOrder + 1, // added mid-fight: after everyone else
             UserId = gmUserId,
             CharacterId = null,
             CharacterName = trimmedName,

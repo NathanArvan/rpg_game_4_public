@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Store } from '@ngxs/store';
-import { Observable } from 'rxjs';
+import { Observable, combineLatest, map } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { ConnectedPlayer } from '../../state/session/session.model';
 import { SessionState } from '../../state/session/session.state';
@@ -30,7 +30,12 @@ import { QuickBattleStartComponent } from './quick-battle-start/quick-battle-sta
 })
 export class LobbyComponent {
   players$: Observable<ConnectedPlayer[]>;
-  encounterActive$: Observable<boolean>;
+  /**
+   * Show the combat layout: an encounter is active and the session's join code is known. Quick
+   * Battle's EncounterStarted arrives before StartQuickBattle returns the join code; planning in
+   * that gap would send an empty join code, so the lobby stays up until both are in.
+   */
+  inCombat$: Observable<boolean>;
   joinCode$: Observable<string | null>;
   isGm$: Observable<boolean>;
 
@@ -41,8 +46,9 @@ export class LobbyComponent {
     private store: Store
   ) {
     this.players$ = store.select(SessionState.connectedPlayers);
-    this.encounterActive$ = store.select(EncounterState.active);
     this.joinCode$ = store.select(SessionState.joinCode);
+    this.inCombat$ = combineLatest([store.select(EncounterState.active), this.joinCode$])
+      .pipe(map(([active, joinCode]) => active && !!joinCode));
     this.isGm$ = store.select(SessionState.isGm);
   }
 

@@ -296,6 +296,9 @@ namespace RpgGame.Infrastructure.Data.Migrations
                     b.Property<bool>("IsAiControlled")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");

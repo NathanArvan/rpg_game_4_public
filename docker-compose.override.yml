@@ -30,6 +30,9 @@ services:
   api:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      # Seeded dice (the E2E tests' seed): each round's rolls depend only on the seed and the round
+      # number, so a replayed battle rolls the same. Remove this line for random dice.
+      Dice__Seed: "1"
       DOTNET_gcServer: "0"
       DOTNET_GCConserveMemory: "9"
       DOTNET_GCRetainVM: "0"

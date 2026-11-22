@@ -56,6 +56,16 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
+    public async Task Start_NumbersCombatantsInThePresetsOrder()
+    {
+        await Service().StartAsync("user-1", "skirmish");
+
+        var names = await _db.EncounterCombatants.OrderBy(c => c.SortOrder).Select(c => c.CharacterName).ToListAsync();
+        Assert.Equal(["Bruiser", "Skirmisher", "Scout", "Goblin 1", "Goblin 2", "Goblin 3"], names);
+        Assert.Equal([0, 1, 2, 3, 4, 5], await _db.EncounterCombatants.OrderBy(c => c.SortOrder).Select(c => c.SortOrder).ToListAsync());
+    }
+
+    [Fact]
     public async Task Start_PartyIsTheCallers_EnemiesAreAi_StatsComeFromThePreset()
     {
         await Service().StartAsync("user-1", "skirmish");

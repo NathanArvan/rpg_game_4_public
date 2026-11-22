@@ -32,6 +32,20 @@ describe('QuickBattleService', () => {
     expect(session.isGm).toBeFalse();
   });
 
+  it("restarting drops the old battle's join code while the new one starts", async () => {
+    await service.start('skirmish');
+    let joinCodeDuringStart: string | null | undefined;
+    hub.startQuickBattle.and.callFake(async () => {
+      joinCodeDuringStart = store.snapshot().session.joinCode; // EncounterStarted may arrive here
+      return { joinCode: 'QB5678', campaignId: 'camp2', gameSessionId: 'sess2', presetId: 'skirmish' };
+    });
+
+    await service.start('skirmish');
+
+    expect(joinCodeDuringStart).toBeNull();
+    expect(store.snapshot().session.joinCode).toBe('QB5678');
+  });
+
   it('leaving clears the encounter and the quick battle session', async () => {
     await service.start('skirmish');
     store.dispatch(new EncounterStarted('enc-1', []));

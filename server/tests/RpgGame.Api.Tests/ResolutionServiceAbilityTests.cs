@@ -85,16 +85,14 @@ public partial class ResolutionServiceTests
         var b = s.Monster("Goblin B", (6, 6));
         s.Queue(bruiser, Ability("cleave", null));
 
-        // Targets in distance order, then by id; Bruiser +2 melee. One hits (d8 4), one misses.
-        var firstIsA = string.CompareOrdinal(a, b) < 0;
+        // Targets in distance order, ties in creation order (A before B); Bruiser +2 melee. One hits (d8 4), one misses.
         var result = await s.Run(new ScriptedDice(15, 4, 3));
 
         var tick = Assert.Single(result.Ticks);
         var use = Assert.Single(tick.AbilityUses!);
-        Assert.Equal(firstIsA ? [a, b] : [b, a], use.TargetIds);
-        var (first, second) = firstIsA ? ("Goblin A", "Goblin B") : ("Goblin B", "Goblin A");
+        Assert.Equal([a, b], use.TargetIds);
         Assert.Equal(
-            [$"Bruiser's Cleave hits {first} for 4 damage (HP: 20 → 16)", $"Bruiser's Cleave misses {second}"],
+            ["Bruiser's Cleave hits Goblin A for 4 damage (HP: 20 → 16)", "Bruiser's Cleave misses Goblin B"],
             tick.Attacks.Select(x => x.FeedText));
         Assert.All(tick.Attacks, x => Assert.Equal("cleave", x.AbilityId));
     }

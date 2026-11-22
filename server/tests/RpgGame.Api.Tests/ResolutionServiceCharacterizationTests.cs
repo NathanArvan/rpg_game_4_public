@@ -56,6 +56,7 @@ public partial class ResolutionServiceTests
             var id = Guid.NewGuid();
             _combatants.Add(new EncounterCombatant
             {
+                SortOrder = _combatants.Count, // creation order: plan (roll) order follows it
                 Id = id, EncounterId = EncounterId, UserId = "gm", CharacterId = null,
                 CharacterName = name, CombatantType = "monster",
             });
@@ -78,6 +79,7 @@ public partial class ResolutionServiceTests
             }
             _combatants.Add(new EncounterCombatant
             {
+                SortOrder = _combatants.Count, // creation order: plan (roll) order follows it
                 Id = id, EncounterId = EncounterId, UserId = $"user-{name}", CharacterId = characterId,
                 CharacterName = name, CombatantType = "player", Profile = profile,
             });
@@ -382,21 +384,23 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_RollsConsumedInPlanOrder()
+    public async Task Char_RollsConsumedInCombatantOrder_NotPlanningOrder()
     {
+        // Roll order follows the combatants' creation order (SortOrder), whatever order they planned
+        // in: the Redis hash of plans iterates in hash order of its keys, not insertion order.
         await using var s = new Scene();
         var a = s.Monster("Goblin A", (0, 0));
         var b = s.Monster("Goblin B", (2, 0));
         var c = s.Monster("Goblin C", (1, 0));
-        s.Melee(b, c); // planned first → rolls first
+        s.Melee(b, c); // planned first, but created after A
         s.Melee(a, c);
 
         var r = await s.Run(new ScriptedDice(9, 10, 2));
 
         var attacks = Assert.Single(r.Ticks).Attacks;
-        Assert.Equal(b, attacks[0].AttackerId);
+        Assert.Equal(a, attacks[0].AttackerId);
         Assert.False(attacks[0].Hit);
-        Assert.Equal(a, attacks[1].AttackerId);
+        Assert.Equal(b, attacks[1].AttackerId);
         Assert.Equal(2, attacks[1].Damage);
     }
 
@@ -878,7 +882,7 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
-    public async Task Char_ResultOrder_FollowsPlanOrder()
+    public async Task Char_ResultOrder_FollowsCombatantOrder()
     {
         await using var s = new Scene();
         var a = s.Monster("Goblin A", (0, 0));
@@ -890,7 +894,7 @@ public partial class ResolutionServiceTests
 
         var r = await s.Run(new ScriptedDice());
 
-        Assert.Equal([c, a], Assert.Single(r.Ticks).Movements.Select(m => m.CombatantId));
+        Assert.Equal([a, c], Assert.Single(r.Ticks).Movements.Select(m => m.CombatantId)); // created A, B, C; C planned first
     }
 
     // ----- Bleedout (3B.5) -----

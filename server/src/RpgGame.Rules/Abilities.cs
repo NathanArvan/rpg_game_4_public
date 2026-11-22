@@ -16,7 +16,7 @@ public enum TargetKind
     Combatants,
     /// <summary>
     /// Found when the ability resolves, after the tick's movement: everyone matching the filter within
-    /// range of the caster, nearest first (ties by id), at most <see cref="Targeting.Count"/>.
+    /// range of the caster, nearest first (ties in combatant order), at most <see cref="Targeting.Count"/>.
     /// </summary>
     Auto,
     /// <summary>A grid cell (4.1, reserved).</summary>

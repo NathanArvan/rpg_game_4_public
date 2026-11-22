@@ -12,6 +12,14 @@ public class EncounterCombatant
     public bool IsAiControlled { get; set; }
 
     /// <summary>
+    /// Place in the encounter's combatant list: the order combatants were created in (players, then
+    /// staged monsters; a preset's order; monsters added mid-fight go last). Combatants are always
+    /// loaded in this order, so whatever depends on it (the order AI plans are made in, and with it
+    /// roll order and same-tick tiebreaks) is the same every time rather than following random ids.
+    /// </summary>
+    public int SortOrder { get; set; }
+
+    /// <summary>
     /// Combat values for this encounter, copied from the combatant's preset when it was created.
     /// Null only on rows from before 3B.1 (read as the default profile).
     /// </summary>

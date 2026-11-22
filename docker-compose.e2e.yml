@@ -1,0 +1,10 @@
+# E2E stack (CI, and locally if you like): the production-style base file plus seeded dice,
+# so Playwright tests can assert exact outcomes.
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+# The API honours Dice:Seed only in the Development and E2E environments (it won't start with
+# it anywhere else), so this switches the environment to E2E too.
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: E2E
+      Dice__Seed: "1"

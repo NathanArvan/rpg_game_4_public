@@ -1,5 +1,5 @@
 {
-  "description": "Cleave hits every adjacent enemy, nearest first then by id, with a separate roll each; allies and enemies out of reach are left alone",
+  "description": "Cleave hits every adjacent enemy, nearest first, ties in the order combatants are listed (G2 before G1), with a separate roll each; allies and enemies out of reach are left alone",
   "combatants": [
     { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["cleave"] },
     { "id": "Ally",    "side": "party", "at": [5, 6] },
@@ -10,11 +10,11 @@
   "plans": {
     "Bruiser": ["ability cleave"]
   },
-  "dice": [14, 5, 12, 3],                // G1: hit for 5; G2: hit for 3
+  "dice": [14, 5, 12, 3],                // G2: hit for 5; G1: hit for 3
   "expect": {
-    "hp": { "G1": 15, "G2": 17, "G3": 20, "Ally": 20 },
+    "hp": { "G1": 17, "G2": 15, "G3": 20, "Ally": 20 },
     "hits": [ { "tick": 1, "attacker": "Bruiser" }, { "tick": 1, "attacker": "Bruiser" } ],
-    "abilityUses": [ { "tick": 1, "id": "Bruiser", "ability": "cleave", "targets": ["G1", "G2"] } ],
+    "abilityUses": [ { "tick": 1, "id": "Bruiser", "ability": "cleave", "targets": ["G2", "G1"] } ],
     "cooldowns": { "Bruiser": { "cleave": 2 } }
   }
 }
