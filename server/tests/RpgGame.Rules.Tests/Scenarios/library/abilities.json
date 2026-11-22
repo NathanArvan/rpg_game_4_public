@@ -1,0 +1,37 @@
+{
+  // Shared ability definitions for scenarios. A combatant's "abilities" list can name any of these
+  // without the scenario repeating the definition; a scenario's own "abilities" block overrides an
+  // entry with the same id (e.g. to try other numbers).
+  //
+  // These are test versions of the shipped abilities (server/src/RpgGame.Api/Abilities/abilities.json),
+  // owned by these tests: retuning the shipped file doesn't change them, so scenarios keep testing
+  // mechanics rather than current balance. Change a number here only if every scenario using it
+  // should change too.
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    },
+    {
+      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
+    },
+    {
+      "id": "twin_shot", "name": "Twin Shot", "ap": 3, "cooldown": 1, "tags": ["ranged"],
+      "target": { "kind": "combatants", "filter": "enemy", "range": 8, "count": 2 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
+    },
+    {
+      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2, "tags": ["healing"],
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
+    },
+    {
+      "id": "firebolt", "name": "Firebolt", "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ]
+    }
+  ]
+}

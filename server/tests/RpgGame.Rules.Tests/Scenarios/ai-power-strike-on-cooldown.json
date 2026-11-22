@@ -1,12 +1,5 @@
 {
   "description": "With Power Strike on cooldown, the AI falls back to basic melee attacks",
-  "abilities": [
-    {
-      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
-      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
-    }
-  ],
   "combatants": [
     { "id": "Hero",  "side": "party", "at": [5, 5] },
     { "id": "Brute", "side": "enemy", "at": [5, 6], "abilities": ["power_strike"], "cooldowns": { "power_strike": 1 } }

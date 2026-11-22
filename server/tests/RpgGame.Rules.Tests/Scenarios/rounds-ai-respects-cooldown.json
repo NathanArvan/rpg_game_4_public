@@ -1,0 +1,23 @@
+{
+  "description": "The AI opens with Power Strike in round 1, then sees it cooling down in round 2 and swings twice instead",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "at": [5, 6], "abilities": ["power_strike"] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Brute": ["ai"] },
+      "dice": [12, 6],                   // hit; 6 + 4 = 10
+      "expect": { "plans": { "Brute": "ability power_strike Hero" }, "hp": { "Hero": 10 } }
+    },
+    {
+      "plans": { "Brute": ["ai"] },
+      "dice": [5, 4],                    // two misses
+      "expect": {
+        "plans": { "Brute": ["melee Hero", "melee Hero"] },
+        "events": ["t1 Brute melee Hero: miss", "t2 Brute melee Hero: miss"],
+        "hp": { "Hero": 10 }
+      }
+    }
+  ]
+}

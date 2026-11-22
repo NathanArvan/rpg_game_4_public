@@ -1,12 +1,5 @@
 {
   "description": "AI step 1: it heals the ally below half HP (itself included), not one that's merely scratched",
-  "abilities": [
-    {
-      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2,
-      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
-      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
-    }
-  ],
   "combatants": [
     { "id": "Hero",   "side": "party", "at": [15, 15] },
     { "id": "Shaman", "side": "enemy", "hp": 18, "maxHp": 20, "at": [5, 5], "abilities": ["mend"] },

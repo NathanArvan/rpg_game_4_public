@@ -1,0 +1,31 @@
+{
+  "description": "Downed in round 1, healed back up by Mend in round 2, and planning and attacking again in round 3",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6] },
+    { "id": "Mira",   "side": "party", "at": [5, 3], "abilities": ["mend"] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Goblin": ["melee Hero"] },
+      "dice": [15, 5],
+      "expect": { "status": { "Hero": "downed" } }
+    },
+    {
+      "plans": { "Goblin": ["defend"], "Mira": ["ability mend Hero"] },
+      "dice": [4],                       // d6 4 + 2 = 6
+      "expect": {
+        "events": ["t1 Mira mend Hero: +6, revived"],
+        "revived": ["Hero"],
+        "hp": { "Hero": 6 },
+        "status": { "Hero": "standing" },
+        "bleedout": { "Hero": 0 }
+      }
+    },
+    {
+      "plans": { "Hero": ["melee Goblin"], "Goblin": ["defend"] },
+      "dice": [12, 6],
+      "expect": { "events": ["t1 Hero melee Goblin: hit 6"], "hp": { "Goblin": 14 }, "cooldowns": { "Mira": { "mend": 1 } } }
+    }
+  ]
+}

@@ -1,12 +1,5 @@
 {
   "description": "Cleave with nobody adjacent: the use is wasted (no targets), nothing is rolled, and the cooldown still starts",
-  "abilities": [
-    {
-      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
-      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
-    }
-  ],
   "combatants": [
     { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["cleave"] },
     { "id": "Goblin",  "side": "enemy", "at": [8, 5] }

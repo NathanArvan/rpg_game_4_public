@@ -1,17 +1,5 @@
 {
   "description": "AI step 2: with two heroes adjacent, the brute opens with Cleave rather than Power Strike",
-  "abilities": [
-    {
-      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
-      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
-    },
-    {
-      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
-      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
-    }
-  ],
   "combatants": [
     { "id": "H1",    "side": "party", "at": [5, 6] },
     { "id": "H2",    "side": "party", "at": [6, 5] },

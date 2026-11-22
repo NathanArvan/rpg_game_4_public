@@ -1,0 +1,38 @@
+{
+  "description": "Power Strike (cooldown 2) over four rounds: used in round 1, refused in rounds 2 and 3 without restarting the cooldown, ready again in round 4",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["power_strike"] },
+    { "id": "Goblin",  "side": "enemy", "hp": 40, "at": [1, 0] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Bruiser": ["ability power_strike Goblin"], "Goblin": ["defend"] },
+      "dice": [14, 5],                   // hit; d8 5 + 4 = 9
+      "expect": { "hp": { "Goblin": 31 }, "cooldowns": { "Bruiser": { "power_strike": 2 } } }
+    },
+    {
+      "plans": { "Bruiser": ["ability power_strike Goblin"], "Goblin": ["defend"] },
+      "expect": {
+        "events": ["t1 Bruiser uses power_strike on Goblin (on_cooldown)"],
+        "hp": { "Goblin": 31 },
+        "cooldowns": { "Bruiser": { "power_strike": 1 } }
+      }
+    },
+    {
+      "plans": { "Bruiser": ["ability power_strike Goblin"], "Goblin": ["defend"] },
+      "expect": {
+        "events": ["t1 Bruiser uses power_strike on Goblin (on_cooldown)"],
+        "cooldowns": { "Bruiser": {} }
+      }
+    },
+    {
+      "plans": { "Bruiser": ["ability power_strike Goblin"], "Goblin": ["defend"] },
+      "dice": [12, 3],                   // hit; d8 3 + 4 = 7
+      "expect": {
+        "events": ["t1 Bruiser uses power_strike on Goblin", "t1 Bruiser power_strike Goblin: hit 7"],
+        "hp": { "Goblin": 24 },
+        "cooldowns": { "Bruiser": { "power_strike": 2 } }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "description": "A hero downed in round 1 bleeds for two more rounds and dies at the end of round 3 (the round they fell in doesn't count)",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Goblin": ["melee Hero"] },
+      "dice": [15, 5],
+      "expect": { "events": ["t1 Goblin melee Hero: hit 5, Hero downed"], "status": { "Hero": "downed" }, "bleedout": { "Hero": 2 } }
+    },
+    {
+      "plans": { "Goblin": ["defend"] },
+      "expect": { "events": ["end Hero bleeds, 1 left"], "status": { "Hero": "downed" }, "bleedout": { "Hero": 1 } }
+    },
+    {
+      "plans": { "Goblin": ["defend"] },
+      "expect": { "events": ["end Hero bleeds out"], "status": { "Hero": "dead" } }
+    }
+  ]
+}
