@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <None Include="Scenarios\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Plan-validation cases shared with the client (TESTING_ROADMAP item 5) -->
+    <None Include="..\..\..\contracts\plan-validation-cases.json" Link="plan-validation-cases.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

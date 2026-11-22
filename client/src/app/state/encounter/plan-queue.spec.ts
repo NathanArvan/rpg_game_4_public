@@ -147,7 +147,7 @@ describe('multi-target abilities (3B.3)', () => {
     it('checks a Dash cell like the server (maxCells from where the moves end, on the grid)', () => {
       expect(abilityCellError(dash, { x: 6, y: 0 }, { x: 9, y: 0 }, 6, 6, 20, 20)).toBeNull();
       expect(abilityCellError(dash, { x: 6, y: 0 }, { x: 10, y: 0 }, 6, 6, 20, 20)).toBe('Dash moves at most 3 squares.');
-      expect(abilityCellError(dash, { x: 0, y: 0 }, { x: -1, y: 0 }, 0, 6, 20, 20)).toBe('Target cell is out of bounds.');
+      expect(abilityCellError(dash, { x: 0, y: 0 }, { x: -1, y: 0 }, 0, 6, 20, 20)).toBe('Target cell is out of bounds (0–19, 0–19).');
       const budgeted: AbilityDto = { ...dash, move: { to: 'cell', maxCells: 3, usesMovementBudget: true } };
       expect(abilityCellError(budgeted, { x: 5, y: 0 }, { x: 7, y: 0 }, 5, 6, 20, 20)).toContain('exceed maximum range');
     });
@@ -157,7 +157,8 @@ describe('multi-target abilities (3B.3)', () => {
       expect(abilityTakesCell(charge)).toBeFalse();
       expect(abilityTakesTargets(dash)).toBeFalse();
       expect(targetShapeError(dash, dashTo(1, 0))).toBeNull();
-      expect(targetShapeError(dash, entry('ability', { abilityId: 'dash' }))).toBe('Dash needs a target cell.');
+      // A missing cell is reported with the move (validatePlan), not as a target-shape error.
+      expect(targetShapeError(dash, entry('ability', { abilityId: 'dash' }))).toBeNull();
       expect(targetShapeError(charge, entry('ability', { abilityId: 'charge', targetCombatantId: 'g', targetCell: { x: 1, y: 0 } })))
         .toBe("Charge doesn't take a target cell.");
     });

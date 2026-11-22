@@ -66,18 +66,30 @@ export function canAffordEntry(
 }
 
 /**
+ * Whether the ability is blocked by its cooldown: still cooling down (`left` rounds), or already
+ * queued this round (an ability with a cooldown is once per round). Null if neither.
+ */
+export function cooldownBlock(
+  ability: AbilityDto, queue: readonly PlannedActionEntry[], cooldowns: Readonly<Record<string, number>>,
+): { reason: 'cooldown'; left: number } | { reason: 'once_per_round' } | null {
+  const left = cooldowns[ability.id] ?? 0;
+  if (left > 0) return { reason: 'cooldown', left };
+  if (ability.cooldown > 0 && queue.some(a => a.type === 'ability' && a.abilityId === ability.id)) return { reason: 'once_per_round' };
+  return null;
+}
+
+/**
  * Why the ability can't be added to the queue right now, or null if it can (3B.3; mirrors the
  * server's PlanValidator): on cooldown, already queued (abilities with a cooldown are once per
- * round), or not enough AP left.
+ * round), or not enough AP left. Short text for the ability bar.
  */
 export function abilityUnavailableReason(
   ability: AbilityDto, queue: readonly PlannedActionEntry[], maxAp: number,
   costs: Readonly<Record<string, number>>, abilities: readonly AbilityDto[], cooldowns: Readonly<Record<string, number>>,
 ): string | null {
-  const left = cooldowns[ability.id] ?? 0;
-  if (left > 0) return `On cooldown for ${left} more ${left === 1 ? 'round' : 'rounds'}`;
-  if (ability.cooldown > 0 && queue.some(a => a.type === 'ability' && a.abilityId === ability.id))
-    return 'Already queued this round';
+  const block = cooldownBlock(ability, queue, cooldowns);
+  if (block?.reason === 'cooldown') return `On cooldown for ${block.left} more ${block.left === 1 ? 'round' : 'rounds'}`;
+  if (block?.reason === 'once_per_round') return 'Already queued this round';
   if (apSpent(queue, costs, abilities) + ability.apCost > maxAp) return 'Not enough AP left';
   return null;
 }
@@ -107,8 +119,8 @@ export function targetShapeError(ability: AbilityDto, action: PlannedActionEntry
   const hasOne = !!action.targetCombatantId;
   const listed = action.targetCombatantIds?.length ?? 0;
   const count = ability.targeting.count ?? 1;
+  // A missing cell (Dash) isn't a target-shape error: like the server, validatePlan reports it with the move, after AP.
   if (action.targetCell && !abilityTakesCell(ability)) return `${ability.name} doesn't take a target cell.`;
-  if (!action.targetCell && abilityTakesCell(ability) && !hasOne && listed === 0) return `${ability.name} needs a target cell.`;
   switch (ability.targeting.kind) {
     case 'combatant':
       return !hasOne || listed > 0 ? `${ability.name} needs one target.` : null;
@@ -218,12 +230,100 @@ export function abilityCellError(
 ): string | null {
   const move = ability.move;
   if (!move || move.to !== 'cell') return `${ability.name} doesn't take a target cell.`;
-  if (cell.x < 0 || cell.y < 0 || cell.x >= gridWidth || cell.y >= gridHeight) return 'Target cell is out of bounds.';
+  if (!onGrid(cell, gridWidth, gridHeight)) return outOfBoundsError(gridWidth, gridHeight);
   const steps = chebyshev(from, cell);
   if (steps > move.maxCells) return `${ability.name} moves at most ${move.maxCells} ${move.maxCells === 1 ? 'square' : 'squares'}.`;
   if (move.usesMovementBudget && cellsUsed + steps > movementRange)
     return `Moves this round exceed maximum range (${movementRange} squares).`;
   return null;
+}
+
+/** What {@link validatePlan} needs to know about the planner and the board. */
+export interface PlanFacts {
+  maxAp: number;
+  movementRange: number;
+  abilities: readonly AbilityDto[];
+  /** Abilities on cooldown at the start of planning: id → rounds left. */
+  cooldowns: Readonly<Record<string, number>>;
+  /** Where the planner stands at the start of planning; undefined if unknown. */
+  start: Position | undefined;
+  /** Everyone's position at the start of planning, to estimate moves to a target (Charge). */
+  positions?: Readonly<Record<string, Position>>;
+  gridWidth: number;
+  gridHeight: number;
+  /** AP per basic action type; defaults to {@link DEFAULT_AP_COSTS}. */
+  costs?: Readonly<Record<string, number>>;
+}
+
+/** Result of {@link validatePlan}: the server's PlanCheck. */
+export interface PlanCheck {
+  /** Null when the queue is legal; otherwise the first rule it breaks, in the server's words. */
+  error: string | null;
+  /** AP the queue costs (up to the failing entry when invalid). */
+  ap: number;
+  /** Movement cells the queue's moves use (up to the failing entry when invalid). */
+  cells: number;
+}
+
+/**
+ * The whole-queue check the server's PlanValidator makes, entry by entry in the same order (ability
+ * loadout, cooldown, once per round and target shape → AP budget → moves), built from the helpers
+ * above. Run against the cases in contracts/plan-validation-cases.json together with the server, so
+ * the two can't drift apart unnoticed.
+ */
+export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFacts): PlanCheck {
+  const costs = facts.costs ?? DEFAULT_AP_COSTS;
+  const positions = facts.positions ?? {};
+  const { gridWidth: w, gridHeight: h, movementRange } = facts;
+  let ap = 0;
+  for (let i = 0; i < queue.length; i++) {
+    const action = queue[i];
+    const before = queue.slice(0, i);
+    const walked = walkQueue(facts.start, before, facts.abilities, movementRange, positions);
+    const fail = (error: string): PlanCheck => ({ error, ap, cells: walked.cells });
+
+    const ability = action.type === 'ability' ? facts.abilities.find(a => a.id === action.abilityId) : undefined;
+    if (action.type === 'ability') {
+      if (!ability) return fail(`This combatant doesn't have the ability '${action.abilityId}'.`);
+      const block = cooldownBlock(ability, before, facts.cooldowns);
+      if (block?.reason === 'cooldown')
+        return fail(`${ability.name} is on cooldown for ${block.left} more ${block.left === 1 ? 'round' : 'rounds'}.`);
+      if (block?.reason === 'once_per_round') return fail(`${ability.name} can only be used once per round.`);
+      const shape = targetShapeError(ability, action);
+      if (shape) return fail(shape);
+    }
+
+    ap += entryCost(action, costs, facts.abilities);
+    if (ap > facts.maxAp)
+      return fail(`Not enough AP: this plan costs ${apSpent(queue, costs, facts.abilities)} AP but only ${facts.maxAp} AP are available.`);
+
+    if (ability?.move) {
+      if (!walked.position) return fail('Current position not found.');
+      if (ability.move.to === 'cell') {
+        if (!action.targetCell) return fail(`${ability.name} needs a target cell.`);
+        const cellError = abilityCellError(ability, walked.position, action.targetCell, walked.cells, movementRange, w, h);
+        if (cellError) return fail(cellError);
+      }
+      continue;
+    }
+
+    if (action.type !== 'move') continue;
+    if (!action.targetCell) return fail('Move action requires a target cell.');
+    if (!onGrid(action.targetCell, w, h)) return fail(outOfBoundsError(w, h));
+    if (!walked.position) return fail('Current position not found.');
+    if (walked.cells + chebyshev(walked.position, action.targetCell) > movementRange)
+      return fail(`Moves this round exceed maximum range (${movementRange} squares).`);
+  }
+  return { error: null, ap, cells: walkQueue(facts.start, queue, facts.abilities, movementRange, positions).cells };
+}
+
+function onGrid(cell: Position, gridWidth: number, gridHeight: number): boolean {
+  return cell.x >= 0 && cell.y >= 0 && cell.x < gridWidth && cell.y < gridHeight;
+}
+
+/** The server's message for a cell off the grid. */
+function outOfBoundsError(gridWidth: number, gridHeight: number): string {
+  return `Target cell is out of bounds (0–${gridWidth - 1}, 0–${gridHeight - 1}).`;
 }
 
 /** Text for one queued action, e.g. "Move to (3, 4)", "Melee Attack on Goblin" or "Power Strike on Goblin". */
