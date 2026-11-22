@@ -1,6 +1,6 @@
 # Abilities — Framework Design (3B.3)
 
-> **Status:** Draft. A8 (revive by healing), A9 (prepared reactions get their own slice, 3B.6) and A12 (ley points and resonance move to 3M.5, after 3M.2) were decided on 2026-11-22; the other decisions are recommendations to lock before implementation. Decisions for Slice 3B.3, written so the ability families planned for later (spells, perception, concealment, AoE, conditions, reactions) slot in without reworking `RoundResolver`. Lock this before the 3B.3 implementation PRs start. Implementation plan: `docs/roadmap/SPRINT_3B3.md`.
+> **Status:** ✅ Locked 2026-11-22. A8 (revive by healing), A9 (prepared reactions get their own slice, 3B.6) and A12 (ley points and resonance move to 3M.5, after 3M.2) were chosen explicitly; A3 was amended (team relations go through one function, so non-hostile rival teams can be added later); everything else is locked as first written. Change a decision here (with a note) if implementation shows it doesn't work. Decisions for Slice 3B.3, written so the ability families planned for later (spells, perception, concealment, AoE, conditions, reactions) slot in without reworking `RoundResolver`. Implementation plan: `docs/roadmap/SPRINT_3B3.md`.
 >
 > **Builds on:** `TICK_RESOLUTION.md` (tick loop, phases, targeting, reactions), `DESIGN_SPIKE.md` (HP netting, damage pipeline), `DEFEAT_AND_INCAPACITATION.md` (statuses, Stabilize), `MAGIC_SYSTEM.md` (tags, resonance, ley points).
 
@@ -60,7 +60,7 @@ Nothing here requires restructuring the tick loop. The work is: widen the action
 
 ## Decisions
 
-✅ = recommended, lock as written. ✅ **Decided** = settled on 2026-11-22.
+All decisions are locked (2026-11-22). ✅ **Decided** marks the ones chosen explicitly rather than accepted as recommended.
 
 ### A1. Abilities are data; effects are code ✅
 
@@ -91,7 +91,9 @@ In Rules these are immutable records. `AbilityEffect` is an abstract record with
 
 `CombatantState` gains `Team` (string, default `""`). The Api fills it from `CombatantType` (`party` / `enemy`), as `EnemyAi` and `EncounterEndCheck` already do. `EnemyAi` keeps its `teamById` parameter for now. A later cleanup can switch it to `Team`. Scenario files already have `side`. It starts feeding `Team` too.
 
-Rule: two combatants are **allies** if their teams are equal and non-empty, otherwise **enemies**. (An empty team means "everyone is my enemy", which keeps every current scenario's behaviour.)
+**Relations go through one function.** `Relation(a, b)` returns `Self`, `Ally` or `Enemy`, and every targeting filter, the AI and anything else that asks "is this one hostile?" calls it. Nothing compares `Team` strings directly. For 3B.3 the rule inside it is: same non-empty team → **ally**, otherwise **enemy**. (An empty team means "everyone is my enemy", which keeps every current scenario's behaviour.)
+
+**Deferred: teams that aren't allies but aren't hostile either.** Later there may be several teams in one encounter that aren't all at war, e.g. two rival parties racing for the same objective without fighting. That will add a `Neutral` relation and a per-encounter table of team relations (default: hostile), read only inside `Relation`. Things to settle then: whether `enemy`-filter abilities and `auto` targets skip neutrals (expected: yes, so a Cleave doesn't start a fight), whether a direct attack on a neutral turns the relation hostile, how the AI treats neutrals, and what "winning" means when sides aren't enemies (`EncounterEndCheck`, which ties in with per-preset objectives). Until then, keep `Team` a free string (not a two-value enum) so more than two teams already work.
 
 ### A4. Targeting ✅
 

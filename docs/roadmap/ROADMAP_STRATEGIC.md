@@ -10,7 +10,7 @@
 > - `MAGIC_SYSTEM.md` — ley points, resonance, environmental magic pipeline, implementation sequencing across slices
 > - `DEFEAT_AND_INCAPACITATION.md` — bleedout model (3B.5)
 > - `ELEVATION.md` — height levels, slopes, cliffs, high ground (3M.4; draft, not yet locked)
-> - `ABILITIES.md` — ability model, targeting, effects by phase, healing, cooldowns, how future ability families fit (3B.3; draft, not yet locked)
+> - `ABILITIES.md` — ability model, targeting, effects by phase, healing, cooldowns, how future ability families fit (3B.3; locked)
 
 Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
@@ -88,7 +88,7 @@ Delivers: Each round, characters have an AP budget (`MaxAp` from their combat pr
 
 ### ⬜ Slice 3B.3 — Abilities & Cooldowns
 
-*Status: draft design in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Recommends a JSON ability catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table.*
+*Status: design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
 
 Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Abilities carry resonance tags and the pipeline gets its `resonanceBonus` / `leyBonus` slots (always 0 here); the map side of environmental magic (ley points, resonance profile) is 3M.5 (moved out of 3B.3 in November 2026: it's map content, and 3M.2 introduces map files). The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
@@ -308,7 +308,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.2** (done) — `MaxAp` added to the `EncounterCombatant.Profile` JSONB snapshot (null on older rows, read as the default 4). Migration `AddMaxAp` only updates the model snapshot.
 
-**3B.3** — No new tables (proposed in `ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migration `AddAbilityLoadouts` only updates the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
+**3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migration `AddAbilityLoadouts` only updates the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
 **3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
 
@@ -582,6 +582,7 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 |---|---|---|---|
 | Info sharing model | 3C.2 | Auto-share within fixed range / Manual callout (costs AP) / Full share | Not decided; no Influence stat to lean on, which favors callout |
 | Core stats | After 3C | Six-stat model / fewer stats / no stats (profiles from abilities + gear) | Not decided — see Deferred: Character Stats & Progression |
+| Non-hostile rival teams (e.g. two parties racing for an objective) | When needed (after 3B.3) | `Neutral` relation + per-encounter team relations / none | Deferred; `ABILITIES.md` A3 keeps every hostility check inside `Relation(a, b)` so it can be added there |
 | Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
 | Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Listed on profile preset, snapshotted per combatant (`ABILITIES.md` A2) |
 | Unused prepared actions refund AP? | 3B.6 | Full / partial / none | No refund |

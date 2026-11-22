@@ -18,7 +18,7 @@ Design decisions are in `ABILITIES.md`. Three were settled on 2026-11-22:
 | A9 | Prepared reactions (counterspell, overwatch) in 3B.3? | **No.** Their own slice, **3B.6**, after 3B.4, with opportunity attacks and Disengage |
 | A12 | Ley points & resonance (map side) in 3B.3? | **No.** 3B.3 adds only the ability-side hooks (tags, zero bonus slots, `resonanceScaling` parsed). The map side is **3M.5**, right after 3M.2 |
 
-The rest of `ABILITIES.md` is recommended as written; lock it (or note changes) before PR 1 starts.
+The rest of `ABILITIES.md` was locked as written on the same day, with one amendment to **A3**: all ally/enemy questions go through a single `Relation(a, b)` function, so non-hostile rival teams (a `Neutral` relation) can be added later without touching the targeting code.
 
 ---
 
@@ -50,7 +50,7 @@ New file `Abilities.cs`:
 - `ActionType.Ability`.
 - `PlannedAction` gains `string? AbilityId` and `IReadOnlyList<string>? TargetCombatantIds` (used from PR 2). Factory `PlannedAction.Ability(id, targetId)`.
 - `CombatProfile` gains `IReadOnlyList<AbilityDefinition> Abilities` (default empty) and a lookup helper.
-- `CombatantState` gains `string Team = ""` and `IReadOnlyDictionary<string, int> Cooldowns` (default empty).
+- `CombatantState` gains `string Team = ""` (a free string, not an enum: more than two teams must work) and `IReadOnlyDictionary<string, int> Cooldowns` (default empty).
 
 `RulesConfig`: replace `ApCost(ActionType)` as the cost entry point with `ApCost(PlannedAction, CombatProfile)`: basic actions as now, `Ability` → the definition's `ApCost` (unknown id → throw; the Api validates first). Keep `ApCost(ActionType)` for the `apCosts` payload.
 
@@ -64,7 +64,8 @@ It doesn't check range or teams (that's resolution time, and the Api for teams).
 `RoundResolver`:
 - **Attack phase** gathers basic attacks *and* ability `AttackEffect`s for this tick into one pending list, so they share the same netting batch and dice order (plan order, then target order within an ability). Extract the existing per-attack logic into one function used by both; basic melee/ranged are an attack with `Die = null, Bonus = 0`.
 - `ComputeAttack` takes a `DamageSpec` and accuracy bonus and fills the `abilityModifier` slot (Bonus), applies `Multiplier` before the (still disabled) crit. Add the `resonanceBonus` and `leyBonus` slots (always 0) so the pipeline matches `MAGIC_SYSTEM.md`.
-- **One reach helper** `CanTarget(casterId, targetId, Targeting)`: exists → filter (team) → status → Chebyshev range from current positions. Melee reach for basic attacks goes through it too (`range = MeleeReach`). Comment that 3M.2 adds line of sight here.
+- **`Relation(a, b)`** (Rules, static): `Self` / `Ally` / `Enemy` from `Team` (A3). The only place that compares teams; `CanTarget`, `PlanValidator` and `EnemyAi` call it. A `Neutral` relation is deferred.
+- **One reach helper** `CanTarget(casterId, targetId, Targeting)`: exists → filter (via `Relation`) → status → Chebyshev range from current positions. Melee reach for basic attacks goes through it too (`range = MeleeReach`). Comment that 3M.2 adds line of sight here.
 - An ability whose tick is reached is recorded as used (even if wasted) unless the caster is out. An ability on cooldown or missing from the loadout resolves as a wasted no-op (guard only).
 - **End of round** (next to `ResolveBleedout`): decrement cooldowns, drop zeros, set abilities used this round to their `Cooldown`. Write them into `Next`.
 
@@ -234,7 +235,7 @@ At the end of each PR, as the feature lands:
 - `TICK_RESOLUTION.md`: Decision 2 table gains an "Ability" row (phase per effect); note that a heal resolves in the Attack phase.
 - `Scenarios/README.md`: abilities block, new combatant fields, plan syntax, `expect.cooldowns`, `expect.heals`.
 - `docs/smoke-test.md`: ability steps in the manual test.
-- `ABILITIES.md`: mark locked; note any decisions changed during implementation.
+- `ABILITIES.md`: note any decisions changed during implementation.
 
 (Already done when the decisions were made: the roadmap entries for 3B.6 and 3M.5, `MAGIC_SYSTEM.md` sequencing, and the slice column in `TICK_RESOLUTION.md`'s open questions.)
 

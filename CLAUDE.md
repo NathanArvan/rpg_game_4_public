@@ -14,7 +14,7 @@ Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning)
 - `docs/design/TICK_RESOLUTION.md` — Tick-based resolution loop, path-based movement, action queue schema, opportunity attacks. Supersedes the single-pass phase model in DESIGN_SPIKE.
 - `docs/design/DEFEAT_AND_INCAPACITATION.md` — Slice 3B.5 locked decisions: bleedout at 0 HP (Downed → Stabilize or die after 2 rounds; monsters die at 0 HP by default). Bleedout length and finishing blows to be revisited with character stats.
 - `docs/design/ELEVATION.md` — Slice 3M.4 draft (not locked): integer height levels, slopes/cliffs derived from height difference, high-ground hit/range bonuses, line of sight over terrain.
-- `docs/design/ABILITIES.md` — Slice 3B.3 draft (A8 revive-by-heal, A9 reactions → 3B.6, A12 ley points/resonance → 3M.5 decided; the rest not yet locked): abilities as data (targeting + effects that each resolve in a fixed phase), healing netted with damage, cooldowns, teams in the engine, and how spells, conditions, AoE, reactions and perception fit later.
+- `docs/design/ABILITIES.md` — Slice 3B.3 locked decisions: abilities as data (targeting + effects that each resolve in a fixed phase), healing netted with damage, cooldowns, teams in the engine, and how spells, conditions, AoE, reactions and perception fit later.
 - `docs/design/MAGIC_SYSTEM.md` — Environmental magic layer: ley points, resonance, magic pipeline. Defers internal character magic sources to post-playtesting.
 
 ### Workflow & Testing
