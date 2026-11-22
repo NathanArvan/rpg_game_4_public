@@ -15,7 +15,7 @@ RUN dotnet restore src/RpgGame.Api/RpgGame.Api.csproj
 # Copy source and publish
 COPY src/ src/
 RUN dotnet publish src/RpgGame.Api/RpgGame.Api.csproj \
-    -c Release -o /app/publish
+    -c Release --no-restore -o /app/publish
 
 # Stage 2: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

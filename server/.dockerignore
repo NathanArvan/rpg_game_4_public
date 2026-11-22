@@ -1,0 +1,11 @@
+# Build context for the API image (context: ./server). Keep it to what the Dockerfile copies,
+# and never send host build output: obj/ from the host would overwrite the image's restore.
+**/bin/
+**/obj/
+**/TestResults/
+tests/
+.vs/
+.vscode/
+.idea/
+*.user
+*.swp
