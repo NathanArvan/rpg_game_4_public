@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Rules", "src\RpgGam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Rules.Tests", "tests\RpgGame.Rules.Tests\RpgGame.Rules.Tests.csproj", "{7C004A36-F964-4101-8660-9036CCB7DF58}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpgGame.Api.IntegrationTests", "tests\RpgGame.Api.IntegrationTests\RpgGame.Api.IntegrationTests.csproj", "{E7AF1851-F8EC-49DD-98D9-8000D7C7888B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -52,8 +54,13 @@ Global
 		{7C004A36-F964-4101-8660-9036CCB7DF58}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7C004A36-F964-4101-8660-9036CCB7DF58}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7C004A36-F964-4101-8660-9036CCB7DF58}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E7AF1851-F8EC-49DD-98D9-8000D7C7888B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E7AF1851-F8EC-49DD-98D9-8000D7C7888B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E7AF1851-F8EC-49DD-98D9-8000D7C7888B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E7AF1851-F8EC-49DD-98D9-8000D7C7888B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{E7AF1851-F8EC-49DD-98D9-8000D7C7888B} = {AD22187D-D38C-4190-BAB4-9EF845383A72}
 		{1D6F1D77-977C-4084-B858-5FC1806659C3} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}
 		{4F7CAD90-176C-4812-A458-3470B2C6AAA4} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}
 		{94D89645-7696-4F59-867B-753B2A0A2D22} = {6F9B7E9D-946F-4AE7-AA0A-E92F9870BB3E}

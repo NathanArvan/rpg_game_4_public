@@ -2,7 +2,7 @@
 
 > **Purpose:** Planned improvements to the test suite, so it keeps up with the detail abilities are adding and with the next slices (3B.4 conditions, 3B.6 reactions, 3M maps, 3C hidden information). Hand an item to Claude Code alongside `CLAUDE.md`. Each item says what's wrong today, what to build, when it should land relative to the roadmap, and how to know it's done.
 >
-> **Status (2026-11-22):** items 1 and 2 are done (multi-round scenarios, shared ability library and the event log). Items 3–7 are open.
+> **Status (2026-11-22):** items 1–3 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests). Items 4–7 are open.
 
 ---
 
@@ -11,11 +11,12 @@
 | Layer | Size | Time | Good at | Weak at |
 |---|---|---|---|---|
 | Rules: unit tests + JSON scenarios | ~196 tests, 50 scenarios | ~1 s | Exact dice, readable failures, scenarios without C# | (fixed by items 1–2: several rounds, repeated ability blocks, new checks needing C#) |
-| Api services (xUnit + Moq + EF InMemory) | ~222 tests | ~8 s | Characterization tests pin feed text, roll order and write order | Redis and the hub are always mocked |
+| Api services (xUnit + Moq + EF InMemory) | ~222 tests | ~8 s | Characterization tests pin feed text, roll order and write order | Redis and the hub are mocked (covered by the integration layer) |
+| Api integration (Testcontainers Postgres + Redis, `WebApplicationFactory` + `HubConnection`) | 37 tests | ~5 s + ~20 s container start | Real Redis keys and formats, whole rounds over the wire with exact rolls, wire JSON vs the client's TS contracts | One user per test so far (no per-player assertions yet) |
 | Client unit tests (Karma) | ~164 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`) | `game-hub.service` has no spec; hand-written fixtures break when a contract grows |
 | E2E (Playwright) | 7 tests | ~1.3 min local, ~3.5 min CI | Proves the stack works together | Random dice, tied to preset layouts, awkward to run locally |
 
-The gap is between the mocked service tests and E2E: nothing fast checks the real Redis code, the hub, JSON on the wire, or what each client receives. Items 3, 6 and 7 close it.
+Item 3 closed most of the gap between the mocked service tests and E2E (real Redis code, the hub, JSON on the wire). Items 6 and 7 close the rest.
 
 ---
 
@@ -30,23 +31,20 @@ A scenario can list `"rounds"`, each with its own `plans`, `dice` and `expect`; 
 - `Scenarios/library/abilities.json` holds test versions of the shipped abilities; a scenario's own `abilities` block overrides an entry. The 26 scenarios that pasted the same definitions now use the library. The library is owned by the tests: retuning the server's `abilities.json` doesn't move scenario numbers.
 - Every round's outcome is written as an event log ("t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6, revived", "end Hero bleeds out"). `expect.events` checks lines in order, and failures print the whole log. A new kind of outcome (a condition applied, a push, a reaction firing) needs one line in `ScenarioTests.EventLog` instead of a new `expect` key, and ordered checks are ready for 3B.6.
 
+### 3. Integration tests: real Redis and the hub ✅
+
+`server/tests/RpgGame.Api.IntegrationTests` (needs Docker; Testcontainers starts `postgres:17-alpine` and `redis:7-alpine`). CI runs it as its own step in `build-server`.
+
+- **Redis** (`Redis/`): `RedisGameState` against a real Redis, one class per area (session: players, active encounter, map, pending monsters; planning: plans, lock-ins; combatant: HP, defeated/status/revive, cooldowns). Each test round-trips a read/write pair and pins the key name, Redis type and stored format from the key table in `CLAUDE.md`. `ReviveAsync` is checked to clear both the defeated set and the status entry.
+- **Hub** (`Hub/`): `ApiFactory` runs the real `Program` (migrations included) with `TestDice` (scripted per test), no playback delay, and its own presets (`Presets/it-*.json`, so retuning shipped presets doesn't move the tests). `HubClient` registers a user over REST, connects over WebSockets with the JWT in the query string like the browser, records every broadcast as raw JSON and waits for them. Cases: a Quick Battle round with exact rolls through to the encounter ending (Redis cleared, Postgres `Ended`); an ability rejected over the wire and not stored; a hero downed, healed back up, then planning and locking in the next round.
+- **Wire shape** (`ContractShape`): every broadcast a hub test receives is checked against `client/src/app/contracts/hub-contracts.generated.ts`: no field the client doesn't declare, no declared field missing, null only where the client allows it, through nested contracts, arrays and maps.
+- A renamed Redis key or payload field fails tests in a few seconds (checked by breaking `encounter:{id}:status` and `ResolutionPayload.defeatedCombatantIds`).
+
+For 3C, add a second `HubClient` in the same session and assert what each one receives.
+
 ---
 
 ## Open
-
-### 3. Integration tests: real Redis and the hub
-
-**Problem.** Every Api test mocks `IRedisGameState` with Moq (57 setups in `PlanningServiceTests` alone). `RedisGameState` (282 lines) and `GameHub` (213 lines) have no direct tests. A wrong key name or a serialization mistake passes every unit test; only E2E could catch it, and only for paths E2E plays. The 3B.3 revive is an example: unit tests only check that `ReviveAsync` was called on the mock, and no E2E test revives anyone. Loose mocks also return defaults for anything not set up (`IsDefeatedAsync` → false), which can hide mistakes. 3C (per-player hidden information) can't be tested at all without a hub-level harness.
-
-**Build.**
-- **Redis tests:** a test class per `RedisGameState` area (encounter, planning, lock-ins, defeated/status/revive, cooldowns, HP) against a real Redis via `Testcontainers.Redis` (GitHub's ubuntu runners and the dev sandbox both have Docker). Round-trip each read/write pair, and check that `ReviveAsync` clears both the defeated set and the status entry.
-- **Hub harness:** `WebApplicationFactory<Program>` plus a real `HubConnection` client. Replace `IDiceRoller` with `ScriptedDice`, use a Postgres container (startup runs `MigrateAsync`, which EF InMemory can't), and a Redis container. Program uses top-level statements, so add `public partial class Program;` (or `InternalsVisibleTo`).
-- **First cases:** start a Quick Battle → `PlanAction` → `LockIn` → `ResolutionCompleted` with exact rolls; an ability rejected over the wire; a revive round followed by the revived hero planning next round; a JSON-shape check that `ResolutionCompleted` deserializes into the client contract field names.
-- Keep it in a separate test project (`RpgGame.Api.IntegrationTests`) so `dotnet test tests/RpgGame.Rules.Tests` and the unit tests stay instant. CI runs it in `build-server`.
-
-**When.** Redis tests before 3B.4 (conditions add Redis state). The hub harness before 3C (it's the only place to assert "player A doesn't receive B's hidden data").
-
-**Done when.** A broken Redis key name or a renamed payload field fails a test in under a minute of CI, without E2E.
 
 ### 4. Client test-data builders
 
@@ -74,7 +72,7 @@ A scenario can list `"rounds"`, each with its own `plans`, `dice` and `expect`; 
 
 **Build.** A setting such as `Dice:Seed` (or `Dice:Script` for a fixed list) that registers `SeededDice` / `ScriptedDice` instead of `RandomDice`, honoured only in `Development` and a new `E2E` environment, never in Production. `docker-compose.override.yml` and the CI e2e job set it. Optionally a per-preset script for tests that need an exact sequence.
 
-**When.** With item 3 (both swap `IDiceRoller`) or as soon as an E2E test needs an exact outcome (a revive E2E would).
+**When.** As soon as an E2E test needs an exact outcome (a revive E2E would).
 
 **Done when.** An E2E test can assert "Goblin 1 goes from 10 to 2" and pass every run.
 
@@ -93,13 +91,12 @@ A scenario can list `"rounds"`, each with its own `plans`, `dice` and `expect`; 
 ## Not planned
 
 - **Coverage percentage targets.** None of the gaps above would show up as low coverage; they're about real infrastructure and cross-boundary agreement.
-- **More E2E tests by default.** Prefer items 3 and 6 for anything that needs exact outcomes; keep E2E as the smoke test of each slice.
+- **More E2E tests by default.** Prefer the integration tests (item 3) and seeded dice (item 6) for anything that needs exact outcomes; keep E2E as the smoke test of each slice.
 
 ## Suggested order
 
 | When | Items |
 |---|---|
 | With 3B.3 PR 3 | 4 (builders), 5 (shared plan cases) |
-| Before 3B.4 | 3a (Redis tests) |
 | Before 3B.6 | 7 (hub service spec) |
-| Before 3C | 3b (hub harness), 6 (seeded dice) |
+| Before 3C | 6 (seeded dice); per-player assertions on the item 3 hub harness |
