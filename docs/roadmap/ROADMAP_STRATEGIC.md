@@ -8,6 +8,8 @@
 > - `DESIGN_SPIKE.md` — conflict resolution model, mutual kills, HP netting, damage pipeline, placeholder stat values for 3A
 > - `TICK_RESOLUTION.md` — tick-based resolution loop, path-based movement, reactive action framework, action queue schema, opportunity attacks & disengage
 > - `MAGIC_SYSTEM.md` — ley points, resonance, environmental magic pipeline, implementation sequencing across slices
+> - `DEFEAT_AND_INCAPACITATION.md` — bleedout model (3B.5)
+> - `ELEVATION.md` — height levels, slopes, cliffs, high ground (3M.4; draft, not yet locked)
 
 Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
@@ -47,7 +49,7 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 *Scope note (November 2026):* Character stats and progression are **deferred** (see [Deferred: Character Stats & Progression](#deferred-character-stats--progression)). Phase 3B and 3C build against **combat profiles**: hand-authored bundles of derived combat values (HP, movement, accuracy, dodge, damage, AP, vision, …). The rules engine only ever consumes derived values, so whatever later produces them (six core stats, equipment, abilities, or a mix) is a mapping layer in the Api and doesn't touch `RoundResolver`. Building items, abilities, and conditions first should make it clearer what stats, if any, need to do.
 
-*Execution order:* 3B.0 → 3B.1 → 3B.2 → 3B.5 → 3B.3 → 3B.4 (3B.2 was pulled ahead of 3B.5 in November 2026). Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
+*Execution order:* 3B.0 → 3B.1 → 3B.2 → 3B.5 → 3B.3 → 3B.4, then Phase 3M (maps & terrain), then 3C (3B.2 was pulled ahead of 3B.5 in November 2026; 3M was inserted before 3C in November 2026). Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
 
 ### ✅ Slice 3B.0 — Manual Testing Spike
 
@@ -87,6 +89,8 @@ Delivers: Each round, characters have an AP budget (`MaxAp` from their combat pr
 
 Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Environmental magic (ley points and resonance) also lands in this slice — abilities need resonance to be meaningful. See `MAGIC_SYSTEM.md` for the full design. The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
+*Map note:* abilities ship before walls (3M.2), so ability range checks are distance-only at first. Keep the range check in one place in `RoundResolver` so 3M.2 can add line of sight there, and 3M.4 the high-ground range bonus.
+
 ### ⬜ Slice 3B.4 — Conditions & Status Effects
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
@@ -100,13 +104,58 @@ Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed
 
 ---
 
+## Phase 3M — Maps & Terrain
+
+*Goal: The battlefield becomes part of the tactics. Maps can be bigger than the screen, and their shape (walls, buildings, terrain types, high ground) changes how combatants move, see and fight.*
+
+*Why before 3C (decided November 2026):* per-player vision (3C.1) needs line of sight, and line of sight needs walls and elevation. Building vision on an empty grid first would mean building it twice. Hidden enemies (3C.3) also need something to hide behind. Later slices build on this phase too: 3D.2 (cover, high ground), 3D.4 (breakable walls, doors), 4.1 (AoE blocked by walls).
+
+*Execution order:* 3M.1 → 3M.2 → 3M.3 → 3M.4. 3M.1 is client-heavy and doesn't depend on the others; 3M.2 is the core (pathfinding); 3M.3 and 3M.4 extend the pathfinder and line of sight from 3M.2.
+
+*Biggest structural change:* movement today is a straight Chebyshev line everywhere (`RoundResolver.ComputeChebyshevPath`, `PlanValidator`'s distance sum, `EnemyAi.ChooseMove`, and the client's `plan-queue.ts` and move highlight). 3M.2 replaces all four with real pathfinding over a cost map. `MovementRange` stops meaning "cells per round" and becomes "movement points per round" (one point per step on open ground, so nothing changes on a flat, empty map).
+
+*Ongoing cost:* each slice teaches `EnemyAi` to use the new map features at a basic level (path around walls, avoid costly terrain where a cheaper route exists, tie-break toward high ground) and adds Rules scenarios with map layers.
+
+### ⬜ Slice 3M.1 — Large Maps & Camera
+
+Delivers: Maps of any size within a cap (e.g. up to 60×60), set per encounter instead of a fixed 20×20. The client grid sits in a viewport with **pan** (drag, keyboard), **zoom** (wheel, buttons) and "center on selected character". During playback the camera follows the action. The static map draws once as a background layer, and per-cell bindings become precomputed sets so large grids stay smooth; tokens, auras and floating text keep their current DOM layer, moved by the same transform. Battle presets choose their grid size; GM encounters keep 20×20 until they can pick a map (3M.2). Spawn placement stops assuming rows 0 and 19.
+
+Not in scope: a minimap (nice-to-have, add if cheap), canvas/WebGL rendering of tokens (only if maps beyond the cap are ever needed).
+
+### ⬜ Slice 3M.2 — Map Format, Walls & Buildings
+
+Delivers: A **map** has a terrain layer, authored as a text grid (e.g. `#` wall, `.` floor), so maps are easy to write by hand and double as test fixtures. Maps are JSON files in the server (like battle presets) that a preset references; the GM picks one when starting an encounter.
+
+- **Walls occupy whole cells** (decided November 2026). A wall cell blocks movement and line of sight. **Buildings** are walls arranged on the map; **doorways** are gaps (open floor cells) in v1. Open / closed / locked doors come later as interactive objects (see 3D.4).
+- **Pathfinding** replaces straight-line movement in the resolver, `PlanValidator`, `EnemyAi` and the client. No cutting corners: a diagonal step past a wall is not allowed. Shortest-path ties break deterministically. The client and server must agree on every path (see Open Design Decisions).
+- **Line of sight** (a pure Rules function): ranged attacks need it, checked post-movement like range. 3C.1 reuses it for vision; 3B.3 abilities gain the check here.
+- Client draws walls and shows the reachable cells (by path, not by distance) when planning a move.
+
+Not in scope: walls between cells (edges), doors, destructible walls (3D.4), a visual map editor.
+
+### ⬜ Slice 3M.3 — Terrain Types
+
+Delivers: Each floor cell has a terrain type with a **movement cost** (e.g. open 1, difficult 2, shallow water 2) and flags (blocks movement / blocks sight). Some terrain blocks movement but not sight (chasm, deep water). The pathfinder and movement budget use costs; the client shows them (fill or pattern, plus a legend). Terrain types are a small fixed list in `RulesConfig` or a catalog file, not a database table.
+
+Not in scope: damaging hazard cells and terrain that changes during the fight (3D.4), terrain-based resonance (stays with `MAGIC_SYSTEM.md`'s zone overrides, 3D.4).
+
+### ⬜ Slice 3M.4 — Elevation
+
+Delivers: Each cell has a height level. The height difference between neighboring cells makes a **slope** (climbable, costs extra going up) or a **cliff** (impassable). **High ground affects combat** (decided November 2026): attack bonus from above, melee only across a slope (not a cliff), extra range when shooting down, and higher ground blocking line of sight. Client shows height (shading, cliff edges, slope marks). Design in `ELEVATION.md` (draft) — lock it before the sprint.
+
+Not in scope: multi-storey buildings, flying, jumping or falling off cliffs, knockback (all listed as later in `ELEVATION.md`).
+
+---
+
 ## Phase 3C — Per-Player Hidden Information
 
 *Goal: Each player's client renders a personalized view based on what their character can perceive. This is a core pillar.*
 
 ### ⬜ Slice 3C.1 — Vision Ranges & Fog of War
 
-Delivers: Each character has a vision range (`VisionRange` on the combat profile). Cells outside range are fogged per-player. Different players see different amounts of the map. Server computes per-player visibility and filters all broadcasts per-recipient. GM always sees everything. Ley points are visible through fog.
+Delivers: Each character has a vision range (`VisionRange` on the combat profile). Cells outside range **or out of line of sight** are fogged per-player. Different players see different amounts of the map. Server computes per-player visibility and filters all broadcasts per-recipient. GM always sees everything. Ley points are visible through fog.
+
+*After 3M:* visibility = within `VisionRange` and in line of sight (the 3M.2 function: walls and higher ground block it). The map layout itself (walls, terrain, heights) is public; only combatants are hidden. Whether high ground extends vision range is an open question in `ELEVATION.md`.
 
 ### ⬜ Slice 3C.2 — Information Sharing
 
@@ -132,7 +181,7 @@ Delivers: Simplest enemy AI. Attack nearest visible threat, flee when HP is low.
 
 ### ⬜ Slice 3D.2 — Tier 2 AI: Tactical Behavior
 
-Delivers: Focus fire on wounded targets, prioritize squishy characters, use terrain for cover, retreat and regroup when casualties are heavy.
+Delivers: Focus fire on wounded targets, prioritize squishy characters, use terrain for cover, retreat and regroup when casualties are heavy. Seeks high ground and breaks line of sight using the 3M map model.
 
 ### ⬜ Slice 3D.3 — Tier 3 AI: Strategic Behavior
 
@@ -141,6 +190,8 @@ Delivers: Coordinated enemy groups that adapt to player patterns over multiple r
 ### ⬜ Slice 3D.4 — Dynamic Environments
 
 Delivers: Environmental effects that change the battlefield during combat — fire spread, destructible terrain, interactive objects. Volatile ley point behaviors (drift, surge, depletion, eruption) also land here. Dynamic resonance changes (fire spread → flame resonance, mass death → death resonance).
+
+*After 3M:* this slice makes the 3M map change mid-fight: walls that break, terrain that changes type, damaging hazard cells. **Doors** (open / closed / locked; an Open/Close action costing AP; locked doors need a key or force) are the first interactive object. They can be split into their own slice and pulled forward if buildings feel incomplete with doorway gaps.
 
 ---
 
@@ -170,13 +221,13 @@ GM defines trigger conditions that spawn enemies or change the environment mid-e
 
 ## Phase 5 — Hardening
 
-Reconnection resilience, Redis distributed locking during resolution, Redis persistence configuration, load testing (5–10 concurrent WebSocket connections), auth audit on GM-only methods, exhaustive resolution edge case testing (mutual kills, movement collisions, targeting defeated combatants, AoE through fog).
+Reconnection resilience, Redis distributed locking during resolution, Redis persistence configuration, load testing (5–10 concurrent WebSocket connections), auth audit on GM-only methods, exhaustive resolution edge case testing (mutual kills, movement collisions, targeting defeated combatants, AoE through fog, paths blocked by combatants in corridors and doorways, line of sight along cell corners and cliff edges), client rendering performance on the largest maps.
 
 ---
 
 ## Deferred: Character Stats & Progression
 
-*Not scheduled. Revisit after Phase 3C (and optionally Slice 4.2) is playable.*
+*Not scheduled. Revisit after Phase 3M and Phase 3C (and optionally Slice 4.2) are playable.*
 
 Covers: whether characters have core stats at all, and if so which ones and how they map to combat profile values; character creation (point-buy or otherwise); ability acquisition (trees, advancement points, milestones); persistent inventory; removing D&D `Race` / `Class` / `Level` / `BaseStats` from `Character`.
 
@@ -198,12 +249,13 @@ Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
 Next        3B.3 Abilities & Cooldowns → 3B.4 Conditions
+Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
-Later       3D.1–3D.4 Adaptive Encounters, remaining Phase 4, Phase 5 hardening
+Later       3D.1–3D.4 Adaptive Encounters (incl. doors), remaining Phase 4, Phase 5 hardening
 ```
 
-Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete, replayable battle on a single battlefield with hard-coded combatants. 3D has light dependencies on 3B/3C and can be interleaved once that battle plays end-to-end.
+Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one complete, replayable battle on hand-authored maps with hard-coded combatants. 3D has light dependencies on 3B/3M/3C and can be interleaved once that battle plays end-to-end. `ELEVATION.md` should be locked before the 3M.4 sprint starts (it can be reviewed while 3B.3–3M.3 are built).
 
 ---
 
@@ -247,6 +299,8 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 
 **3B.0** (done) — `Encounter.EndedAt`; `Encounter.Status` becomes `Ended` when one side is defeated. `EncounterCombatant` gets `IsAiControlled` and nullable preset stat overrides `MaxHp`, `Speed`, `DamageDie` (what 3B.1 combat profiles grow into). Party combatants may have no `Character` row. A separate `Side` column turned out not to be needed: `CombatantType` (`player` / `monster`) already separates party and enemies. Battle presets live as JSON files in the server, not in the database.
 
+**3M.2** — Maps are JSON files in the server (like battle presets), not a table. `Encounter.MapId` (nullable string) records which map an encounter used; the map itself is copied into Redis at encounter start, so retuning a map file never changes a running encounter (same idea as profile snapshots). A persistent `encounter_templates` table stays with 3D.4 / `MAGIC_SYSTEM.md`.
+
 **Deferred (Stats & Progression)** — Rework or remove `Character.BaseStats`, `Race`, `Class`, `Level`; persistent inventory and ability acquisition.
 
 **3D.1** — Add `behavior_tier INT` to monster definitions or `encounter_combatants` (GM-overridable per encounter).
@@ -282,6 +336,14 @@ Phase 3A was the critical path and is done. The goal of 3B + 3C is one complete,
 **3B.3** — Add `abilityCooldowns` JSONB to `character:live` (`{ abilityId: roundsRemaining }`). Add ley point and resonance data to `encounter:map:{encounterId}`: `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 
 **3B.4** — Extend `character:live` conditions array: `{ conditionId, name, roundsRemaining, sourceId, effects }`.
+
+**3M.1** — `encounter:map:{encounterId}` grid dimensions vary per encounter (the fields already exist; the cap is enforced on creation).
+
+**3M.2** — `encounter:map:{encounterId}` gains `mapId` and `terrain` (row strings in the map's text-grid format). Static for the whole encounter until 3D.4.
+
+**3M.3** — No new keys: terrain type codes live in the same `terrain` rows; costs and flags come from the terrain catalog.
+
+**3M.4** — `encounter:map:{encounterId}` gains `heights` (row strings of height digits, same dimensions as `terrain`).
 
 **3C.1** — New key `visibility:{encounterId}:{characterId}` per player, containing their currently visible cell set. Recomputed after each resolution phase.
 
@@ -403,6 +465,7 @@ baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + ley
 | `RoundStarted` | Server → Group | 3A.2 | signals next planning phase |
 | `CombatantDefeated` | Server → Group | 3B.0 | contract existed since 3A; first broadcast in 3B.0 |
 | `EncounterEnded` | Server → Group | 3B.0 | winning side; no further planning phase |
+| `EncounterStarted` (map) | Server → Group | 3M.1–3M.4 | `MapDto` carries grid size (3M.1), `mapId` + `terrain` rows (3M.2), terrain catalog (3M.3), `heights` rows (3M.4). Sent once; the map is static until 3D.4 |
 | `VisibilityUpdated` | Server → Client | 3C.1 | per-player visible cells and revealed/hidden combatants |
 
 Removed from Phase 2: `EndTurn`, `TurnAdvanced`.
@@ -416,7 +479,7 @@ What the rules engine consumes per combatant from 3B.1 on. Values are hand-autho
 | Value | Used by | Added in |
 |---|---|---|
 | `MaxHp` | HP pipeline | 3B.1 |
-| `MovementRange` | Move validation: cells per round, shared by all moves (3B.2) | 3B.1 |
+| `MovementRange` | Move validation: cells per round, shared by all moves (3B.2); movement points per round once terrain costs and slopes exist (3M.3/3M.4) | 3B.1 |
 | `Speed` | Contested-cell priority | 3B.1 |
 | `MeleeAccuracy`, `RangedAccuracy` | Hit check | 3B.1 |
 | `Dodge` | Hit check threshold (d20 + attacker accuracy ≥ target Dodge) | 3B.1 |
@@ -455,8 +518,10 @@ Values that are not blocking decisions — build with these, adjust through play
 | Ally planning visibility | Show target only ("Player X is targeting Enemy B"), not action type | Campaign toggle later |
 | Resolution playback duration | ~3 seconds per round | Skippable if all players click "skip" |
 | Melee range | Adjacent (Chebyshev ≤ 1) | Post-movement |
-| Ranged attack range | Unlimited in 3A | Range limits tied to Precision in 3B |
-| Grid size | 20×20 | Unchanged from Phase 2 |
+| Ranged attack range | Unlimited in 3A | Range limits tied to Precision in 3B; needs line of sight from 3M.2 |
+| Grid size | 20×20 | Per map from 3M.1, capped (e.g. 60×60) |
+| Terrain movement cost | Open 1, difficult 2, shallow water 2 | 3M.3; chasm / deep water impassable |
+| High-ground bonuses | See `ELEVATION.md` | 3M.4 |
 | Movement range | Per combatant (`MovementRange` on the combat profile, 4–8 in the shipped presets) | Was 6 cells Chebyshev for everyone in 3A |
 
 Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
@@ -483,12 +548,16 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Resonance penalties | No penalties, only bonuses (v1) | `MAGIC_SYSTEM.md` | Simplest; add opposing-resonance penalties if testing shows diversity is too safe |
 | Enemy AI | 3-tier system (Instinctive / Tactical / Strategic) | `GAME_DESIGN.md` | Complexity matches narrative fiction; GM can override any tier |
 | Per-player vision | Computed server-side, filtered per-client | `GAME_DESIGN.md` | Server is authority; prevents cheating; Focus stat makes vision meaningful |
+| Defeat model | Bleedout (Downed → Stabilize or die after 2 rounds; monsters die at 0 HP) | `DEFEAT_AND_INCAPACITATION.md` | Creates a rescue decision; fits the tick model |
+| Maps before vision | Phase 3M (maps & terrain) runs between 3B and 3C | This roadmap (Nov 2026) | Vision needs line of sight, which needs walls and elevation; avoids building 3C.1 twice |
+| Wall model | Walls occupy whole cells (not cell edges) | This roadmap (Nov 2026) | Simplest for pathfinding, line of sight and authoring; buildings work fine with cell walls |
+| Doors | Doorways are gaps in v1; open / closed / locked doors later as interactive objects | This roadmap (Nov 2026) | Gaps cost nothing beyond walls; real doors need dynamic map state (3D.4) |
+| High ground | Affects combat, not just movement | This roadmap (Nov 2026); details in `ELEVATION.md` | Makes elevation a tactical objective, like ley points |
 
 ### Open Design Decisions
 
 | Decision | Needed By | Options | Current Lean |
 |---|---|---|---|
-| Defeat model | 3B.5 | Knockout / Last stand / Bleedout | Not decided |
 | Info sharing model | 3C.2 | Auto-share within fixed range / Manual callout (costs AP) / Full share | Not decided; no Influence stat to lean on, which favors callout |
 | Core stats | After 3C | Six-stat model / fewer stats / no stats (profiles from abilities + gear) | Not decided — see Deferred: Character Stats & Progression |
 | Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
@@ -496,4 +565,8 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Unused prepared actions refund AP? | 3B.3 | Full / partial / none | No refund |
 | Multiple prepared reactions on same trigger? | 3B.3 | All fire / only first | All fire (wasted duplicates) |
 | Ranged attacks in melee penalty? | 3B+ | Penalty / no penalty | Penalty (disadvantage) |
-| Player-drawn movement paths? | 3B+ | Server-computed shortest / player-drawn | Server-computed; player-drawn is a UI enhancement |
+| Player-drawn movement paths? | 3B+ | Server-computed shortest / player-drawn | Server-computed; player-drawn is a UI enhancement (more useful once walls and terrain costs make routes differ) |
+| How client and server agree on paths | 3M.2 | TypeScript port of the pathfinder tested against shared JSON fixtures / server returns each planned move's path | TS port with shared fixtures (keeps the instant move preview) |
+| Map size cap | 3M.1 | 40×40 / 60×60 / larger with canvas rendering | 60×60 |
+| Map source for GM encounters | 3M.2 | Pick from map files / blank 20×20 only | Pick from map files (blank stays the default) |
+| Elevation details (levels, slope/cliff rule, combat bonuses, line of sight) | 3M.4 | See `ELEVATION.md` | Draft recommendations in `ELEVATION.md` |
