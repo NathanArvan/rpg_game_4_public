@@ -2,7 +2,7 @@
 
 > **Purpose:** Planned improvements to the test suite, so it keeps up with the detail abilities are adding and with the next slices (3B.4 conditions, 3B.6 reactions, 3M maps, 3C hidden information). Hand an item to Claude Code alongside `CLAUDE.md`. Each item says what's wrong today, what to build, when it should land relative to the roadmap, and how to know it's done.
 >
-> **Status (2026-11-22):** items 1–4 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders). Items 5–7 are open.
+> **Status (2026-11-22):** items 1–5 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders; shared client/server plan-validation cases). Items 6–7 are open.
 
 ---
 
@@ -46,19 +46,19 @@ For 3C, add a second `HubClient` in the same session and assert what each one re
 
 `client/src/app/testing/builders.ts`: `makePayload`, `makeTick`, `makeMove`, `makeAttack`, `makeHeal`, `makeEffect`, `makeAbilityUse`, `makeBleedout`, `makeQueue`, `makeQueuedAction`, `makePlanningCombatant`, `makeCombatantDto`, `makeCombatant` (the NGXS model), `makeAbility` / `makeTargeting`. Each returns a complete object with neutral defaults (names default to ids) and takes `Partial<T>` overrides. Every spec that built resolution payloads, combatants or abilities by hand now uses them (spec-local helpers such as `attack(a, b, hit)` stay, built on the shared builders), and so does the `/preview` sandbox's mock data. Checked by adding a required field to `AttackResult` and `PlanningCombatantDto`: the only compile errors were in `builders.ts`, for both the spec and app builds.
 
+### 5. Shared plan-validation cases (client ⇄ server) ✅
+
+`contracts/plan-validation-cases.json`: a small ability library (only what validation reads) and 59 cases. Each case has an optional profile (AP, movement range), loadout, cooldowns, start cell (or none), positions for moves to a target, a queue in compact text (`"move 3,0"`, `"ability twin_shot [a,b]"`, `"ability dash @9,0"`), and the expected result (`{ ap, cells }`, or `{ error }` with the server's exact message, the first rule broken). Covered: AP, shared movement, grid bounds, loadout, cooldown, once per round, target shapes, Dash / budget cell moves, the Charge estimate, and which rule is reported first.
+
+- Server: `PlanValidatorTests.SharedCase` (a theory, one row per case; the file is linked into `RpgGame.Rules.Tests`).
+- Client: `validatePlan` in `plan-queue.ts` walks the queue in the server's order using the existing helpers (`cooldownBlock`, `targetShapeError`, `entryCost`, `walkQueue`, `abilityCellError`) and returns the server's messages; `plan-validation-cases.spec.ts` runs every case through it.
+- On its first run the table caught two disagreements, now fixed on the client: a Dash with no cell was reported before an AP overrun (the server checks AP first), and `abilityCellError`'s out-of-bounds message differed from the server's.
+
+A new plan rule is a row (or a few) in the table, plus the rule on each side.
+
 ---
 
 ## Open
-
-### 5. Shared plan-validation cases (client ⇄ server)
-
-**Problem.** `state/encounter/plan-queue.ts` mirrors `PlanValidator` by convention only. Every rule needs a twin and a spec on each side, and nothing checks they agree; drift means the UI offers plans the server rejects (or blocks ones it would accept).
-
-**Build.** A JSON table, e.g. `contracts/plan-validation-cases.json`: each case has a profile (AP, movement range, abilities), cooldowns, a start cell, a queue and the expected result (valid / error message). `PlanValidatorTests` runs it as a theory; `plan-queue.spec.ts` runs it through a client `validatePlan` that wraps the existing helpers (`canAffordEntry`, `abilityUnavailableReason`, `targetShapeError`, move budget). Start with the current rules: AP, shared movement, loadout, cooldown, once per round, target shapes.
-
-**When.** Before or with 3B.3 PR 3: movement abilities add validator rules (budget vs off-budget moves, `to: cell` within `maxCells`).
-
-**Done when.** A new plan rule is one table row plus an implementation on each side, and a disagreement fails CI.
 
 ### 6. Seeded dice for E2E
 
@@ -91,6 +91,5 @@ For 3C, add a second `HubClient` in the same session and assert what each one re
 
 | When | Items |
 |---|---|
-| Next | 5 (shared plan cases) |
 | Before 3B.6 | 7 (hub service spec) |
 | Before 3C | 6 (seeded dice); per-player assertions on the item 3 hub harness |

@@ -2,7 +2,7 @@ using RpgGame.Rules;
 
 namespace RpgGame.Rules.Tests;
 
-public class PlanValidatorTests
+public partial class PlanValidatorTests
 {
     private static CombatProfile Profile(int move = 6, int ap = 4) =>
         CombatProfile.Default with { MovementRange = move, MaxAp = ap };
