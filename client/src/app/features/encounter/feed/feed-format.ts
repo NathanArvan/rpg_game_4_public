@@ -32,13 +32,14 @@ export interface FeedLine {
 export type NameSides = ReadonlyMap<string, 'party' | 'enemy'>;
 
 // From ResolutionFeedFormatter (server): "for {damage} damage (HP: {before} → {after})" or "… — defeated!".
-const DAMAGE = String.raw`for \d+ damage(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
+const DAMAGE = String.raw`for \d+ damage(?: \(\+\d+ from moving\))?(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
 const MISS = String.raw`and misses|misses`;
 const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on their feet!)?`;
 // Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
-// or after "uses " / "can't use " and before " on " / " —" / the end.
+// or after "uses " / "can't use " and before " on " / " —" / the end; and in movement lines made by
+// an ability: "moves to (9, 5) with Dash", "stays at (5, 6) (Charge)".
 // (Not the basic "X's attack on …" and "X's stabilize on …" lines.)
-const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)`;
+const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {

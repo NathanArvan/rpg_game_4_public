@@ -27,13 +27,13 @@
       "id": "skirmisher", "name": "Skirmisher", "side": "party",
       "description": "Quick all-rounder that wins races for contested cells.",
       "hp": 16, "move": 6, "speed": 14, "meleeAccuracy": 1, "rangedAccuracy": 1, "dodge": 12, "damage": "d6", "ap": 5,
-      "abilities": ["mend"]
+      "abilities": ["mend", "dash", "charge"]
     },
     {
       "id": "scout", "name": "Scout", "side": "party",
       "description": "Fragile, far-moving and hard to pin down; best at range.",
       "hp": 12, "move": 8, "speed": 12, "meleeAccuracy": 0, "rangedAccuracy": 2, "dodge": 13, "damage": "d4", "ap": 5,
-      "abilities": ["twin_shot"]
+      "abilities": ["twin_shot", "dash"]
     },
     {
       "id": "grunt", "name": "Grunt", "side": "enemy",
@@ -44,7 +44,7 @@
       "id": "brute", "name": "Brute", "side": "enemy",
       "description": "Big, slow and dangerous in melee.",
       "hp": 28, "move": 4, "speed": 6, "meleeAccuracy": 1, "rangedAccuracy": -2, "dodge": 8, "damage": "d10", "ap": 4,
-      "abilities": ["power_strike"]
+      "abilities": ["power_strike", "charge"]
     }
   ]
 }

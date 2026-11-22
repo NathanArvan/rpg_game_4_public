@@ -193,7 +193,8 @@ public class ResolutionService(
             m.Path.Select(p => new PositionDto(p.X, p.Y)).ToList(),
             new PositionDto(m.FinalPosition.X, m.FinalPosition.Y),
             m.WasBlocked,
-            m.BlockedById)).ToList();
+            m.BlockedById,
+            m.AbilityId)).ToList();
 
         var attacks = tick.Attacks.Select(a =>
         {
@@ -210,7 +211,8 @@ public class ResolutionService(
                 RulesWireMapping.ToWire(a.WastedReason),
                 RulesWireMapping.ToWire(a.TargetStatus),
                 a.FinishingBlow,
-                a.AbilityId);
+                a.AbilityId,
+                a.MoveBonus);
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(

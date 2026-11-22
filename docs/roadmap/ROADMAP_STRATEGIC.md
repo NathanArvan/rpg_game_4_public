@@ -86,9 +86,9 @@ Not in scope: the six core stats, point-buy, character creation rework, progress
 
 Delivers: Each round, characters have an AP budget (`MaxAp` from their combat profile) to spend on actions during planning. Moving, attacking, and using abilities all cost AP. Multiple actions can be planned per round. AP resets each round. The tick loop's queue length constraint lifts — this is where the multi-action architecture pays off.
 
-### 🔄 Slice 3B.3 — Abilities & Cooldowns
+### ✅ Slice 3B.3 — Abilities & Cooldowns
 
-*Status: in progress. PR 1 (framework & cooldowns: ability catalog, loadouts on profiles, Power Strike and Firebolt, cooldowns, ability bar, AI uses Power Strike) and PR 2 (multi-target & healing: Cleave, Twin Shot, Mend; heals netted with damage, revive from Downed, AI heals and cleaves) are done. Design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
+*Status: done. PR 1 (framework & cooldowns: ability catalog, loadouts on profiles, Power Strike and Firebolt, cooldowns, ability bar, AI uses Power Strike), PR 2 (multi-target & healing: Cleave, Twin Shot, Mend; heals netted with damage, revive from Downed, AI heals and cleaves) and PR 3 (movement abilities: Dash off the movement budget, Charge moves and strikes in one tick with a bonus, AI charges) are done. Shove (forced movement, a stretch goal) moves to 3B.4. Design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
 
 Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Abilities carry resonance tags and the pipeline gets its `resonanceBonus` / `leyBonus` slots (always 0 here); the map side of environmental magic (ley points, resonance profile) is 3M.5 (moved out of 3B.3 in November 2026: it's map content, and 3M.2 introduces map files). The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
@@ -265,7 +265,7 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Now         3B.3 Abilities & Cooldowns (PR 2 of 3 done)
+Now         3B.4 Conditions & Status Effects (3B.3 Abilities & Cooldowns done)
 Next        3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
 Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
@@ -309,7 +309,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.2** (done) — `MaxAp` added to the `EncounterCombatant.Profile` JSONB snapshot (null on older rows, read as the default 4). Migration `AddMaxAp` only updates the model snapshot.
 
-**3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts` and `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
+**3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts`, `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) and `AddMovementEffects` (PR 3: the move effect and `bonusIfMoved`) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
 **3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
 

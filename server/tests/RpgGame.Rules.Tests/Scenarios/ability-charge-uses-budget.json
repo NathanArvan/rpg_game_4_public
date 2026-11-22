@@ -1,0 +1,14 @@
+{
+  "description": "Charge's cells come out of the movement budget: after walking 4 of 6 cells it only gets 2 more, ends short and the strike is wasted",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "move": 6, "at": [0, 5], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [9, 5] }
+  ],
+  "plans": { "Skirmisher": ["move 4,5", "ability charge Goblin"] },
+  "dice": [],
+  "expect": {
+    "positions": { "Skirmisher": [6, 5] },
+    "wasted": [ { "tick": 2, "attacker": "Skirmisher" } ],
+    "events": [ "t2 Skirmisher moves to 6,5 (charge)", "t2 Skirmisher charge Goblin: wasted out_of_range" ]
+  }
+}

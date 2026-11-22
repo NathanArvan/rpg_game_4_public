@@ -84,4 +84,11 @@ describe('formatFeedLine heals (3B.3)', () => {
     expect(show(formatFeedLine('Zara Forge uses Cleave — no targets in range', sides).segments))
       .toEqual(['[party]Zara Forge', ' uses ', '[ability]Cleave', ' — no targets in range']);
   });
+
+  it('highlights a move bonus with the damage, and the ability in a move line (3B.3)', () => {
+    expect(show(formatFeedLine("Zara Forge's Charge hits Goblin 1 for 7 damage (+3 from moving) (HP: 20 → 13)", sides).segments))
+      .toEqual(['[party]Zara Forge', "'s ", '[ability]Charge', ' hits ', '[enemy]Goblin 1', ' ', '[damage]for 7 damage (+3 from moving) (HP: 20 → 13)']);
+    expect(show(formatFeedLine('Zara Forge moves to (9, 5) with Dash', sides).segments))
+      .toEqual(['[party]Zara Forge', ' moves to (9, 5) with ', '[ability]Dash']);
+  });
 });

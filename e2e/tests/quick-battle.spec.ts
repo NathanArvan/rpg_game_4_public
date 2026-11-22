@@ -168,3 +168,31 @@ test('Abilities: Cleave both adjacent goblins and Mend the hurt Scout (3B.3)', a
     await expect(feedEntries(page).filter({ hasText: new RegExp(`Bruiser's Cleave (hits|misses) ${goblin}\\b`) })).toHaveCount(1, { timeout: 20_000 });
   await expect(feedEntries(page).filter({ hasText: "Skirmisher's Mend heals Scout for" })).toHaveCount(1, { timeout: 20_000 });
 });
+
+test('Abilities: the Scout walks its full range, Dashes 3 more cells and still shoots (3B.3)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Abilities');
+
+  // Scout (11,12): 8 cells of movement and 5 AP. Walk 8 east, Dash 3 south (on top of the budget), shoot.
+  const actionBar = page.locator('.action-bar');
+  await tokenAt(page, 11, 12).click();
+  await expect(actionBar).toContainText('Planning for Scout');
+  await cell(page, 19, 12).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Move to (19, 12)');
+
+  await actionBar.locator('.ability-btn', { hasText: 'Dash' }).click();
+  await expect(page.locator('.armed-hint')).toContainText('Dash: click a highlighted cell');
+  await expect(cell(page, 19, 15)).toHaveClass(/ability-move-range/);
+  await expect(cell(page, 19, 16)).not.toHaveClass(/ability-move-range/);
+  await cell(page, 19, 15).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Dash to (19, 15)');
+
+  // Goblin 3 (14,6) is far away: the click is a ranged attack.
+  await tokenAt(page, 14, 6).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Ranged Attack on Goblin 3');
+  await expect(actionBar.locator('.ap-budget')).toHaveText(/AP 4\/5/);
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expect(feedEntries(page).filter({ hasText: /Scout moves to \(\d+, \d+\) with Dash/ })).toHaveCount(1, { timeout: 20_000 });
+  await expect(feedEntries(page).filter({ hasText: /Scout (shoots at|'s attack on) Goblin 3/ })).toHaveCount(1, { timeout: 20_000 });
+});

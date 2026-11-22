@@ -1,4 +1,4 @@
-import { AttackResult, HealResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, HealResult, MovementResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
 import { wastedLabel } from '../../../core/services/playback-timeline';
 
 /**
@@ -145,18 +145,23 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
           `${name} uses ${use.abilityName}, but there's nobody in reach.`);
         if (use.wastedReason) return slot(i, kind, action.apCost, 'wasted', label,
           `${name} can't use ${use.abilityName} (${wastedLabel(use.wastedReason)}).`);
+        // An ability that moves its user (Dash, Charge, 3B.3) says where it went first.
+        const move = tick.movements.find(r => r.combatantId === q.combatantId && r.abilityId === use.abilityId);
+        const moved = move ? abilityMoveDetail(name, move, nameOf) + ' ' : '';
         const heals = (tick.heals ?? []).filter(h => h.healerId === q.combatantId && h.abilityId === use.abilityId);
         if (heals.length > 0) {
           const outcome = heals.every(h => h.wastedReason) ? 'wasted' : 'healed';
           return slot(i, kind, action.apCost, outcome, label, `${use.abilityName}: ` + heals.map(h => healDetail(name, h)).join(' '));
         }
         const hits = tick.attacks.filter(a => a.attackerId === q.combatantId && a.abilityId === use.abilityId);
+        if (hits.length === 0 && move) return slot(i, kind, action.apCost, move.wasBlocked ? 'blocked' : 'moved', label,
+          `${use.abilityName}: ${moved.trim()}`);
         if (hits.length === 0) return slot(i, kind, action.apCost, 'none', label, `${name} uses ${use.abilityName}.`);
         if (hits.every(a => a.wasted)) return slot(i, kind, action.apCost, 'wasted', label,
-          `${name}'s ${use.abilityName} is wasted (${wastedLabel(hits[0].wastedReason)}).`);
+          `${moved}${name}'s ${use.abilityName} is wasted (${wastedLabel(hits[0].wastedReason)}).`);
         const outcome = hits.some(a => !a.wasted && a.hit) ? 'hit' : 'miss';
         return slot(i, kind, action.apCost, outcome, label,
-          `${use.abilityName}: ` + hits.map(a => a.wasted
+          `${use.abilityName}: ${moved}` + hits.map(a => a.wasted
             ? `${a.targetName}: wasted (${wastedLabel(a.wastedReason)}).`
             : attackDetail(name, a)).join(' '));
       }
@@ -199,7 +204,7 @@ function actionLabel(
   type: string, targetName: string | null, cell: { x: number; y: number } | null, abilityName: string | null = null,
 ): string {
   const action = type === 'ability' ? abilityName ?? 'Ability' : ACTION_NAMES[type] ?? type;
-  if (type === 'move' && cell) return `${action} to (${cell.x}, ${cell.y})`;
+  if ((type === 'move' || type === 'ability') && cell) return `${action} to (${cell.x}, ${cell.y})`;
   return targetName ? `${action} on ${targetName}` : action;
 }
 
@@ -211,6 +216,18 @@ export function healDetail(name: string, h: HealResult): string {
   return `${name} → ${h.targetName}: healed ${h.amount} (${h.targetName} now ${h.targetNewHp} HP${up}).`;
 }
 
+/** "Kestrel runs 3 cells to (5, 6)." / "… is blocked by Goblin after 1 cell, at (5, 7)." for an ability's move (3B.3). */
+function abilityMoveDetail(name: string, m: MovementResult, nameOf: (id: string) => string): string {
+  const cells = m.path.length - 1;
+  const { x, y } = m.finalPosition;
+  const n = `${cells} ${cells === 1 ? 'cell' : 'cells'}`;
+  if (m.wasBlocked) {
+    const by = m.blockedByCombatantId ? ` by ${nameOf(m.blockedByCombatantId)}` : '';
+    return `${name} is blocked${by} after ${n}, at (${x}, ${y}).`;
+  }
+  return cells === 0 ? `${name} doesn't need to move.` : `${name} moves ${n} to (${x}, ${y}).`;
+}
+
 /** "Zara Forge → Goblin 1: rolled 13 + 3 = 16 vs dodge 12, hit for 5 (Goblin 1 now 12 HP)." */
 export function attackDetail(name: string, a: AttackResult): string {
   const roll = a.roll ? `rolled ${a.roll.d20} + ${a.roll.accuracy} = ${a.roll.d20 + a.roll.accuracy} vs dodge ${a.roll.targetDodge}, ` : '';
@@ -218,5 +235,6 @@ export function attackDetail(name: string, a: AttackResult): string {
   if (a.finishingBlow) return `${name} → ${a.targetName}: ${roll}hit, finishing them off.`;
   const after = !a.targetDefeated ? `${a.targetName} now ${Math.max(0, a.targetNewHp)} HP`
     : a.targetStatus === 'downed' ? `${a.targetName} goes down` : `${a.targetName} is defeated`;
-  return `${name} → ${a.targetName}: ${roll}hit for ${a.damage} (${after}).`;
+  const bonus = a.moveBonus > 0 ? `, incl. +${a.moveBonus} from moving` : '';
+  return `${name} → ${a.targetName}: ${roll}hit for ${a.damage}${bonus} (${after}).`;
 }

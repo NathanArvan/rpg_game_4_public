@@ -72,10 +72,38 @@ public sealed record Targeting(
 /// <param name="Die">The die to roll, or null for the caster's own <see cref="CombatProfile.BaseDamage"/> ("weapon").</param>
 /// <param name="Bonus">Flat damage added after the die (the pipeline's abilityModifier slot).</param>
 /// <param name="Multiplier">Applied after the bonus, before a crit.</param>
-public sealed record DamageSpec(DamageDie? Die = null, int Bonus = 0, int Multiplier = 1)
+/// <param name="BonusIfMoved">Extra flat damage when the same activation moved the caster far enough (Charge).</param>
+public sealed record DamageSpec(DamageDie? Die = null, int Bonus = 0, int Multiplier = 1, MovedBonus? BonusIfMoved = null)
 {
     /// <summary>A basic attack: the caster's damage die, nothing added.</summary>
     public static DamageSpec Weapon { get; } = new();
+}
+
+/// <summary>
+/// A conditional damage bonus (ABILITIES.md A6): <see cref="Bonus"/> is added when a move effect of the
+/// same activation took the caster at least <see cref="MinCells"/> cells this tick.
+/// </summary>
+public sealed record MovedBonus(int MinCells, int Bonus);
+
+/// <summary>Where a move effect goes.</summary>
+public enum MoveTo
+{
+    /// <summary>A planned cell (<see cref="PlannedAction.TargetCell"/>).</summary>
+    Cell,
+    /// <summary>
+    /// The free cell in melee reach of the ability's target (its position at the start of the tick's
+    /// Movement phase) that is closest to the caster.
+    /// </summary>
+    Target,
+}
+
+/// <summary>How a move effect travels.</summary>
+public enum MovePath
+{
+    /// <summary>Cell by cell, in lockstep with everyone else's moves (blocking, Speed tiebreaks).</summary>
+    Walk,
+    /// <summary>No path, ignores blockers. Reserved; not implemented yet.</summary>
+    Teleport,
 }
 
 /// <summary>One step of an ability. Each kind resolves in a fixed phase of the tick (ABILITIES.md A5).</summary>
@@ -96,6 +124,22 @@ public sealed record AttackEffect(AttackKind Roll, DamageSpec Damage, int Accura
 /// finishing blow hits it in the same tick. Without this, such targets can't be healed.
 /// </param>
 public sealed record HealEffect(DamageDie? Die, int Bonus = 0, bool CanRevive = true) : AbilityEffect;
+
+/// <summary>
+/// Moves the caster, resolved in the Movement phase together with everyone else's moves (ABILITIES.md
+/// A5, A7). Later effects of the same activation see how many cells it covered
+/// (<see cref="DamageSpec.BonusIfMoved"/>).
+/// </summary>
+/// <param name="MaxCells">At most this many cells.</param>
+/// <param name="UsesMovementBudget">
+/// The cells come out of the round's shared <see cref="CombatProfile.MovementRange"/> (Charge). False:
+/// the ability's own cells, on top of the budget (Dash).
+/// </param>
+public sealed record MoveEffect(
+    MoveTo To,
+    int MaxCells,
+    bool UsesMovementBudget = true,
+    MovePath Path = MovePath.Walk) : AbilityEffect;
 
 /// <param name="Cooldown">Rounds the ability can't be planned after the round it was used (0 = none).</param>
 /// <param name="Tags">Mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …).</param>
@@ -119,6 +163,12 @@ public sealed record AbilityDefinition(
         && Tags.SequenceEqual(other.Tags) && Effects.SequenceEqual(other.Effects);
 
     public override int GetHashCode() => HashCode.Combine(Id, ApCost, Cooldown, Targeting, Effects.Count);
+
+    /// <summary>The ability's move effect, or null if it doesn't move the caster.</summary>
+    public MoveEffect? Move => Effects.OfType<MoveEffect>().FirstOrDefault();
+
+    /// <summary>Whether a planned use needs a <see cref="PlannedAction.TargetCell"/> (a move to a cell).</summary>
+    public bool NeedsCell => Move is { To: MoveTo.Cell };
 }
 
 /// <summary>How one combatant stands toward another (ABILITIES.md A3).</summary>

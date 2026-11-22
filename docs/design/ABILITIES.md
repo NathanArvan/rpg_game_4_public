@@ -22,7 +22,7 @@ Ability families the framework has to support, and when each one lands:
 | Movement + attack | Charge: run at a target and strike it in the same tick, bonus damage if you moved 2+ cells | 3B.3 | Several effects in **different phases** of one tick |
 | Healing | Mend: heal an ally in range for 1d6+2. Can bring a Downed ally back up | 3B.3 | `Heal` effect netted with damage (DESIGN_SPIKE D3) |
 | Spells | Firebolt `[flame, ranged, spell]` | 3B.3 framework, content later | Tags, resonance and ley bonuses on the numeric output (`MAGIC_SYSTEM.md`) |
-| Forced movement | Shove: push the target 2 cells | Stretch in 3B.3, else 3B.4 | Positional change on a target after damage |
+| Forced movement | Shove: push the target 2 cells | 3B.4 (the 3B.3 stretch wasn't built) | Positional change on a target after damage |
 | Buffs, debuffs, damage over time | Battle Cry: allies +2 damage for 2 rounds. Slow | 3B.4 | `ApplyCondition` effect. **All durations go through conditions** |
 | Area of effect on a cell | Fireball: radius 2 around a chosen cell | 4.1 | Cell targeting + shapes |
 | Prepared reactions | Counterspell, Overwatch, Parry | 3B.6 (decision A9) | `activation: "prepared"` + triggers (TICK_RESOLUTION D4) |
@@ -164,6 +164,7 @@ All of a round's ordinary moves share `MovementRange` (3B.2). For ability moveme
 - `PlanValidator` keeps walking the queue in order. A budget move counts toward the total. A `to: "target"` move is estimated from the target's current position (the real distance is known only at resolution, and the resolver caps it).
 - Teleport (no path, ignores blockers) is a future `move` option (`path: "teleport"`). It isn't in 3B.3, but the field is reserved.
 - Movement **debuffs** (Slowed, Rooted) are 3B.4 conditions that change the effective `MovementRange` / `maxCells`.
+- *Added in implementation (PR 3):* an ability with a `move` effect checks its targeting `range` when the move starts; its melee attack then needs melee reach from where the move ended. Otherwise Charge (range 6) could strike from 6 cells away.
 
 ### A8. Healing ✅ (revive: decided)
 
@@ -207,7 +208,7 @@ So 3B.3 builds only the ability side: `tags[]` (including resonance tags), the `
 Per the 3B.0 "ongoing cost" rule. Fixed priority, still deterministic:
 1. Heal (if it has one off cooldown): an ally in range below 50% HP, or Downed.
 2. Multi-target (`auto`): if it would hit 2+ enemies from where it stands.
-3. Charge: if the nearest enemy is beyond a plain walk-then-melee but within charge distance.
+3. Charge: if the nearest enemy is beyond a plain walk-then-melee but within charge distance. *Changed in implementation (PR 3):* since Charge uses the movement budget, it never reaches further than a walk, so the AI charges whenever the nearest enemy isn't adjacent and a ready Charge reaches the cell next to it, instead of walking.
 4. A stronger single-target attack off cooldown instead of a basic melee.
 5. Otherwise today's behaviour.
 

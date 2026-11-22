@@ -1,0 +1,19 @@
+{
+  "description": "A faster goblin steps into the cell the charger was heading for: the charger is blocked one cell short and its strike is wasted",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "speed": 10, "at": [5, 8], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [5, 5] },
+    { "id": "Runner",     "side": "enemy", "speed": 14, "at": [3, 6] }
+  ],
+  "plans": {
+    "Skirmisher": ["ability charge Goblin"],
+    "Runner":     ["move 5,6"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Skirmisher": [5, 7], "Runner": [5, 6] },
+    "blocked": [ { "tick": 1, "id": "Skirmisher" } ],
+    "wasted": [ { "tick": 1, "attacker": "Skirmisher" } ],
+    "events": [ "t1 Skirmisher moves to 5,7 (charge) (blocked by Runner)" ]
+  }
+}

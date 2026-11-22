@@ -49,7 +49,7 @@ public class AbilityTargetValues
 
 public class AbilityEffectValues
 {
-    /// <summary>"attack" or "heal" (3B.3); more kinds later.</summary>
+    /// <summary>"attack", "heal" or "move" (3B.3); more kinds later.</summary>
     public string Kind { get; set; } = "";
     /// <summary>Attack: "melee", "ranged" or "none" (always hits).</summary>
     public string? Roll { get; set; }
@@ -59,11 +59,17 @@ public class AbilityEffectValues
     public AbilityAmountValues? Amount { get; set; }
     /// <summary>Heal: brings a downed or stable target back on their feet.</summary>
     public bool CanRevive { get; set; } = true;
+    /// <summary>Move: "cell" (a planned cell) or "target" (next to the ability's target).</summary>
+    public string? To { get; set; }
+    /// <summary>Move: most cells it covers.</summary>
+    public int MaxCells { get; set; }
+    /// <summary>Move: the cells come out of the round's movement budget (false: on top of it, like Dash).</summary>
+    public bool UsesMovementBudget { get; set; } = true;
 
     public AbilityEffectValues Copy() => new()
     {
         Kind = Kind, Roll = Roll, AccuracyBonus = AccuracyBonus, Damage = Damage?.Copy(), Amount = Amount?.Copy(),
-        CanRevive = CanRevive,
+        CanRevive = CanRevive, To = To, MaxCells = MaxCells, UsesMovementBudget = UsesMovementBudget,
     };
 }
 
@@ -82,6 +88,16 @@ public class AbilityDamageValues
     public string Die { get; set; } = "weapon";
     public int Bonus { get; set; }
     public int Multiplier { get; set; } = 1;
+    /// <summary>Extra damage when the ability's move covered at least <c>MinCells</c> cells (Charge).</summary>
+    public AbilityMovedBonusValues? BonusIfMoved { get; set; }
 
-    public AbilityDamageValues Copy() => new() { Die = Die, Bonus = Bonus, Multiplier = Multiplier };
+    public AbilityDamageValues Copy() => new() { Die = Die, Bonus = Bonus, Multiplier = Multiplier, BonusIfMoved = BonusIfMoved?.Copy() };
+}
+
+public class AbilityMovedBonusValues
+{
+    public int MinCells { get; set; }
+    public int Bonus { get; set; }
+
+    public AbilityMovedBonusValues Copy() => new() { MinCells = MinCells, Bonus = Bonus };
 }

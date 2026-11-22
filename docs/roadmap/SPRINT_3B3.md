@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.3. Hand this to Claude Code alongside `CLAUDE.md`. Design decisions (the ability model, targeting, effects, healing, cooldowns, and how future ability families fit) are in `docs/design/ABILITIES.md`; this doc says what to build, in which PR, and how to test it. For the high-level plan see `ROADMAP_STRATEGIC.md`.
 >
-> **Status:** 🔄 In progress. PR 1 (framework & cooldowns) and PR 2 (multi-target & healing) done; PR 3 not started.
+> **Status:** ✅ Done. PR 1 (framework & cooldowns), PR 2 (multi-target & healing) and PR 3 (movement abilities) done. The stretch goal, `push` (Shove), was not built and moves to 3B.4.
 >
 > **Goal:** Combatants have a fixed loadout of abilities with AP costs, cooldowns, ranges and target rules. Four kinds work end to end: stronger attacks, multi-target attacks, healing, and movement (including move + attack). The resolver runs abilities as data-driven effects, so later families (conditions, AoE, spells, reactions, perception) add effect kinds, not new resolver structure. All of it can be tried in a new **Abilities** Quick Battle against AI enemies that use abilities too.
 
@@ -213,6 +213,16 @@ It doesn't check range or teams (that's resolution time, and the Api for teams).
 ---
 
 ## PR 3 — Movement abilities
+
+*Status: done. Differences from the plan below:*
+- *`DamageSpec.BonusIfMoved` is a `MovedBonus(MinCells, Bonus)` record; `AttackOutcome.MoveBonus` (wire `moveBonus`) reports the part of the damage it added. `MovePath.Teleport` is reserved; the catalog rejects `"path"` other than `"walk"`.*
+- *Range of a moving ability: an ability with a `move` effect checks its targeting `range` when the move starts (target beyond it: the caster stays put); its melee attack then needs melee reach from where the move ended (otherwise Charge, range 6, could strike from 6 cells away). A target that steps away in the same tick wastes the strike (`out_of_range`).*
+- *`to: target` destination: the free cell within melee reach of the target's position at the start of the Movement phase, closest to the caster, ties to the cell most in line with the target (smallest |dx|+|dy|), then top-to-bottom, left-to-right (`RoundResolver.DestinationNear`, shared by the resolver, the planner's estimate and the AI). Already in reach: no move (and no bonus).*
+- *Planning: `PlanValidator.Validate` takes `positions` to estimate a Charge (toward the target until in reach, capped at `maxCells` and the budget left; never rejected for distance, the resolver caps it the same way). Dash (`to: cell`) is rejected beyond its `maxCells` from where the earlier moves end. A target cell on an ability that doesn't move to a cell is rejected. `self` is now a supported target kind (no filter or range needed in `abilities.json`; a `self` ability can't attack).*
+- *Enemy AI step 3: with Charge using the movement budget, "beyond a plain walk-then-melee but within charge distance" never happens, so the AI charges whenever the nearest enemy isn't adjacent and a ready Charge reaches the cell next to it along a clear path (instead of walking), then attacks with the AP left.*
+- *Feed: no "charges" line; the move line names the ability ("Kestrel moves to (5, 6) with Charge", client side) and the attack shows the bonus: "Kestrel's Charge hits Goblin for 9 damage (+3 from moving) (HP: 20 → 11)".*
+- *Content: Skirmisher has Mend, Dash and Charge; Scout Twin Shot and Dash (plus Firebolt in the Abilities preset); Brute Power Strike and Charge, so the Ogre charges a hero in round 1 of the Abilities Quick Battle. Migration `AddMovementEffects` (model snapshot only).*
+- *Client: Dash highlights reachable cells in amber (off-budget), Charge previews the expected run (purple) when you hover a legal target. `plan-queue.ts` mirrors the move rules (`walkQueue`, `abilityCellError`).*
 
 ### Rules
 - `MoveEffect(MoveTo To /* Cell | Target */, int MaxCells, bool UsesMovementBudget = true, MovePath Path = Walk /* Teleport reserved */)`, resolved in the **Movement phase**: ability movers join the same lockstep mover list as plain moves (Speed tiebreaks, blocking, swaps). `To = Target`: the destination is the free cell adjacent to the target's position **at the start of this tick's Movement phase** that is closest to the caster (ties by a fixed order, same as `EnemyAi`), capped at `MaxCells` and (if `UsesMovementBudget`) the budget left.

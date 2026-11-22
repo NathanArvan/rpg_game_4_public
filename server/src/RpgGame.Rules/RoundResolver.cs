@@ -173,11 +173,21 @@ public static class RoundResolver
 
     private static List<MovementOutcome> ResolveMovementPhase(RoundContext round, int tick)
     {
+        round.AbilityCellsMoved.Clear();
+        // Where everyone stands as the phase starts: a move to a target heads for this position.
+        var startPositions = new Dictionary<string, GridPosition>(round.Positions);
         var movers = new List<Mover>();
         foreach (var (combatantId, queue) in round.Plans)
         {
             if (!round.CanAct(combatantId)) continue;
             var action = ActionAt(queue, tick);
+            if (action?.Type == ActionType.Ability)
+            {
+                if (round.TickAbilities.TryGetValue(combatantId, out var active)
+                    && AbilityMover(round, combatantId, active, startPositions) is { } abilityMover)
+                    movers.Add(abilityMover);
+                continue;
+            }
             if (action?.Type != ActionType.Move || action.TargetCell is not { } target) continue;
 
             // A combatant with no map position isn't on the map, so it can't move.
@@ -271,25 +281,91 @@ public static class RoundResolver
                 {
                     mover.CurrentStep++;
                     round.Positions[mover.CombatantId] = mover.FullPath[mover.CurrentStep];
-                    // Only steps actually taken use up the movement budget.
-                    round.CellsMoved[mover.CombatantId] = round.CellsMoved.GetValueOrDefault(mover.CombatantId) + 1;
+                    // Only steps actually taken use up the movement budget; an ability's own cells
+                    // (Dash) don't.
+                    if (mover.UsesBudget)
+                        round.CellsMoved[mover.CombatantId] = round.CellsMoved.GetValueOrDefault(mover.CombatantId) + 1;
                 }
             }
         }
+
+        foreach (var m in movers.Where(m => m.AbilityId is not null))
+            round.AbilityCellsMoved[m.CombatantId] = m.CurrentStep;
 
         return movers.Select(m => new MovementOutcome(
             m.CombatantId,
             m.FullPath.Take(m.CurrentStep + 1).ToList(),
             m.FullPath[m.CurrentStep],
             m.Stopped,
-            m.BlockedBy)).ToList();
+            m.BlockedBy,
+            m.AbilityId)).ToList();
+    }
+
+    /// <summary>
+    /// The mover for an ability's move effect (ABILITIES.md A5, A7), or null if it has none or the
+    /// caster isn't on the map. A move to a cell walks toward the planned cell; a move to a target
+    /// walks to the free cell in melee reach of where the target stood as the phase began, closest
+    /// to the caster (staying put if already in reach, or if the target is unknown, off the map,
+    /// beyond the ability's range or has no free cell next to it). Either way the walk is capped at
+    /// the effect's <see cref="MoveEffect.MaxCells"/>, the budget left if it
+    /// <see cref="MoveEffect.UsesMovementBudget"/>, and the grid edge.
+    /// </summary>
+    private static Mover? AbilityMover(
+        RoundContext round, string casterId, ActiveAbility active, IReadOnlyDictionary<string, GridPosition> startPositions)
+    {
+        if (active.Ability.Move is not { } move) return null;
+        if (!round.Positions.TryGetValue(casterId, out var start)) return null;
+
+        var destination = start;
+        if (move.To == MoveTo.Cell)
+        {
+            if (active.Action.TargetCell is { } cell) destination = cell;
+        }
+        else if (active.Action.TargetCombatantId is { } targetId
+                 && startPositions.TryGetValue(targetId, out var targetAt)
+                 && start.ChebyshevDistanceTo(targetAt) <= active.Ability.Targeting.Range)
+        {
+            destination = DestinationNear(start, targetAt, round.Config.MeleeReach, round.State.GridWidth, round.State.GridHeight,
+                c => !startPositions.Values.Contains(c)) ?? start;
+        }
+
+        var caster = round.Combatants[casterId];
+        int cells = move.MaxCells;
+        if (move.UsesMovementBudget)
+            cells = Math.Min(cells, caster.Profile.MovementRange - round.CellsMoved.GetValueOrDefault(casterId));
+        var path = LegalPrefix(ComputeChebyshevPath(start, destination), round.State, Math.Max(0, cells));
+        return new Mover(casterId, path, caster.Speed) { AbilityId = active.Ability.Id, UsesBudget = move.UsesMovementBudget };
+    }
+
+    /// <summary>
+    /// Where a move to a target ends (ABILITIES.md A5): <paramref name="from"/> if it is already within
+    /// <paramref name="reach"/> of <paramref name="target"/>; otherwise the free on-grid cell within reach
+    /// of the target that is closest to <paramref name="from"/>, ties to the cell most in line with the
+    /// target (smallest |dx| + |dy|), then top-to-bottom, left-to-right. Null when no such cell is free.
+    /// Shared by the resolver, <see cref="PlanValidator"/> (estimates) and <see cref="EnemyAi"/>.
+    /// </summary>
+    public static GridPosition? DestinationNear(
+        GridPosition from, GridPosition target, int reach, int gridWidth, int gridHeight, Func<GridPosition, bool> isFree)
+    {
+        if (from.ChebyshevDistanceTo(target) <= reach) return from;
+        GridPosition? best = null;
+        (int, int, int, int) bestKey = default;
+        for (int y = target.Y - reach; y <= target.Y + reach; y++)
+            for (int x = target.X - reach; x <= target.X + reach; x++)
+            {
+                var cell = new GridPosition(x, y);
+                if (cell == target || x < 0 || y < 0 || x >= gridWidth || y >= gridHeight || !isFree(cell)) continue;
+                var key = (from.ChebyshevDistanceTo(cell), Math.Abs(x - target.X) + Math.Abs(y - target.Y), y, x);
+                if (best is null || key.CompareTo(bestKey) < 0) (best, bestKey) = (cell, key);
+            }
+        return best;
     }
 
     // ----- Phase 2: Attacks -----
 
     private sealed record PendingAttack(
         string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
-        AttackRoll? Roll, bool Finishing, string? AbilityId);
+        AttackRoll? Roll, bool Finishing, string? AbilityId, int MoveBonus);
 
     private sealed record PendingHeal(
         string HealerId, string TargetId, string AbilityId, WastedReason Reason, int Amount, bool CanRevive)
@@ -340,12 +416,18 @@ public static class RoundResolver
                                     AttackKind.Ranged => ActionType.RangedAttack,
                                     _ => ActionType.Ability,
                                 };
+                                // An ability that moves checks its range when the move starts; its melee
+                                // attack then needs melee reach from where the move ended (Charge).
+                                int reach = ability.Move is not null && attack.Roll == AttackKind.Melee
+                                    ? round.Config.MeleeReach
+                                    : ability.Targeting.Range;
+                                int moved = round.AbilityCellsMoved.GetValueOrDefault(attackerId);
                                 foreach (var targetId in targets)
                                 {
                                     var wasted = CheckAttackTarget(round, attackerId, targetId,
-                                        ability.Targeting, ability.Targeting.Range, WastedReason.OutOfRange);
+                                        ability.Targeting, reach, WastedReason.OutOfRange);
                                     pending.Add(RollAttack(round, hpDeltas, attackerId, targetId, type,
-                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability.Id));
+                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability.Id, moved));
                                 }
                                 break;
                             case HealEffect heal:
@@ -431,7 +513,8 @@ public static class RoundResolver
             a.Roll,
             TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
             FinishingBlow: a.Finishing,
-            AbilityId: a.AbilityId)).ToList();
+            AbilityId: a.AbilityId,
+            MoveBonus: a.MoveBonus)).ToList();
 
         var healOutcomes = heals.Select(h => new HealOutcome(
             h.HealerId,
@@ -523,34 +606,36 @@ public static class RoundResolver
     }
 
     /// <summary>Rolls one attack (unless wasted) and adds its damage to the tick's netting batch.</summary>
+    /// <param name="cellsMoved">Cells the same activation's move effect covered this tick (for <see cref="DamageSpec.BonusIfMoved"/>).</param>
     private static PendingAttack RollAttack(
         RoundContext round, Dictionary<string, int> hpDeltas, string attackerId, string targetId, ActionType type,
-        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, string? abilityId)
+        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, string? abilityId, int cellsMoved = 0)
     {
         bool hit = false, isCrit = false, finishing = false;
-        int amount = 0;
+        int amount = 0, moveBonus = 0;
         AttackRoll? roll = null;
         if (wasted == WastedReason.None)
         {
             // Downed or Stable before this tick's attacks: any hit kills, with no damage roll.
             finishing = round.Status[targetId] != CombatantStatus.Standing;
-            (hit, amount, isCrit, roll) = ComputeAttack(
+            (hit, amount, isCrit, roll, moveBonus) = ComputeAttack(
                 round.Combatants[attackerId], round.Combatants[targetId], kind, damage, accuracyBonus, round.Dice,
-                rollDamage: !finishing);
+                rollDamage: !finishing, cellsMoved);
             if (hit && !finishing)
                 hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - amount;
         }
-        return new PendingAttack(attackerId, targetId, type, wasted, hit, amount, isCrit, roll, finishing, abilityId);
+        return new PendingAttack(attackerId, targetId, type, wasted, hit, amount, isCrit, roll, finishing, abilityId, moveBonus);
     }
 
     /// <summary>
     /// Damage pipeline (DESIGN_SPIKE Decision 4, MAGIC_SYSTEM.md). The slots exist now so items,
     /// stats, resonance and crits can fill them in later without restructuring.
     /// </summary>
-    /// <returns>Roll is null for an attack that can't miss (<see cref="AttackKind.None"/>).</returns>
-    private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll) ComputeAttack(
+    /// <returns>Roll is null for an attack that can't miss (<see cref="AttackKind.None"/>). MoveBonus is
+    /// the part of the damage from <see cref="DamageSpec.BonusIfMoved"/>, before the multiplier.</returns>
+    private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll, int MoveBonus) ComputeAttack(
         CombatantState attacker, CombatantState target, AttackKind kind, DamageSpec spec, int accuracyBonus,
-        IDiceRoller dice, bool rollDamage = true)
+        IDiceRoller dice, bool rollDamage = true, int cellsMoved = 0)
     {
         AttackRoll? roll = null;
         if (kind != AttackKind.None)
@@ -559,15 +644,16 @@ public static class RoundResolver
                 + accuracyBonus;
             roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
             if (roll.Total < roll.TargetDodge)
-                return (false, 0, false, roll);
+                return (false, 0, false, roll, 0);
         }
         if (!rollDamage)
-            return (true, 0, false, roll); // a finishing blow: the hit is what counts
+            return (true, 0, false, roll, 0); // a finishing blow: the hit is what counts
 
         int baseDamage = dice.Roll((spec.Die ?? attacker.Profile.BaseDamage).Sides);
         int statModifier = 0;                                // stats (deferred)
         int weaponBonus = 0;                                 // items (4.2)
-        int abilityModifier = spec.Bonus;                    // abilities (3B.3)
+        int moveBonus = spec.BonusIfMoved is { } ifMoved && cellsMoved >= ifMoved.MinCells ? ifMoved.Bonus : 0;
+        int abilityModifier = spec.Bonus + moveBonus;        // abilities (3B.3), incl. Charge's bonus
         int resonanceBonus = 0;                              // resonance (3M.5)
         int leyBonus = 0;                                    // ley points (3M.5)
         int totalDamage = (baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + leyBonus)
@@ -576,7 +662,7 @@ public static class RoundResolver
         bool isCrit = false;                                 // crit system (3B+)
         if (isCrit) totalDamage *= 2;
 
-        return (true, totalDamage, isCrit, roll);
+        return (true, totalDamage, isCrit, roll, moveBonus);
     }
 
     // ----- Phase 3: Effects -----
@@ -717,6 +803,10 @@ public static class RoundResolver
         public string CombatantId { get; } = combatantId;
         public List<GridPosition> FullPath { get; } = fullPath;
         public int Speed { get; } = speed;
+        /// <summary>The ability moving this combatant (Dash, Charge), or null for a plain move.</summary>
+        public string? AbilityId { get; init; }
+        /// <summary>Steps taken count toward the round's shared movement budget.</summary>
+        public bool UsesBudget { get; init; } = true;
         public int CurrentStep { get; set; }
         public bool Stopped { get; set; }
         public string? BlockedBy { get; set; }
@@ -737,6 +827,9 @@ public static class RoundResolver
 
         /// <summary>Cells each combatant has stepped this round (the shared movement budget).</summary>
         public Dictionary<string, int> CellsMoved { get; } = [];
+
+        /// <summary>Cells each caster's ability move covered in the current tick (Charge's bonus reads it).</summary>
+        public Dictionary<string, int> AbilityCellsMoved { get; } = [];
 
         /// <summary>Everyone's status as the round goes (3B.5).</summary>
         public Dictionary<string, CombatantStatus> Status { get; }

@@ -1,4 +1,4 @@
-import { AttackResult, CombatantQueueDto, HealResult, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, CombatantQueueDto, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import { buildLanes } from './round-lanes';
 
 const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): CombatantQueueDto => ({
@@ -15,7 +15,7 @@ const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): 
 const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
   hit: true, damage: 4, targetNewHp: 6, targetDefeated: false, wasted: false, feedText: '',
-  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, ...extra,
+  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
@@ -48,7 +48,7 @@ describe('buildLanes', () => {
     const lanes = buildLanes(payload(
       [q('A', 4, ['move', 1], ['melee_attack', 2, 'B']), q('B', 4, ['melee_attack', 2, 'A'], ['melee_attack', 2, 'A'])],
       tick(0, {
-        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
+        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null }],
         attacks: [attack('B', 'A')],
       }),
       tick(1, { attacks: [attack('A', 'B'), attack('B', 'A')] }),
@@ -63,7 +63,7 @@ describe('buildLanes', () => {
     const lanes = buildLanes(payload(
       [q('A', 4, ['move', 1]), q('B', 4, ['melee_attack', 2, 'C']), q('C', 4, ['defend', 1])],
       tick(0, {
-        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'C' }],
+        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'C', abilityId: null }],
         attacks: [attack('B', 'C', { wasted: true, hit: false, roll: null, wastedReason: 'out_of_melee_reach' })],
         effects: [{ combatantId: 'C', effectType: 'defend', description: '', targetCombatantId: null, wastedReason: null }],
       }),
@@ -157,5 +157,39 @@ describe('buildLanes: multi-target & heals (3B.3)', () => {
     ] };
     const [lane] = buildLanes(payload([queue], tick(0, { abilityUses: [use('cleave', 'Cleave', 'no_targets')] })));
     expect([lane.slots[0].outcome, lane.slots[0].detail]).toEqual(['wasted', "M uses Cleave, but there's nobody in reach."]);
+  });
+});
+
+describe('buildLanes: movement abilities (3B.3)', () => {
+  const run = (abilityId: string, path: [number, number][], extra: Partial<MovementResult> = {}): MovementResult => ({
+    combatantId: 'K', combatantName: 'K', path: path.map(([x, y]) => ({ x, y })),
+    finalPosition: { x: path[path.length - 1][0], y: path[path.length - 1][1] }, wasBlocked: false, blockedByCombatantId: null,
+    abilityId, ...extra,
+  });
+  const use = (abilityId: string, abilityName: string) =>
+    ({ combatantId: 'K', combatantName: 'K', abilityId, abilityName, targetIds: [], wastedReason: null, feedText: '' });
+
+  it('labels a Dash with its cell and reports the move', () => {
+    const queue: CombatantQueueDto = { combatantId: 'K', combatantName: 'K', maxAp: 5, actions: [
+      { type: 'ability', apCost: 1, targetCombatantId: null, targetCell: { x: 3, y: 0 }, abilityId: 'dash', targetCombatantIds: null },
+    ] };
+    const [lane] = buildLanes(payload([queue],
+      tick(0, { movements: [run('dash', [[0, 0], [1, 0], [2, 0], [3, 0]])], abilityUses: [use('dash', 'Dash')] })));
+    const s0 = lane.slots[0];
+    expect([s0.outcome, s0.label]).toEqual(['moved', 'Dash to (3, 0) (1 AP)']);
+    expect(s0.detail).toBe('Dash: K moves 3 cells to (3, 0).');
+  });
+
+  it('reports a Charge run before its strike, with the move bonus', () => {
+    const queue: CombatantQueueDto = { combatantId: 'K', combatantName: 'K', maxAp: 5, actions: [
+      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'charge', targetCombatantIds: null },
+    ] };
+    const [lane] = buildLanes(payload([queue], tick(0, {
+      movements: [run('charge', [[5, 9], [5, 8], [5, 7], [5, 6]])],
+      attacks: [{ ...attack('K', 'G', { abilityId: 'charge', damage: 7, moveBonus: 3 }), targetNewHp: 13 }],
+      abilityUses: [use('charge', 'Charge')],
+    })));
+    expect(lane.slots[0].detail).toBe(
+      'Charge: K moves 3 cells to (5, 6). K → G: rolled 13 + 3 = 16 vs dodge 12, hit for 7, incl. +3 from moving (G now 13 HP).');
   });
 });

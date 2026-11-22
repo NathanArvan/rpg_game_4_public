@@ -115,6 +115,42 @@ public partial class ResolutionServiceTests
     }
 
     [Fact]
+    public async Task Charge_MovesAndStrikes_FeedShowsTheMoveBonus()
+    {
+        await using var s = new Scene();
+        var skirmisher = s.Player("Skirmisher", (5, 9), TestProfiles.Catalog.Find("skirmisher")!.Snapshot());
+        var goblin = s.Monster("Goblin", (5, 5));
+        s.Queue(skirmisher, Ability("charge", goblin));
+
+        // Skirmisher: melee +1, d6. 10 + 1 hits dodge 10; d6 4 + 3 for moving 3 cells = 7.
+        var result = await s.Run(new ScriptedDice(10, 4));
+
+        var tick = Assert.Single(result.Ticks);
+        var move = Assert.Single(tick.Movements);
+        Assert.Equal(("charge", 5, 6), (move.AbilityId, move.FinalPosition.X, move.FinalPosition.Y));
+        var attack = Assert.Single(tick.Attacks);
+        Assert.Equal("Skirmisher's Charge hits Goblin for 7 damage (+3 from moving) (HP: 20 → 13)", attack.FeedText);
+        Assert.Equal(("charge", 7, 3), (attack.AbilityId, attack.Damage, attack.MoveBonus));
+    }
+
+    [Fact]
+    public async Task Dash_MovesToItsCell_OffTheMovementBudget()
+    {
+        await using var s = new Scene();
+        var scout = s.Player("Scout", (0, 0), TestProfiles.Catalog.Find("scout")!.Snapshot());
+        s.Monster("Goblin", (19, 19));
+        s.Queue(scout, new PlannedActionEntry("move", new PositionDto(8, 0), null),
+            new PlannedActionEntry("ability", new PositionDto(11, 0), null, "dash"));
+
+        var result = await s.Run(new ScriptedDice());
+
+        Assert.Equal(2, result.Ticks.Count);
+        var dash = Assert.Single(result.Ticks[1].Movements);
+        Assert.Equal(("dash", 11, 0), (dash.AbilityId, dash.FinalPosition.X, dash.FinalPosition.Y));
+        Assert.Equal(2, Assert.Single(s.CooldownWrites).Cooldowns["dash"]);
+    }
+
+    [Fact]
     public async Task TwinShot_TwoChosenTargets_EachRolls()
     {
         await using var s = new Scene();

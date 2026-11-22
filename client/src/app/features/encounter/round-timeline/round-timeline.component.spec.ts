@@ -22,7 +22,7 @@ describe('RoundTimelineComponent', () => {
   const hit = (attackerId: string, targetId: string, d20: number): AttackResult => ({
     attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit: true, damage: 2,
     targetNewHp: 8, targetDefeated: false, wasted: false, feedText: `${attackerId} hits ${targetId}`,
-    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null,
+    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.

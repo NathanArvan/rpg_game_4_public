@@ -92,6 +92,7 @@ toward it, then melee with the AP left if the walk ends next to it. Give combata
 | `"ability ABILITY ID"` | Uses one of the combatant's abilities (3B.3) on the target. It takes one queue slot and costs the ability's own AP. Its attacks and heals resolve with the tick's other attacks, one hit roll per target |
 | `"ability ABILITY A,B"` | An ability with several chosen targets (`"kind": "combatants"`), in the order their rolls are made |
 | `"ability ABILITY"` | An ability that finds its own targets (`"kind": "auto"`) |
+| `"ability ABILITY X,Y"` | An ability aimed at a cell: a move to that cell (Dash). Two numbers mean a cell, anything else target ids |
 
 Within each tick, all movement happens first, then all attacks, then effects. Damage
 within a tick is simultaneous, so two combatants can kill each other. Anyone who falls in
@@ -108,7 +109,7 @@ stops; plan order then only decides who each one reports as its blocker.
 
 A combatant's `abilities` list names abilities by id. They come from the **shared library**,
 [`library/abilities.json`](library/abilities.json) (Power Strike, Cleave, Twin Shot, Mend,
-Firebolt), so most scenarios don't need an `abilities` block at all. The library holds test
+Charge, Dash, Firebolt), so most scenarios don't need an `abilities` block at all. The library holds test
 versions of the shipped abilities, owned by these tests: retuning the server's `abilities.json`
 doesn't change them, so scenarios keep testing mechanics rather than current balance.
 
@@ -140,6 +141,17 @@ netting batch, so a heal can save someone from that tick's damage. After netting
 max. A heal on someone **Downed or Stable** gets them back up (Standing, healed HP, no more bleedout),
 unless a finishing blow hits them in the same tick (the blow wins). They stay off their queue for the
 rest of the round. Dead targets can't be healed.
+
+Movement (3B.3 PR 3): `{ "kind": "move", "to": "cell" | "target", "maxCells": 3, "usesMovementBudget": true }`.
+It moves with the tick's other moves, in lockstep (blocking and Speed tiebreaks as usual). `"cell"`
+goes to the planned cell (target kind `self`). `"target"` goes to the free cell next to the target's
+position at the start of the Movement phase, closest to the caster (ties: most in line with the
+target, then top-to-bottom, left-to-right); no move if already next to it, or if the target is beyond
+the ability's `range`. The walk is capped at `maxCells`, the grid edge and, with `usesMovementBudget`,
+the movement left this round; with `false` (Dash) its cells don't count toward the budget. An
+ability that moves checks its `range` only when the move starts: its melee attack needs melee reach
+from where the move ended. `"damage": { "bonusIfMoved": { "minCells": 2, "bonus": 3 } }` adds the
+bonus when the move covered at least `minCells`.
 
 `roll` is `melee`, `ranged` (d20 + that accuracy + `accuracyBonus`) or `none` (always hits, no d20).
 `die` is `"weapon"` (the caster's own `damage`) or a die like `"d8"`; damage is `(die + bonus) × multiplier`.
@@ -201,8 +213,8 @@ ability uses, moves, attacks, heals, effects; then the end of round.
 | Event | Line |
 |---|---|
 | Ability use | `t1 Bruiser uses cleave on G1,G2`, `t1 Bruiser uses cleave (no_targets)`, `t2 Bruiser uses power_strike on G1 (on_cooldown)` |
-| Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2` |
-| Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
+| Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2`; a move made by an ability adds its id: `t1 Scout moves to 9,5 (dash)`, `t1 Kestrel moves to 5,7 (charge) (blocked by Runner)` |
+| Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
 | Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |
 | Effect | `t1 Hero defends`, `t1 Knight stabilizes Archer`, `t1 Knight stabilizes Archer: wasted target_not_downed` |
 | End of round | `end Hero bleeds, 1 left`, `end Hero bleeds out` |

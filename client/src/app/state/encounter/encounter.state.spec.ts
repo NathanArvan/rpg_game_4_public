@@ -248,7 +248,7 @@ describe('EncounterState', () => {
           wasted: false,
           feedText: 'Sam strikes Frodo for 5 damage',
           roll: { d20: 15, accuracy: 0, targetDodge: 10 },
-          wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null,
+          wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
         }],
         effects: [], abilityUses: [], heals: [],
       }],

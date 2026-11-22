@@ -29,6 +29,19 @@
       "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
     },
     {
+      "id": "charge", "name": "Charge", "ap": 3, "cooldown": 2, "tags": ["melee", "movement"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [
+        { "kind": "move", "to": "target", "maxCells": 6, "usesMovementBudget": true },
+        { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonusIfMoved": { "minCells": 2, "bonus": 3 } } }
+      ]
+    },
+    {
+      "id": "dash", "name": "Dash", "ap": 1, "cooldown": 2, "tags": ["movement"],
+      "target": { "kind": "self", "filter": "ally", "range": 0 },
+      "effects": [ { "kind": "move", "to": "cell", "maxCells": 3, "usesMovementBudget": false } ]
+    },
+    {
       "id": "firebolt", "name": "Firebolt", "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
       "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
       "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ]

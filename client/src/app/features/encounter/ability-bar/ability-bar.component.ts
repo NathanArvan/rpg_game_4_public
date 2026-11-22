@@ -59,10 +59,15 @@ export class AbilityBarComponent {
     const who = t.filter === 'enemy' ? 'an enemy' : t.filter === 'ally' ? 'an ally' : t.filter === 'downed_ally' ? 'a downed ally' : 'anyone';
     const reach = t.range === 1 ? 'adjacent' : `within ${t.range} cells`;
     const cooldown = ability.cooldown > 0 ? ` · cooldown ${ability.cooldown} ${ability.cooldown === 1 ? 'round' : 'rounds'}` : '';
+    const move = ability.move;
+    const target = move?.to === 'cell'
+      ? `Target: a cell up to ${move.maxCells} away${move.usesMovementBudget ? '' : ' (on top of your movement)'}`
+      : t.kind === 'self' ? 'Target: yourself'
+      : `Target: ${who} ${reach}${move ? ` (you run next to them${move.usesMovementBudget ? ', using your movement' : ''})` : ''}`;
     const lines = [
       `${ability.name} — ${ability.apCost} AP${cooldown}`,
       ability.description,
-      `Target: ${who} ${reach}`,
+      target,
     ];
     if (unavailable) lines.push(`(${unavailable})`);
     return lines.filter(l => l).join('\n');

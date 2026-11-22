@@ -2,6 +2,7 @@ import { AbilityDto, PlannedActionEntry } from '../../contracts/hub-contracts.ge
 import {
   DEFAULT_AP_COSTS, abilityUnavailableReason, apSpent, canAfford, canAffordEntry, canTargetWithAbility, describeQueue, entry,
   abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
+  abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue,
 } from './plan-queue';
 
 const move = (x: number, y: number): PlannedActionEntry => entry('move', { targetCell: { x, y } });
@@ -12,7 +13,7 @@ const ability = (abilityId: string, target: string): PlannedActionEntry =>
 
 const powerStrike: AbilityDto = {
   id: 'power_strike', name: 'Power Strike', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-  targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false },
+  targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
 };
 const jab: AbilityDto = { ...powerStrike, id: 'jab', name: 'Jab', apCost: 1, cooldown: 0 };
 
@@ -101,11 +102,11 @@ describe('plan-queue', () => {
 describe('multi-target abilities (3B.3)', () => {
   const twin: AbilityDto = {
     id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: [],
-    targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+    targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
   };
   const cleave: AbilityDto = {
     id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: [],
-    targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+    targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
   };
   const many = (abilityId: string, ...ids: string[]) => entry('ability', { abilityId, targetCombatantIds: ids });
 
@@ -128,5 +129,54 @@ describe('multi-target abilities (3B.3)', () => {
     const names: Record<string, string> = { a: 'Goblin 1', b: 'Goblin 2' };
     expect(describeQueue([many('twin_shot', 'b', 'a')], id => names[id], () => 'Twin Shot')).toBe('Twin Shot on Goblin 2, Goblin 1');
     expect(describeQueue([entry('ability', { abilityId: 'cleave' })], id => names[id], () => 'Cleave')).toBe('Cleave');
+  });
+  describe('movement abilities (3B.3)', () => {
+    const dash: AbilityDto = {
+      id: 'dash', name: 'Dash', description: '', apCost: 1, cooldown: 2, tags: ['movement'],
+      targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
+      move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
+    };
+    const charge: AbilityDto = {
+      id: 'charge', name: 'Charge', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
+      targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
+      move: { to: 'target', maxCells: 6, usesMovementBudget: true },
+    };
+    const dashTo = (x: number, y: number) => entry('ability', { abilityId: 'dash', targetCell: { x, y } });
+
+    it('moves the planner with Dash without using the movement budget', () => {
+      const walk = walkQueue({ x: 0, y: 0 }, [move(6, 0), dashTo(9, 0)], [dash], 6);
+      expect(walk).toEqual({ position: { x: 9, y: 0 }, cells: 6 });
+      expect(projectedPosition({ x: 0, y: 0 }, [dashTo(3, 0)], [dash])).toEqual({ x: 3, y: 0 });
+    });
+
+    it('estimates a Charge toward the target, capped at the budget left', () => {
+      const positions = { g: { x: 12, y: 0 } };
+      const queue = [move(4, 0), ability('charge', 'g')];
+      expect(walkQueue({ x: 0, y: 0 }, queue, [charge], 6, positions)).toEqual({ position: { x: 6, y: 0 }, cells: 6 });
+      expect(moveCellsUsed({ x: 0, y: 0 }, [ability('charge', 'g')], [charge], 20, { g: { x: 5, y: 0 } })).toBe(4);
+      expect(estimateMoveToTarget({ x: 5, y: 6 }, { x: 5, y: 5 }, 6)).toEqual({ end: { x: 5, y: 6 }, cells: 0 });
+    });
+
+    it('checks a Dash cell like the server (maxCells from where the moves end, on the grid)', () => {
+      expect(abilityCellError(dash, { x: 6, y: 0 }, { x: 9, y: 0 }, 6, 6, 20, 20)).toBeNull();
+      expect(abilityCellError(dash, { x: 6, y: 0 }, { x: 10, y: 0 }, 6, 6, 20, 20)).toBe('Dash moves at most 3 squares.');
+      expect(abilityCellError(dash, { x: 0, y: 0 }, { x: -1, y: 0 }, 0, 6, 20, 20)).toBe('Target cell is out of bounds.');
+      const budgeted: AbilityDto = { ...dash, move: { to: 'cell', maxCells: 3, usesMovementBudget: true } };
+      expect(abilityCellError(budgeted, { x: 5, y: 0 }, { x: 7, y: 0 }, 5, 6, 20, 20)).toContain('exceed maximum range');
+    });
+
+    it('knows Dash takes a cell and checks the target shape', () => {
+      expect(abilityTakesCell(dash)).toBeTrue();
+      expect(abilityTakesCell(charge)).toBeFalse();
+      expect(abilityTakesTargets(dash)).toBeFalse();
+      expect(targetShapeError(dash, dashTo(1, 0))).toBeNull();
+      expect(targetShapeError(dash, entry('ability', { abilityId: 'dash' }))).toBe('Dash needs a target cell.');
+      expect(targetShapeError(charge, entry('ability', { abilityId: 'charge', targetCombatantId: 'g', targetCell: { x: 1, y: 0 } })))
+        .toBe("Charge doesn't take a target cell.");
+    });
+
+    it('describes a Dash with its cell', () => {
+      expect(describeQueue([dashTo(3, 4)], () => undefined, () => 'Dash')).toBe('Dash to (3, 4)');
+    });
   });
 });

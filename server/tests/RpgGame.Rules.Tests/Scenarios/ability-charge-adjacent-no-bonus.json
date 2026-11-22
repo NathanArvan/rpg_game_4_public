@@ -1,0 +1,14 @@
+{
+  "description": "Charge on a target already next to the caster: no move, so no bonus damage",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "at": [5, 6], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [5, 5] }
+  ],
+  "plans": { "Skirmisher": ["ability charge Goblin"] },
+  "dice": [12, 5],
+  "expect": {
+    "positions": { "Skirmisher": [5, 6] },
+    "hp": { "Goblin": 15 },
+    "events": [ "t1 Skirmisher stays at 5,6 (charge)", "t1 Skirmisher charge Goblin: hit 5" ]
+  }
+}

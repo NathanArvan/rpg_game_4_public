@@ -1,0 +1,13 @@
+{
+  "description": "With Charge cooling down, the AI walks toward the hero as before",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "at": [5, 10], "abilities": ["charge"], "cooldowns": { "charge": 1 } }
+  ],
+  "plans": { "Brute": ["ai"] },
+  "dice": [12, 4],
+  "expect": {
+    "plans": { "Brute": ["move 5,6", "melee Hero"] },
+    "hp": { "Hero": 16 }
+  }
+}

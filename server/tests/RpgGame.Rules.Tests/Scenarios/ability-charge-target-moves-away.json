@@ -1,0 +1,19 @@
+{
+  "description": "Charge heads for where its target stood when the tick began; the target steps away, so the strike is wasted (the cooldown still starts)",
+  "combatants": [
+    { "id": "Skirmisher", "side": "party", "at": [5, 9], "abilities": ["charge"] },
+    { "id": "Goblin",     "side": "enemy", "at": [5, 5] }
+  ],
+  "plans": {
+    "Skirmisher": ["ability charge Goblin"],
+    "Goblin":     ["move 5,2"]
+  },
+  "dice": [],
+  "expect": {
+    "positions": { "Skirmisher": [5, 6], "Goblin": [5, 2] },
+    "hp": { "Goblin": 20 },
+    "wasted": [ { "tick": 1, "attacker": "Skirmisher" } ],
+    "cooldowns": { "Skirmisher": { "charge": 2 } },
+    "events": [ "t1 Skirmisher charge Goblin: wasted out_of_range" ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "description": "Dash moves 3 cells on top of the movement budget: the Scout walks its full 6, dashes 3 more and still shoots",
+  "combatants": [
+    { "id": "Scout",  "side": "party", "move": 6, "at": [0, 5], "abilities": ["dash"] },
+    { "id": "Goblin", "side": "enemy", "at": [15, 5] }
+  ],
+  "plans": {
+    "Scout": ["move 6,5", "ability dash 9,5", "ranged Goblin"]
+  },
+  "dice": [12, 4],                       // tick 3: hit for 4
+  "expect": {
+    "positions": { "Scout": [9, 5] },
+    "hp": { "Goblin": 16 },
+    "cooldowns": { "Scout": { "dash": 2 } },
+    "events": [
+      "t1 Scout moves to 6,5",
+      "t2 Scout uses dash",
+      "t2 Scout moves to 9,5 (dash)",
+      "t3 Scout ranged Goblin: hit 4"
+    ]
+  }
+}
