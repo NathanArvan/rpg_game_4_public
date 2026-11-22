@@ -4,16 +4,17 @@ import { FormsModule } from '@angular/forms';
 import { Store } from '@ngxs/store';
 import { Observable } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
-import { GmClearEnemyPlan, GmSelectEnemy, GmSetEnemyPlan } from '../../../state/encounter/encounter.actions';
+import { ArmAbility, DisarmAbility, GmClearEnemyPlan, GmSelectEnemy, GmSetEnemyPlan } from '../../../state/encounter/encounter.actions';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
-import { DEFAULT_AP_COSTS, apSpent, canAfford } from '../../../state/encounter/plan-queue';
+import { DEFAULT_AP_COSTS, apSpent, canAfford, entry } from '../../../state/encounter/plan-queue';
+import { AbilityBarComponent } from '../ability-bar/ability-bar.component';
 
 @Component({
   selector: 'app-gm-enemy-planner',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AbilityBarComponent],
   templateUrl: './gm-enemy-planner.component.html',
   styleUrl: './gm-enemy-planner.component.css',
 })
@@ -25,7 +26,9 @@ export class GmEnemyPlannerComponent {
   gmSelectedEnemyId$: Observable<string | null>;
 
   private enemyPlannedActions: Record<string, PlannedActionEntry[]> = {};
-  private apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
+  apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
+  /** The ability the GM's next grid click uses for the selected monster (3B.3). */
+  armedAbilityId: string | null = null;
 
   lockedIn = false;
 
@@ -38,6 +41,7 @@ export class GmEnemyPlannerComponent {
       this.enemyPlannedActions = plans;
     });
     store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
+    store.select(EncounterState.armedAbilityId).subscribe(id => this.armedAbilityId = id);
     // Reset lock-in when a new planning phase starts
     store.select(EncounterState.isPlanning).subscribe(planning => {
       if (planning) this.lockedIn = false;
@@ -55,7 +59,7 @@ export class GmEnemyPlannerComponent {
   }
 
   apLabel(enemy: Combatant): string {
-    return `${apSpent(this.getPlan(enemy.id) ?? [], this.apCosts)}/${enemy.maxAp} AP`;
+    return `${apSpent(this.getPlan(enemy.id) ?? [], this.apCosts, enemy.abilities)}/${enemy.maxAp} AP`;
   }
 
   planSummary(action: PlannedActionEntry): string {
@@ -64,7 +68,19 @@ export class GmEnemyPlannerComponent {
     if (action.type === 'melee_attack') return '⚔ Melee Attack';
     if (action.type === 'ranged_attack') return '🏹 Ranged Attack';
     if (action.type === 'defend') return '🛡 Defend';
+    if (action.type === 'ability') return `✦ ${this.abilityName(action.abilityId)}`;
     return action.type;
+  }
+
+  private abilityName(id: string | null): string {
+    for (const m of this.store.selectSnapshot(EncounterState.combatants))
+      for (const a of m.abilities) if (a.id === id) return a.name;
+    return id ?? 'Ability';
+  }
+
+  /** Arms (or disarms) one of the selected monster's abilities; the next grid click picks its target. */
+  toggleAbility(abilityId: string): void {
+    this.store.dispatch(this.armedAbilityId === abilityId ? new DisarmAbility() : new ArmAbility(abilityId));
   }
 
   onSelectEnemy(combatantId: string): void {
@@ -76,8 +92,8 @@ export class GmEnemyPlannerComponent {
   /** Appends a Defend to the monster's queue if its AP allows. */
   onDefend(enemy: Combatant): void {
     const queue = this.getPlan(enemy.id) ?? [];
-    if (!canAfford(queue, 'defend', enemy.maxAp, this.apCosts)) return;
-    const next = [...queue, { type: 'defend', targetCell: null, targetCombatantId: null }];
+    if (!canAfford(queue, 'defend', enemy.maxAp, this.apCosts, enemy.abilities)) return;
+    const next = [...queue, entry('defend')];
     this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
     this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
   }

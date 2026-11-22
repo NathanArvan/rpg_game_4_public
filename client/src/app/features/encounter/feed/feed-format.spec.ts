@@ -58,4 +58,15 @@ describe('formatFeedLine', () => {
       .toEqual(['[enemy]Goblin 12', ' ', '[save]stabilizes', ' ', '[enemy]Goblin 1']);
     expect(formatFeedLine('End of round', sides).kind).toBe('tick');
   });
+
+  it('highlights ability names and ability misses (3B.3)', () => {
+    expect(show(formatFeedLine("Zara Forge's Power Strike hits Goblin 1 for 9 damage (HP: 20 → 11)", sides).segments))
+      .toEqual(['[party]Zara Forge', "'s ", '[ability]Power Strike', ' hits ', '[enemy]Goblin 1', ' ', '[damage]for 9 damage (HP: 20 → 11)']);
+    expect(show(formatFeedLine("Zara Forge's Power Strike misses Goblin 1", sides).segments))
+      .toEqual(['[party]Zara Forge', "'s ", '[ability]Power Strike', ' ', '[miss]misses', ' ', '[enemy]Goblin 1']);
+    expect(show(formatFeedLine("Zara Forge's Power Strike on Goblin 1 fails — target out of range", sides).segments))
+      .toEqual(['[party]Zara Forge', "'s ", '[ability]Power Strike', ' on ', '[enemy]Goblin 1', ' fails — target out of range']);
+    expect(show(formatFeedLine("Zara Forge can't use Power Strike — still on cooldown", sides).segments))
+      .toEqual(['[party]Zara Forge', " can't use ", '[ability]Power Strike', ' — still on cooldown']);
+  });
 });

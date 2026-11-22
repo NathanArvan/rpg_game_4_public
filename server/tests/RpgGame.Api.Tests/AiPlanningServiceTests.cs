@@ -42,7 +42,7 @@ public class AiPlanningServiceTests
             .Returns(Task.CompletedTask);
     }
 
-    private async Task<Guid> Add(string name, string type, int x, int y, bool ai = false)
+    private async Task<Guid> Add(string name, string type, int x, int y, bool ai = false, CombatProfileValues? profile = null)
     {
         var id = Guid.NewGuid();
         if (!_db.Encounters.Any(e => e.Id == _encounterId))
@@ -56,6 +56,7 @@ public class AiPlanningServiceTests
             CharacterName = name,
             CombatantType = type,
             IsAiControlled = ai,
+            Profile = profile,
         });
         await _db.SaveChangesAsync();
         _positions[id.ToString()] = new Position(x, y);
@@ -87,6 +88,20 @@ public class AiPlanningServiceTests
 
         Assert.Equivalent(new[] { adjacent.ToString(), distant.ToString() }, _lockedIn);
         Assert.Equivalent(new[] { "Goblin", "Orc" }, result.Select(r => r.CharacterName));
+    }
+
+    [Fact]
+    public async Task AiAbilityPlan_IsStoredWithItsAbilityId()
+    {
+        // Regression (3B.3): the stored entry used to lose the ability id, so the resolver refused it.
+        _redis.Setup(r => r.GetCooldownsAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync(new Dictionary<string, int>());
+        var hero = await Add("Hero", "player", 5, 5);
+        var ogre = await Add("Ogre", "monster", 5, 6, ai: true, profile: TestProfiles.Catalog.Find("brute")!.Snapshot());
+
+        await Service().PlanAndLockInAsync(_encounterId);
+
+        var entry = StoredPlan(ogre);
+        Assert.Equal(("ability", "power_strike", hero.ToString()), (entry.Type, entry.AbilityId, entry.TargetCombatantId));
     }
 
     [Fact]

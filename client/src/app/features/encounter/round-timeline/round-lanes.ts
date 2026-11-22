@@ -7,7 +7,7 @@ import { wastedLabel } from '../../../core/services/playback-timeline';
  * Pure, so it's easy to test; RoundTimelineComponent renders it.
  */
 
-export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'idle' | 'lost';
+export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'ability' | 'idle' | 'lost';
 
 /** What happened. 'none' = nothing to report (idle, lost). */
 export type SlotOutcome = 'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'none';
@@ -39,6 +39,7 @@ const ICONS: Record<SlotKind, string> = {
   ranged_attack: '🏹',
   defend: '🛡',
   stabilize: '✚',
+  ability: '✦',
   idle: '·',
   lost: '✕',
 };
@@ -67,6 +68,10 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
     }
   }
   const nameOf = (id: string | null) => (id && names.get(id)) || 'someone';
+  // Ability names (3B.3), from the activations the server reported.
+  const abilityNames = new Map<string, string>();
+  for (const tick of payload.ticks)
+    for (const u of tick.abilityUses ?? []) abilityNames.set(u.abilityId, u.abilityName);
 
   // The tick each combatant fell in (went down or died): its later actions never happen.
   const defeatedIn = new Map<string, number>();
@@ -94,7 +99,8 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
           : slot(i, 'idle', 0, 'none', 'Nothing queued', `${name} has no action left (queue used up).`);
       }
 
-      const what = actionLabel(action.type, action.targetCombatantId ? nameOf(action.targetCombatantId) : null, action.targetCell);
+      const what = actionLabel(action.type, action.targetCombatantId ? nameOf(action.targetCombatantId) : null, action.targetCell,
+        action.abilityId ? abilityNames.get(action.abilityId) ?? action.abilityId : null);
       const label = `${what} (${action.apCost} AP)`;
       const kind = action.type as SlotKind;
       const lost = () => slot(i, 'lost', action.apCost, 'none', label,
@@ -123,6 +129,22 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
             `${name}'s ${lowerFirst(what)} is wasted (${wastedLabel(a.wastedReason)}).`);
         }
         return slot(i, kind, action.apCost, a.hit ? 'hit' : 'miss', label, attackDetail(name, a));
+      }
+
+      if (kind === 'ability') {
+        const use = (tick.abilityUses ?? []).find(u => u.combatantId === q.combatantId);
+        if (!use) return lost();
+        if (use.wastedReason) return slot(i, kind, action.apCost, 'wasted', label,
+          `${name} can't use ${use.abilityName} (${wastedLabel(use.wastedReason)}).`);
+        const hits = tick.attacks.filter(a => a.attackerId === q.combatantId && a.abilityId === use.abilityId);
+        if (hits.length === 0) return slot(i, kind, action.apCost, 'none', label, `${name} uses ${use.abilityName}.`);
+        if (hits.every(a => a.wasted)) return slot(i, kind, action.apCost, 'wasted', label,
+          `${name}'s ${use.abilityName} is wasted (${wastedLabel(hits[0].wastedReason)}).`);
+        const outcome = hits.some(a => !a.wasted && a.hit) ? 'hit' : 'miss';
+        return slot(i, kind, action.apCost, outcome, label,
+          `${use.abilityName}: ` + hits.map(a => a.wasted
+            ? `${a.targetName}: wasted (${wastedLabel(a.wastedReason)}).`
+            : attackDetail(name, a)).join(' '));
       }
 
       if (kind === 'stabilize') {
@@ -159,8 +181,10 @@ function slot(tick: number, kind: SlotKind, apCost: number, outcome: SlotOutcome
   return { tick, kind, apCost, icon: ICONS[kind], outcome, label, detail };
 }
 
-function actionLabel(type: string, targetName: string | null, cell: { x: number; y: number } | null): string {
-  const action = ACTION_NAMES[type] ?? type;
+function actionLabel(
+  type: string, targetName: string | null, cell: { x: number; y: number } | null, abilityName: string | null = null,
+): string {
+  const action = type === 'ability' ? abilityName ?? 'Ability' : ACTION_NAMES[type] ?? type;
   if (type === 'move' && cell) return `${action} to (${cell.x}, ${cell.y})`;
   return targetName ? `${action} on ${targetName}` : action;
 }

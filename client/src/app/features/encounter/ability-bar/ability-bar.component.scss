@@ -1,0 +1,42 @@
+.ability-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ability-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #6a1b9a;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover:not(:disabled) { background: #4a148c; }
+
+  &.armed {
+    background: #4a148c;
+    box-shadow: 0 0 0 2px #ffeb3b;
+  }
+
+  &:disabled,
+  &.unavailable:not(.armed) {
+    background: #888;
+    cursor: not-allowed;
+  }
+
+  .cost {
+    font-size: 0.8em;
+    opacity: 0.85;
+  }
+
+  .cooldown {
+    font-size: 0.8em;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    padding: 0 4px;
+  }
+}

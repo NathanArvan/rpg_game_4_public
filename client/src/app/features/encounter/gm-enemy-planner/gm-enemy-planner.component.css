@@ -78,3 +78,7 @@ h3 { margin: 0 0 10px; font-size: 1em; color: #ff8a65; }
 }
 .lock-in-enemies-btn:disabled { background: #555; cursor: not-allowed; }
 .lock-in-enemies-btn:not(:disabled):hover { background: #b71c1c; }
+
+/* The selected monster's abilities (3B.3) get their own line in the row. */
+.enemy-row { flex-wrap: wrap; }
+.enemy-abilities { flex-basis: 100%; order: 10; }

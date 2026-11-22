@@ -16,6 +16,13 @@ import { ResolutionPlaybackService } from '../../core/services/resolution-playba
   styleUrl: './encounter-tracker.component.css',
 })
 export class EncounterTrackerComponent {
+  /** Abilities on cooldown (3B.3), by name, for the chips under the combatant's name. */
+  cooldownsOf(c: Combatant): { name: string; left: number }[] {
+    return Object.entries(c.cooldowns ?? {})
+      .filter(([, left]) => left > 0)
+      .map(([id, left]) => ({ name: c.abilities.find(a => a.id === id)?.name ?? id, left }));
+  }
+
   combatants$: Observable<Combatant[]>;
   isPlanning$: Observable<boolean>;
   isResolving$: Observable<boolean>;

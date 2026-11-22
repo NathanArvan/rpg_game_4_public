@@ -39,6 +39,11 @@ public enum ActionType
     Defend,
     /// <summary>Stops an adjacent Downed combatant bleeding out (3B.5). Resolves in the Effects phase.</summary>
     Stabilize,
+    /// <summary>
+    /// Uses one of the combatant's abilities (3B.3, <see cref="PlannedAction.AbilityId"/>). Takes one
+    /// queue slot; each of its effects resolves in its own phase of that tick.
+    /// </summary>
+    Ability,
 }
 
 /// <summary>
@@ -87,6 +92,28 @@ public sealed record CombatProfile(
 {
     public const int DefaultMaxAp = 4;
 
+    /// <summary>
+    /// The combatant's ability loadout (3B.3): full definitions, copied in when the combatant was
+    /// created, so the resolver never needs a catalog.
+    /// </summary>
+    public IReadOnlyList<AbilityDefinition> Abilities { get; init; } = [];
+
+    /// <summary>The loadout's ability with this id, or null.</summary>
+    public AbilityDefinition? FindAbility(string? id) =>
+        id is null ? null : Abilities.FirstOrDefault(a => a.Id == id);
+
+    // Records compare collections by reference; the loadout is compared by content.
+    public bool Equals(CombatProfile? other) =>
+        other is not null
+        && MaxHp == other.MaxHp && MovementRange == other.MovementRange && Speed == other.Speed
+        && MeleeAccuracy == other.MeleeAccuracy && RangedAccuracy == other.RangedAccuracy
+        && Dodge == other.Dodge && BaseDamage == other.BaseDamage && MaxAp == other.MaxAp
+        && CanBeDowned == other.CanBeDowned
+        && Abilities.SequenceEqual(other.Abilities);
+
+    public override int GetHashCode() =>
+        HashCode.Combine(MaxHp, MovementRange, Speed, MeleeAccuracy, RangedAccuracy, Dodge, BaseDamage, HashCode.Combine(MaxAp, CanBeDowned, Abilities.Count));
+
     /// <summary>The placeholder values: 20 HP, 6 cells, Speed 10, +0 accuracy, Dodge 10, d8, 4 AP.</summary>
     public static CombatProfile Default { get; } = new(20, 6, 10, 0, 0, 10, DamageDie.D8);
 }
@@ -109,6 +136,33 @@ public sealed record CombatantState(
     public int MaxHp => Profile.MaxHp;
     public int Speed => Profile.Speed;
 
+    /// <summary>
+    /// Team name (3B.3). Who is an ally or an enemy is decided only by <see cref="Relations.Between"/>.
+    /// Empty: an enemy of everyone. A free string, so any number of teams works.
+    /// </summary>
+    public string Team { get; init; } = "";
+
+    /// <summary>Abilities on cooldown: ability id → rounds left before it can be planned again (3B.3).</summary>
+    public IReadOnlyDictionary<string, int> Cooldowns { get; init; } = EmptyCooldowns;
+
+    /// <summary>Rounds before <paramref name="abilityId"/> can be planned again; 0 = ready.</summary>
+    public int CooldownLeft(string abilityId) => Cooldowns.GetValueOrDefault(abilityId);
+
+    private static readonly IReadOnlyDictionary<string, int> EmptyCooldowns = new Dictionary<string, int>();
+
+    // Records compare collections by reference; cooldowns are compared by content so two states
+    // with the same values are equal (determinism tests, scenario checks).
+    public bool Equals(CombatantState? other) =>
+        other is not null
+        && Id == other.Id && Name == other.Name && Hp == other.Hp
+        && Equals(Profile, other.Profile) && Position == other.Position
+        && Status == other.Status && BleedoutRoundsLeft == other.BleedoutRoundsLeft
+        && Team == other.Team
+        && Cooldowns.Count == other.Cooldowns.Count
+        && Cooldowns.All(kv => other.Cooldowns.TryGetValue(kv.Key, out var v) && v == kv.Value);
+
+    public override int GetHashCode() => HashCode.Combine(Id, Hp, Position, Status, BleedoutRoundsLeft, Team, Cooldowns.Count);
+
     /// <summary>Out of the fight: Downed, Stable or Dead. Such a combatant can't act.</summary>
     public bool IsDefeated => Status != CombatantStatus.Standing;
 }
@@ -119,15 +173,21 @@ public sealed record EncounterState(
     IReadOnlyList<CombatantState> Combatants);
 
 /// <param name="TargetCell">Set for <see cref="ActionType.Move"/>.</param>
-/// <param name="TargetCombatantId">Set for attacks and Stabilize.</param>
+/// <param name="TargetCombatantId">Set for attacks, Stabilize and single-target abilities.</param>
+/// <param name="AbilityId">Set for <see cref="ActionType.Ability"/>: which loadout ability.</param>
+/// <param name="TargetCombatantIds">Abilities that pick several targets (3B.3 PR 2).</param>
 public sealed record PlannedAction(
     ActionType Type,
     GridPosition? TargetCell = null,
-    string? TargetCombatantId = null)
+    string? TargetCombatantId = null,
+    string? AbilityId = null,
+    IReadOnlyList<string>? TargetCombatantIds = null)
 {
     public static PlannedAction Move(int x, int y) => new(ActionType.Move, new GridPosition(x, y));
     public static PlannedAction Melee(string targetId) => new(ActionType.MeleeAttack, TargetCombatantId: targetId);
     public static PlannedAction Ranged(string targetId) => new(ActionType.RangedAttack, TargetCombatantId: targetId);
     public static PlannedAction Defend() => new(ActionType.Defend);
     public static PlannedAction Stabilize(string targetId) => new(ActionType.Stabilize, TargetCombatantId: targetId);
+    public static PlannedAction Ability(string abilityId, string? targetId = null) =>
+        new(ActionType.Ability, TargetCombatantId: targetId, AbilityId: abilityId);
 }

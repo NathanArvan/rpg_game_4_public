@@ -5,7 +5,7 @@ import { GameHubService } from '../../../core/services/game-hub.service';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
 import { PlanningPhaseStarted, SelectMyCombatant } from '../../../state/encounter/encounter.actions';
-import { PlanningCombatantDto } from '../../../contracts/hub-contracts.generated';
+import { PlanningCombatantDto, AbilityDto } from '../../../contracts/hub-contracts.generated';
 import { MapInitialized } from '../../../state/map/map.actions';
 import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 import { PLAYBACK_TIMING } from '../../../core/services/playback-timeline';
@@ -17,9 +17,15 @@ describe('GridComponent', () => {
   const hub = jasmine.createSpyObj<GameHubService>('GameHubService', ['planAction', 'lockIn', 'forceResolve', 'planEnemyAction']);
 
   // Quick Battle: the user's ID is on every row, but only the "player" rows are theirs to plan.
-  const row = (id: string, name: string, combatantType: string, isDefeated = false, movementRange = 6, maxAp = 4): PlanningCombatantDto =>
+  const row = (id: string, name: string, combatantType: string, isDefeated = false, movementRange = 6, maxAp = 4,
+    abilities: AbilityDto[] = [], cooldowns: Record<string, number> = {}): PlanningCombatantDto =>
     ({ id, userId: 'me', characterName: name, currentHp: 10, maxHp: 10, isDefeated, combatantType, isAiControlled: combatantType === 'monster',
-       profileId: 'test', profileName: 'Test', movementRange, maxAp, status: 'standing', bleedoutRoundsLeft: 0 });
+       profileId: 'test', profileName: 'Test', movementRange, maxAp, status: 'standing', bleedoutRoundsLeft: 0, abilities, cooldowns });
+
+  const powerStrike: AbilityDto = {
+    id: 'power_strike', name: 'Power Strike', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
+    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false },
+  };
 
   beforeEach(async () => {
     hub.planAction.calls.reset();
@@ -144,7 +150,7 @@ describe('GridComponent', () => {
 
   describe('bleedout (3B.5)', () => {
     const downed = (r: PlanningCombatantDto): PlanningCombatantDto =>
-      ({ ...r, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2 });
+      ({ ...r, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2, abilities: [], cooldowns: {} });
 
     beforeEach(() => {
       store.dispatch(new PlanningPhaseStarted(1, 0, [
@@ -191,8 +197,8 @@ describe('GridComponent', () => {
         ticks: [{
           tickIndex: 0,
           movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
-          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false }],
-          effects: [],
+          attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null }],
+          effects: [], abilityUses: [],
         }],
       });
       fixture.detectChanges();
@@ -209,5 +215,54 @@ describe('GridComponent', () => {
       fixture.detectChanges();
       expect(tokenCells()).toEqual(['B@1,0', 'G@2,0']);  // back on the map's (final) positions
     }));
+  });
+
+  describe('abilities (3B.3)', () => {
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('bruiser', 'Bruiser', 'player', false, 4, 4, [powerStrike]),
+        row('scout', 'Scout', 'player'),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 5, y: 5 }, scout: { x: 4, y: 5 }, goblin: { x: 5, y: 6 } }));
+      hub.planAction.calls.reset();
+    });
+
+    it('arms an ability, shows its reach and legal targets, and queues it on a click', () => {
+      grid.toggleAbility('power_strike');
+      expect(grid.armedAbility?.id).toBe('power_strike');
+      expect(grid.isInAbilityRange({ x: 6, y: 6 })).toBeTrue();
+      expect(grid.isInAbilityRange({ x: 7, y: 5 })).toBeFalse();
+      expect(grid.isInRange({ x: 6, y: 5 })).toBeFalse(); // move highlight hidden while armed
+
+      const goblin = store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'goblin')!;
+      const scout = store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'scout')!;
+      expect(grid.isAbilityTarget(goblin)).toBeTrue();
+      expect(grid.isAbilityTarget(scout)).toBeFalse(); // an ally
+
+      grid.onCellClick({ x: 5, y: 6 });
+      expect(hub.planAction).toHaveBeenCalledWith('QB1234',
+        { actions: [jasmine.objectContaining({ type: 'ability', abilityId: 'power_strike', targetCombatantId: 'goblin' })] }, 'bruiser');
+      expect(grid.armedAbilityId).toBeNull();
+      expect(grid.apUsed).toBe(3);
+      expect(grid.plannedActionSummary).toBe('Power Strike on Goblin');
+    });
+
+    it('disarms without queueing when the click is not on a legal target', () => {
+      grid.toggleAbility('power_strike');
+      grid.onCellClick({ x: 4, y: 5 }); // the Scout, an ally
+      expect(hub.planAction).not.toHaveBeenCalled();
+      expect(grid.armedAbilityId).toBeNull();
+    });
+
+    it('disarms on Escape and when switching characters', () => {
+      grid.toggleAbility('power_strike');
+      grid.onEscape();
+      expect(grid.armedAbilityId).toBeNull();
+
+      grid.toggleAbility('power_strike');
+      store.dispatch(new SelectMyCombatant('scout'));
+      expect(grid.armedAbilityId).toBeNull();
+    });
   });
 });

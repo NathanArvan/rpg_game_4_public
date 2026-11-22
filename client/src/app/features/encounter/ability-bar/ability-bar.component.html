@@ -1,0 +1,21 @@
+@if (buttons.length) {
+  <div class="ability-bar">
+    @for (b of buttons; track b.ability.id) {
+      <button
+        class="ability-btn"
+        type="button"
+        [attr.data-ability]="b.ability.id"
+        [class.armed]="b.armed"
+        [class.unavailable]="!!b.unavailable"
+        [disabled]="disabled || (!!b.unavailable && !b.armed)"
+        [title]="b.tooltip"
+        (click)="onClick(b)">
+        <span class="name">{{ b.ability.name }}</span>
+        <span class="cost">{{ b.ability.apCost }} AP</span>
+        @if (b.cooldownLeft > 0) {
+          <span class="cooldown" title="Rounds until it can be used again">⏳ {{ b.cooldownLeft }}</span>
+        }
+      </button>
+    }
+  </div>
+}

@@ -719,4 +719,103 @@ public class PlanningServiceTests
         Assert.Contains("plan an action", ex.Message);
         Assert.Empty(f.Locked);
     }
+
+    // ----- Abilities (3B.3) -----
+
+    /// <summary>A Bruiser (Power Strike) at (5, 5), an ally next to it and a goblin next to it.</summary>
+    private static async Task<(PlanningService Service, Mock<IRedisGameState> Redis, string JoinCode, string Hero, string Ally, string Goblin)> SetupAbilityUser(
+        AppDbContext db)
+    {
+        var sessionId = Guid.NewGuid();
+        var encounterId = Guid.NewGuid();
+        Guid hero = Guid.NewGuid(), ally = Guid.NewGuid(), goblin = Guid.NewGuid();
+        const string joinCode = "ABIL01";
+        db.GameSessions.Add(new GameSession { Id = sessionId, CampaignId = Guid.NewGuid(), JoinCode = joinCode, StartedAt = DateTimeOffset.UtcNow });
+        db.EncounterCombatants.Add(new EncounterCombatant
+        {
+            Id = hero, EncounterId = encounterId, UserId = "user-1", CharacterName = "Bruiser",
+            CombatantType = "player", Profile = TestProfiles.Catalog.Find("bruiser")!.Snapshot(),
+        });
+        await db.SaveChangesAsync();
+
+        string h = hero.ToString(), a = ally.ToString(), g = goblin.ToString(), e = encounterId.ToString();
+        var redis = new Mock<IRedisGameState>();
+        redis.Setup(r => r.GetActiveEncounterAsync(sessionId.ToString())).ReturnsAsync(new ActiveEncounterEntry(
+            e, "planning", 1, DateTimeOffset.UtcNow.AddSeconds(30),
+            [new CombatantRef(h, "user-1"), new CombatantRef(a, "user-2"), new CombatantRef(g, "gm", "monster")]));
+        redis.Setup(r => r.GetMapAsync(e)).ReturnsAsync(new MapEntry(20, 20, new Dictionary<string, Position>
+        {
+            [h] = new Position(5, 5), [a] = new Position(4, 5), [g] = new Position(5, 6),
+        }, []));
+        redis.Setup(r => r.GetCooldownsAsync(e, h)).ReturnsAsync(new Dictionary<string, int>());
+        return (new PlanningService(db, redis.Object, NullLogger<PlanningService>.Instance), redis, joinCode, h, a, g);
+    }
+
+    private static PlannedActionArray UseAbility(string abilityId, string? targetId) =>
+        new([new PlannedActionEntry("ability", null, targetId, abilityId)]);
+
+    [Fact]
+    public async Task PlanAction_AcceptsAnAbilityOnAnEnemy_AndStoresItsId()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, hero, _, goblin) = await SetupAbilityUser(db);
+        string? stored = null;
+        redis.Setup(r => r.SetPlannedActionAsync(It.IsAny<string>(), hero, It.IsAny<string>()))
+            .Callback<string, string, string>((_, _, json) => stored = json)
+            .Returns(Task.CompletedTask);
+
+        var result = await service.PlanActionAsync(joinCode, "user-1", UseAbility("power_strike", goblin));
+
+        Assert.True(result.Success);
+        Assert.Contains("\"abilityId\":\"power_strike\"", stored);
+    }
+
+    [Theory]
+    [InlineData(1, "Power Strike is on cooldown for 1 more round.")]
+    [InlineData(2, "Power Strike is on cooldown for 2 more rounds.")]
+    public async Task PlanAction_RejectsAnAbilityOnCooldown(int left, string expected)
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, hero, _, goblin) = await SetupAbilityUser(db);
+        redis.Setup(r => r.GetCooldownsAsync(It.IsAny<string>(), hero))
+            .ReturnsAsync(new Dictionary<string, int> { ["power_strike"] = left });
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbility("power_strike", goblin)));
+        Assert.True(ex.IsActionRejected);
+        Assert.Equal(expected, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("firebolt", "goblin", "This combatant doesn't have the ability 'firebolt'.")]
+    [InlineData("power_strike", "ally", "Power Strike can only target enemies.")]
+    [InlineData("power_strike", "self", "You cannot target yourself with Power Strike.")]
+    [InlineData("power_strike", null, "Power Strike needs one target.")]
+    [InlineData("", "goblin", "Ability action requires an ability ID.")]
+    public async Task PlanAction_RejectsInvalidAbilityPlans(string abilityId, string? target, string expected)
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, hero, ally, goblin) = await SetupAbilityUser(db);
+        var targetId = target switch { "goblin" => goblin, "ally" => ally, "self" => hero, _ => null };
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbility(abilityId, targetId)));
+        Assert.True(ex.IsActionRejected);
+        Assert.Equal(expected, ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanAction_RejectsAnAbilityPlusMoreThanTheApLeft()
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, _, _, goblin) = await SetupAbilityUser(db);
+        // Bruiser: 4 AP. Power Strike 3 + melee 2 = 5.
+        var plan = new PlannedActionArray([
+            new PlannedActionEntry("ability", null, goblin, "power_strike"),
+            new PlannedActionEntry("melee_attack", null, goblin),
+        ]);
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", plan));
+        Assert.Contains("Not enough AP: this plan costs 5 AP but only 4 AP are available.", ex.Message);
+    }
 }

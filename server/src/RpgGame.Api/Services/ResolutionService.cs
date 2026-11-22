@@ -65,7 +65,7 @@ public class ResolutionService(
         {
             var id = c.Id.ToString();
             var final = finalStates[id];
-            return CombatantDtos.Planning(c, final.Hp, final.Status, final.BleedoutRoundsLeft);
+            return CombatantDtos.Planning(c, final.Hp, final.Status, final.BleedoutRoundsLeft, final.Cooldowns);
         }).ToList();
 
         // ----- Persist -----
@@ -98,6 +98,16 @@ public class ResolutionService(
             if (final.Status == before.Status && final.BleedoutRoundsLeft == before.BleedoutRoundsLeft) continue;
             await redisState.SetStatusAsync(encounterIdStr, final.Id,
                 new CombatantStatusEntry(RulesWireMapping.ToWire(final.Status), final.BleedoutRoundsLeft));
+        }
+
+        // Ability cooldowns (3B.3): write only the ones that changed.
+        foreach (var final in outcome.Next.Combatants)
+        {
+            var before = records[final.Id].State.Cooldowns;
+            bool same = before.Count == final.Cooldowns.Count
+                && before.All(kv => final.Cooldowns.TryGetValue(kv.Key, out var v) && v == kv.Value);
+            if (!same)
+                await redisState.SetCooldownsAsync(encounterIdStr, final.Id, final.Cooldowns);
         }
 
         // Start from the stored map so entries the engine doesn't know about are kept as-is.
@@ -157,13 +167,8 @@ public class ResolutionService(
 
             var queue = new List<PlannedAction>();
             foreach (var entry in array.Actions)
-            {
-                if (RulesWireMapping.ParseActionType(entry.Type) is not { } type) continue;
-                queue.Add(new PlannedAction(
-                    type,
-                    entry.TargetCell is null ? null : new GridPosition(entry.TargetCell.X, entry.TargetCell.Y),
-                    entry.TargetCombatantId));
-            }
+                if (RulesWireMapping.ToPlannedAction(entry) is { } action)
+                    queue.Add(action);
             plans[combatantId] = queue;
         }
         return plans;
@@ -174,6 +179,8 @@ public class ResolutionService(
     private static TickResult ToTickResult(TickOutcome tick, Dictionary<string, CombatantRecord> records)
     {
         string NameOf(string id) => records.TryGetValue(id, out var r) ? r.State.Name : "Unknown";
+        string AbilityNameOf(string casterId, string abilityId) =>
+            (records.TryGetValue(casterId, out var r) ? r.State.Profile.FindAbility(abilityId)?.Name : null) ?? abilityId;
 
         var movements = tick.Movements.Select(m => new MovementResult(
             m.CombatantId,
@@ -192,11 +199,13 @@ public class ResolutionService(
                 a.TargetId, targetName,
                 RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
                 a.TargetHpAfter, a.TargetDefeated, a.Wasted,
-                ResolutionFeedFormatter.Attack(a, attackerName, targetName),
+                ResolutionFeedFormatter.Attack(a, attackerName, targetName,
+                    a.AbilityId is null ? null : AbilityNameOf(a.AttackerId, a.AbilityId)),
                 a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge) : null,
                 RulesWireMapping.ToWire(a.WastedReason),
                 RulesWireMapping.ToWire(a.TargetStatus),
-                a.FinishingBlow);
+                a.FinishingBlow,
+                a.AbilityId);
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(
@@ -206,7 +215,17 @@ public class ResolutionService(
             e.TargetId,
             RulesWireMapping.ToWire(e.WastedReason))).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects);
+        var abilityUses = tick.AbilityUses.Select(u =>
+        {
+            var name = NameOf(u.CombatantId);
+            var abilityName = AbilityNameOf(u.CombatantId, u.AbilityId);
+            return new AbilityUseResult(
+                u.CombatantId, name, u.AbilityId, abilityName, u.TargetIds,
+                RulesWireMapping.ToWire(u.WastedReason),
+                ResolutionFeedFormatter.AbilityUse(u, name, abilityName, u.TargetIds.Select(NameOf).ToList()));
+        }).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -225,9 +244,10 @@ public class ResolutionService(
                     state.Profile.MaxAp,
                     p.Value.Select(a => new QueuedActionDto(
                         RulesWireMapping.ToWire(a.Type),
-                        config.ApCost(a.Type),
+                        config.ApCost(a, state.Profile),
                         a.TargetCombatantId,
-                        a.TargetCell is { } c ? new PositionDto(c.X, c.Y) : null)).ToList());
+                        a.TargetCell is { } c ? new PositionDto(c.X, c.Y) : null,
+                        a.AbilityId)).ToList());
             })
             .ToList();
     }
@@ -248,6 +268,17 @@ public class ResolutionService(
                     OccurredAt = now,
                     EventType = "movement",
                     Payload = JsonSerializer.Serialize(new { movement.CombatantId, movement.FinalPosition, movement.WasBlocked }, _jsonOptions),
+                });
+            }
+            foreach (var use in tick.AbilityUses ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = use.WastedReason is null ? "ability_used" : "ability_refused",
+                    Payload = JsonSerializer.Serialize(new { use.CombatantId, use.AbilityId, use.TargetIds, use.WastedReason }, _jsonOptions),
                 });
             }
             foreach (var attack in tick.Attacks)

@@ -29,17 +29,21 @@ public record CombatantQueueDto(
     int MaxAp,
     IReadOnlyList<QueuedActionDto> Actions);
 
+/// <param name="AbilityId">For "ability": which ability (3B.3).</param>
 public record QueuedActionDto(
     string Type,
     int ApCost,
     string? TargetCombatantId,
-    PositionDto? TargetCell);
+    PositionDto? TargetCell,
+    string? AbilityId = null);
 
+/// <param name="AbilityUses">Abilities used this tick, one per activation, in plan order (3B.3).</param>
 public record TickResult(
     int TickIndex,
     IReadOnlyList<MovementResult> Movements,
     IReadOnlyList<AttackResult> Attacks,
-    IReadOnlyList<EffectResult> Effects);
+    IReadOnlyList<EffectResult> Effects,
+    IReadOnlyList<AbilityUseResult>? AbilityUses = null);
 
 public record MovementResult(
     string CombatantId,
@@ -49,6 +53,7 @@ public record MovementResult(
     bool WasBlocked,
     string? BlockedByCombatantId);
 
+/// <param name="AbilityId">The ability that made this attack, or null for a basic attack (3B.3).</param>
 public record AttackResult(
     string AttackerId,
     string AttackerName,
@@ -64,7 +69,8 @@ public record AttackResult(
     AttackRollDto? Roll,
     string? WastedReason,
     string TargetStatus,
-    bool FinishingBlow);
+    bool FinishingBlow,
+    string? AbilityId = null);
 
 /// <summary>The hit check: hit when D20 + Accuracy ≥ TargetDodge. Null on a wasted attack.</summary>
 public record AttackRollDto(

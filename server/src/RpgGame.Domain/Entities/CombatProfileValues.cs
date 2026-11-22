@@ -26,4 +26,26 @@ public class CombatProfileValues
     /// 3B.5) means by side: party combatants go down, monsters die.
     /// </summary>
     public bool? CanBeDowned { get; set; }
+    /// <summary>
+    /// The combatant's ability loadout (3B.3): full copies of the definitions. Null on rows stored
+    /// before 3B.3: no abilities.
+    /// </summary>
+    public List<AbilityValues>? Abilities { get; set; }
+
+    /// <summary>A deep copy (each combatant row needs its own instance). Copies every field, so keep it in step with them.</summary>
+    public CombatProfileValues Copy() => new()
+    {
+        ProfileId = ProfileId,
+        ProfileName = ProfileName,
+        MaxHp = MaxHp,
+        MovementRange = MovementRange,
+        Speed = Speed,
+        MeleeAccuracy = MeleeAccuracy,
+        RangedAccuracy = RangedAccuracy,
+        Dodge = Dodge,
+        BaseDamage = BaseDamage,
+        MaxAp = MaxAp,
+        CanBeDowned = CanBeDowned,
+        Abilities = Abilities?.Select(a => a.Copy()).ToList(),
+    };
 }

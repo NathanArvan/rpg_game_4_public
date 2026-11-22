@@ -1,5 +1,6 @@
 namespace RpgGame.Api.Contracts.Hub;
 
+/// <param name="Abilities">The combatant's ability loadout (3B.3).</param>
 public record CombatantDto(
     string Id,
     string UserId,
@@ -12,4 +13,5 @@ public record CombatantDto(
     string ProfileId = "",
     string ProfileName = "",
     int MovementRange = 6,
-    int MaxAp = 4);
+    int MaxAp = 4,
+    IReadOnlyList<AbilityDto>? Abilities = null);

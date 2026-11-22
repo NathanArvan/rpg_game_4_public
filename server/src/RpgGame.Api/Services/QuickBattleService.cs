@@ -40,7 +40,7 @@ public class QuickBattleService(
             CharacterName = p.Name,
             CombatantType = p.Side == BattlePresetCatalog.Party ? "player" : "monster",
             IsAiControlled = p.IsAiControlled,
-            Profile = Copy(p.Profile), // each row gets its own copy of the preset's values
+            Profile = p.Profile.Copy(), // each row gets its own copy of the preset's values
         })).ToList();
 
         var encounter = new Encounter
@@ -76,17 +76,4 @@ public class QuickBattleService(
             new QuickBattleStartedResult(session.JoinCode, campaign.Id, session.Id, preset.Id),
             encounterResult);
     }
-
-    private static CombatProfileValues Copy(CombatProfileValues v) => new()
-    {
-        ProfileId = v.ProfileId,
-        ProfileName = v.ProfileName,
-        MaxHp = v.MaxHp,
-        MovementRange = v.MovementRange,
-        Speed = v.Speed,
-        MeleeAccuracy = v.MeleeAccuracy,
-        RangedAccuracy = v.RangedAccuracy,
-        Dodge = v.Dodge,
-        BaseDamage = v.BaseDamage,
-    };
 }

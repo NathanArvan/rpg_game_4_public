@@ -34,6 +34,8 @@
     <Content Update="QuickBattle/Presets/*.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Combat profile presets (3B.1), also read at startup -->
     <Content Update="CombatProfiles/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Ability definitions (3B.3), also read at startup -->
+    <Content Update="Abilities/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

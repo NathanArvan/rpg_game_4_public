@@ -609,6 +609,119 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                             b1.WithOwner()
                                 .HasForeignKey("EncounterCombatantId");
+
+                            b1.OwnsMany("RpgGame.Domain.Entities.AbilityValues", "Abilities", b2 =>
+                                {
+                                    b2.Property<Guid>("CombatProfileValuesEncounterCombatantId");
+
+                                    b2.Property<int>("__synthesizedOrdinal")
+                                        .ValueGeneratedOnAdd();
+
+                                    b2.Property<int>("ApCost");
+
+                                    b2.Property<int>("Cooldown");
+
+                                    b2.Property<string>("Description")
+                                        .IsRequired();
+
+                                    b2.Property<string>("Id");
+
+                                    b2.Property<string>("Name")
+                                        .IsRequired();
+
+                                    b2.PrimitiveCollection<string>("Tags")
+                                        .IsRequired();
+
+                                    b2.HasKey("CombatProfileValuesEncounterCombatantId", "__synthesizedOrdinal");
+
+                                    b2.ToTable("EncounterCombatants");
+
+                                    b2.WithOwner()
+                                        .HasForeignKey("CombatProfileValuesEncounterCombatantId");
+
+                                    b2.OwnsMany("RpgGame.Domain.Entities.AbilityEffectValues", "Effects", b3 =>
+                                        {
+                                            b3.Property<Guid>("AbilityValuesCombatProfileValuesEncounterCombatantId");
+
+                                            b3.Property<int>("AbilityValues__synthesizedOrdinal");
+
+                                            b3.Property<int>("__synthesizedOrdinal")
+                                                .ValueGeneratedOnAdd();
+
+                                            b3.Property<int>("AccuracyBonus");
+
+                                            b3.Property<string>("Kind")
+                                                .IsRequired();
+
+                                            b3.Property<string>("Roll");
+
+                                            b3.HasKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal", "__synthesizedOrdinal");
+
+                                            b3.ToTable("EncounterCombatants");
+
+                                            b3.WithOwner()
+                                                .HasForeignKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+
+                                            b3.OwnsOne("RpgGame.Domain.Entities.AbilityDamageValues", "Damage", b4 =>
+                                                {
+                                                    b4.Property<Guid>("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                        .HasColumnName("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCo~");
+
+                                                    b4.Property<int>("AbilityEffectValuesAbilityValues__synthesizedOrdinal");
+
+                                                    b4.Property<int>("AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.Property<int>("Bonus");
+
+                                                    b4.Property<string>("Die")
+                                                        .IsRequired();
+
+                                                    b4.Property<int>("Multiplier");
+
+                                                    b4.HasKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.ToTable("EncounterCombatants");
+
+                                                    b4.WithOwner()
+                                                        .HasForeignKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+                                                });
+
+                                            b3.Navigation("Damage");
+                                        });
+
+                                    b2.OwnsOne("RpgGame.Domain.Entities.AbilityTargetValues", "Target", b3 =>
+                                        {
+                                            b3.Property<Guid>("AbilityValuesCombatProfileValuesEncounterCombatantId");
+
+                                            b3.Property<int>("AbilityValues__synthesizedOrdinal");
+
+                                            b3.Property<int?>("Count");
+
+                                            b3.Property<string>("Filter")
+                                                .IsRequired();
+
+                                            b3.Property<bool>("IncludeSelf");
+
+                                            b3.Property<string>("Kind")
+                                                .IsRequired();
+
+                                            b3.Property<int>("Range");
+
+                                            b3.HasKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+
+                                            b3.ToTable("EncounterCombatants");
+
+                                            b3.WithOwner()
+                                                .HasForeignKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+                                        });
+
+                                    b2.Navigation("Effects");
+
+                                    b2.Navigation("Target")
+                                        .IsRequired();
+                                });
+
+                            b1.Navigation("Abilities");
                         });
 
                     b.Navigation("Encounter");

@@ -59,7 +59,9 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `downs` | false | Goes **Downed** at 0 HP instead of dying (3B.5; party profiles do) |
 | `status` | `"standing"` | Starting status: `standing`, `downed`, `stable` or `dead` |
 | `bleedout` | 2 | With `"status": "downed"`: rounds left before bleeding out |
-| `side` | `"party"` | Team, used only by `"ai"` plans. Any two different sides are enemies |
+| `side` | none | Team: used by `"ai"` plans (missing = `"party"` there) and by ability target filters (missing = no team, everyone's enemy). Any two different sides are enemies |
+| `abilities` | none | Ability ids from the scenario's top-level `abilities` block (3B.3): the loadout |
+| `cooldowns` | none | `{ "power_strike": 1 }`: abilities already on cooldown at the start of the round |
 
 ### `plans`
 
@@ -87,6 +89,7 @@ toward it, then melee with the AP left if the walk ends next to it. Give combata
 | `"ranged ID"` | Ranged attack, unlimited range |
 | `"defend"` | No mechanical effect yet |
 | `"stabilize ID"` | Stops an adjacent **Downed** combatant bleeding out (they become Stable). Resolves with the effects, after the tick's attacks |
+| `"ability ABILITY ID"` | Uses one of the combatant's abilities (3B.3) on the target. It takes one queue slot and costs the ability's own AP. Its attacks resolve with the tick's other attacks, one hit roll per target |
 
 Within each tick, all movement happens first, then all attacks, then effects. Damage
 within a tick is simultaneous, so two combatants can kill each other. Anyone who falls in
@@ -99,12 +102,36 @@ It does **not** decide who wins a contested cell: the fastest claimant always ge
 and the others are blocked by it. If the top two claimants tie on speed, every claimant
 stops; plan order then only decides who each one reports as its blocker.
 
+### `abilities` (optional, 3B.3)
+
+Ability definitions combatants can list, in the same shape as the server's
+`server/src/RpgGame.Api/Abilities/abilities.json` (written inline so these tests don't depend on
+the server's catalog):
+
+```jsonc
+"abilities": [
+  {
+    "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+    "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+    "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+  }
+]
+```
+
+`roll` is `melee`, `ranged` (d20 + that accuracy + `accuracyBonus`) or `none` (always hits, no d20).
+`die` is `"weapon"` (the caster's own `damage`) or a die like `"d8"`; damage is `(die + bonus) × multiplier`.
+An ability is **used** once its tick is reached by a caster who is still standing, even if its
+target has moved out of `range` or fallen (that attack is wasted); a use starts the cooldown. An
+ability still on cooldown, or not in the loadout, is refused (no roll, no new cooldown). At the end
+of the round every cooldown goes down by one, then each ability used this round is set to its
+`cooldown`: used in round 3 with cooldown 2 → usable again in round 6.
+
 ### `dice`
 
 These are the exact rolls, used in order. Every attack that isn't wasted rolls a d20 to
 hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die, except
 against a Downed or Stable target: that's a finishing blow, and a hit kills with no damage
-roll. Within a tick, attackers roll in plan order. Wasted attacks don't roll at all. A
+roll. Within a tick, attackers roll in plan order (an ability rolls once per target, in target order). Wasted attacks don't roll at all. A
 wasted attack is one where the target is already dead, or a melee target is out of reach.
 
 The test fails if the resolver asks for more rolls than you listed. It also fails if a
@@ -131,6 +158,8 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `blocked` | The exact set of `{ "tick", "id" }` movers that were stopped short |
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
+| `cooldowns` | `{ "id": { "power_strike": 2 } }`, the **exact** cooldowns at the end of the round (`{}` = none) |
+| `abilityUses` | The exact set of `{ "tick", "id", "ability" }` activations; add `"wasted": "on_cooldown"` (or `"not_in_loadout"`) for a refused one |
 | `plans` | `{ "id": "move 0,13" }` or `{ "id": ["move 5,6", "melee Hero"] }`, the queue the AI chose for an `"ai"` plan (same syntax as `plans`). A single string means a one-action queue |
 
 When a check fails, the test lists every mismatch, for example

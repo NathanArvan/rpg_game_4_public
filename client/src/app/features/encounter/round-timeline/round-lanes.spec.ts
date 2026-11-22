@@ -7,17 +7,18 @@ const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): 
     type, apCost,
     targetCombatantId: type.endsWith('attack') || type === 'stabilize' ? target ?? null : null,
     targetCell: type === 'move' ? { x: 1, y: 0 } : null,
+    abilityId: null,
   })),
 });
 
 const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
   hit: true, damage: 4, targetNewHp: 6, targetDefeated: false, wasted: false, feedText: '',
-  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, ...extra,
+  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], ...parts });
+  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], ...parts });
 
 const payload = (queues: CombatantQueueDto[], ...ticks: TickResult[]): ResolutionPayload =>
   ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [] });
@@ -95,7 +96,7 @@ describe('buildLanes', () => {
   it('shows stabilizes, saved or wasted (3B.5)', () => {
     // A and B have no queue (downed combatants can't plan): their names come from the end-of-round rows.
     const row = (id: string) => ({ id, userId: '', characterName: id, currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
-      isAiControlled: false, profileId: '', profileName: '', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 1 });
+      isAiControlled: false, profileId: '', profileName: '', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 1, abilities: [], cooldowns: {} });
     const lanes = buildLanes({
       ...payload(
         [q('K', 4, ['stabilize', 2, 'A']), q('M', 4, ['stabilize', 2, 'B'])],
@@ -110,5 +111,18 @@ describe('buildLanes', () => {
       ['stabilize', 'stabilized', '✚'], ['stabilize', 'wasted', '✚'],
     ]);
     expect(lanes[1].slots[0].detail).toBe("M's stabilize on B is wasted (not bleeding out).");
+  });
+
+  it('names ability slots and reports their attacks (3B.3)', () => {
+    const queue: CombatantQueueDto = { combatantId: 'B', combatantName: 'B', maxAp: 4, actions: [
+      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'power_strike' },
+    ] };
+    const use = { combatantId: 'B', combatantName: 'B', abilityId: 'power_strike', abilityName: 'Power Strike',
+      targetIds: ['G'], wastedReason: null, feedText: '' };
+    const [lane] = buildLanes(payload([queue],
+      tick(0, { attacks: [attack('B', 'G', { abilityId: 'power_strike', damage: 9 })], abilityUses: [use] })));
+    const s0 = lane.slots[0];
+    expect([s0.kind, s0.icon, s0.outcome, s0.label]).toEqual(['ability', '✦', 'hit', 'Power Strike on G (3 AP)']);
+    expect(s0.detail).toContain('Power Strike: B → G');
   });
 });

@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { Action, Selector, State, StateContext } from '@ngxs/store';
 import {
   AllLockedIn,
+  ArmAbility,
+  DisarmAbility,
   ClearEncounter,
   ClearMyPlannedAction,
   CombatantDefeated,
@@ -38,6 +40,7 @@ import { MonsterAddedPayload } from '../../contracts/hub-contracts.generated';
     gmSelectedEnemyId: null,
     enemyPlannedActions: {},
     apCosts: { ...DEFAULT_AP_COSTS },
+    armedAbilityId: null,
     outcome: null,
   },
 })
@@ -114,6 +117,11 @@ export class EncounterState {
   }
 
   @Selector()
+  static armedAbilityId(state: EncounterStateModel): string | null {
+    return state.armedAbilityId;
+  }
+
+  @Selector()
   static outcome(state: EncounterStateModel): EncounterOutcome | null {
     return state.outcome;
   }
@@ -135,6 +143,8 @@ export class EncounterState {
       profileName: c.profileName ?? '',
       movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
       maxAp: c.maxAp ?? DEFAULT_MAX_AP,
+      abilities: c.abilities ?? [],
+      cooldowns: {},
     }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
@@ -161,6 +171,8 @@ export class EncounterState {
       profileName: c.profileName ?? '',
       movementRange: c.movementRange ?? DEFAULT_MOVEMENT_RANGE,
       maxAp: c.maxAp ?? DEFAULT_MAX_AP,
+      abilities: c.abilities ?? [],
+      cooldowns: c.cooldowns ?? {},
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -173,6 +185,7 @@ export class EncounterState {
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
       apCosts: apCosts ?? { ...DEFAULT_AP_COSTS },
+      armedAbilityId: null,
     });
   }
 
@@ -203,6 +216,7 @@ export class EncounterState {
         isDefeated,
         status: u ? toStatus(u.status, u.isDefeated) : isDefeated && c.status === 'standing' ? 'dead' : c.status,
         bleedoutRoundsLeft: u ? u.bleedoutRoundsLeft ?? 0 : c.bleedoutRoundsLeft,
+        cooldowns: u?.cooldowns ?? c.cooldowns,
       };
     });
 
@@ -240,7 +254,17 @@ export class EncounterState {
 
   @Action(SelectMyCombatant)
   selectMyCombatant(ctx: StateContext<EncounterStateModel>, { combatantId }: SelectMyCombatant) {
-    ctx.patchState({ selectedCombatantId: combatantId });
+    ctx.patchState({ selectedCombatantId: combatantId, armedAbilityId: null });
+  }
+
+  @Action(ArmAbility)
+  armAbility(ctx: StateContext<EncounterStateModel>, { abilityId }: ArmAbility) {
+    ctx.patchState({ armedAbilityId: abilityId });
+  }
+
+  @Action(DisarmAbility)
+  disarmAbility(ctx: StateContext<EncounterStateModel>) {
+    ctx.patchState({ armedAbilityId: null });
   }
 
   @Action(CombatantDefeated)
@@ -270,13 +294,15 @@ export class EncounterState {
       profileName: payload.monster.profileName ?? '',
       movementRange: payload.monster.movementRange ?? DEFAULT_MOVEMENT_RANGE,
       maxAp: payload.monster.maxAp ?? DEFAULT_MAX_AP,
+      abilities: payload.monster.abilities ?? [],
+      cooldowns: payload.monster.cooldowns ?? {},
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }
 
   @Action(GmSelectEnemy)
   gmSelectEnemy(ctx: StateContext<EncounterStateModel>, { combatantId }: GmSelectEnemy) {
-    ctx.patchState({ gmSelectedEnemyId: combatantId });
+    ctx.patchState({ gmSelectedEnemyId: combatantId, armedAbilityId: null });
   }
 
   @Action(GmSetEnemyPlan)
@@ -305,6 +331,7 @@ export class EncounterState {
       myPlannedActions: {},
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
+      armedAbilityId: null,
     });
   }
 
@@ -324,6 +351,7 @@ export class EncounterState {
       gmSelectedEnemyId: null,
       enemyPlannedActions: {},
       apCosts: { ...DEFAULT_AP_COSTS },
+      armedAbilityId: null,
       outcome: null,
     });
   }

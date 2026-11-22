@@ -49,7 +49,8 @@ internal static class EncounterStateLoader
             var hpKey = HpKeyFor(c);
             var currentHp = await redisState.GetCharacterHpAsync(hpKey);
             var (status, bleedout) = await LoadStatusAsync(redisState, encounterIdStr, combatantId);
-            records[combatantId] = ToRecord(c, hpKey, currentHp, status, bleedout, mapEntry);
+            var cooldowns = await redisState.GetCooldownsAsync(encounterIdStr, combatantId) ?? [];
+            records[combatantId] = ToRecord(c, hpKey, currentHp, status, bleedout, cooldowns, mapEntry);
         }
 
         return new LoadedEncounter(encounter, mapEntry, records);
@@ -69,6 +70,12 @@ internal static class EncounterStateLoader
             : (CombatantStatus.Dead, 0);
     }
 
+    /// <summary>
+    /// The combatant's team in the rules engine (3B.3): "party" for players, "enemy" for monsters,
+    /// the same split <see cref="EncounterEndCheck"/> and AI planning use.
+    /// </summary>
+    public static string TeamOf(EncounterCombatant c) => c.CombatantType == "player" ? "party" : "enemy";
+
     /// <summary>Redis live-state key: the character ID when there is one, otherwise the combatant ID.</summary>
     public static string HpKeyFor(EncounterCombatant c) => c.CharacterId?.ToString() ?? c.Id.ToString();
 
@@ -77,7 +84,8 @@ internal static class EncounterStateLoader
     /// before 3B.1 have none and get the default profile.
     /// </summary>
     private static CombatantRecord ToRecord(
-        EncounterCombatant c, string hpKey, int currentHp, CombatantStatus status, int bleedout, MapEntry map)
+        EncounterCombatant c, string hpKey, int currentHp, CombatantStatus status, int bleedout,
+        IReadOnlyDictionary<string, int> cooldowns, MapEntry map)
     {
         GridPosition? position = map.Positions.TryGetValue(c.Id.ToString(), out var pos)
             ? new GridPosition(pos.X, pos.Y)
@@ -90,7 +98,11 @@ internal static class EncounterStateLoader
             Profile: CombatProfileMapping.ToRules(c.Profile, c.CombatantType),
             Position: position,
             Status: status,
-            BleedoutRoundsLeft: bleedout);
+            BleedoutRoundsLeft: bleedout)
+        {
+            Team = TeamOf(c),
+            Cooldowns = cooldowns,
+        };
 
         return new CombatantRecord(hpKey, currentHp, c, state);
     }

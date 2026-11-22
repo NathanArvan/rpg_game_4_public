@@ -38,13 +38,15 @@ public static class RoundResolver
         {
             // Combatants defeated in an earlier tick are skipped by IsOut(), which voids
             // their remaining queued actions.
+            var abilityUses = ResolveAbilityActivations(round, tick);
             var movements = ResolveMovementPhase(round, tick);
             var attacks = ResolveAttackPhase(round, tick);
             var effects = ResolveEffectsPhase(round, tick);
-            ticks.Add(new TickOutcome(tick, movements, attacks, effects));
+            ticks.Add(new TickOutcome(tick, movements, attacks, effects) { AbilityUses = abilityUses });
         }
 
         var endOfRound = ResolveBleedout(round);
+        var cooldowns = ResolveCooldowns(round);
 
         var next = state with
         {
@@ -54,11 +56,63 @@ public static class RoundResolver
                 Position = round.Positions.TryGetValue(c.Id, out var p) ? p : c.Position,
                 Status = round.Status[c.Id],
                 BleedoutRoundsLeft = round.Status[c.Id] == CombatantStatus.Downed ? round.Bleedout[c.Id] : 0,
+                Cooldowns = cooldowns[c.Id],
             }).ToList(),
         };
 
         return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList(), round.Plans, endOfRound);
     }
+
+    // ----- Ability activations (start of each tick) -----
+
+    /// <summary>
+    /// Decides which abilities queued at this tick go ahead (3B.3). An ability is used once its tick
+    /// is reached by a caster who is still standing, whatever then happens to its targets, and that
+    /// starts its cooldown (ABILITIES.md A10). One that isn't in the loadout or is on cooldown is
+    /// refused (planning rejects both; this only guards the engine). The ones that go ahead are
+    /// recorded in <see cref="RoundContext.TickAbilities"/> for this tick's phases.
+    /// </summary>
+    private static List<AbilityUse> ResolveAbilityActivations(RoundContext round, int tick)
+    {
+        round.TickAbilities.Clear();
+        var uses = new List<AbilityUse>();
+        foreach (var (casterId, queue) in round.Plans)
+        {
+            if (round.IsOut(casterId)) continue;
+            var action = ActionAt(queue, tick);
+            if (action?.Type != ActionType.Ability) continue;
+
+            var caster = round.Combatants[casterId];
+            var ability = caster.Profile.FindAbility(action.AbilityId);
+            var targets = TargetIdsOf(action);
+            var abilityId = action.AbilityId ?? "";
+
+            if (ability is null || ability.Activation != AbilityActivation.Active)
+            {
+                uses.Add(new AbilityUse(casterId, abilityId, targets, WastedReason.NotInLoadout));
+                continue;
+            }
+
+            var used = round.UsedAbilities.TryGetValue(casterId, out var set) ? set : round.UsedAbilities[casterId] = [];
+            bool usedEarlierThisRound = ability.Cooldown > 0 && used.Contains(ability.Id);
+            if (caster.CooldownLeft(ability.Id) > 0 || usedEarlierThisRound)
+            {
+                uses.Add(new AbilityUse(casterId, abilityId, targets, WastedReason.OnCooldown));
+                continue;
+            }
+
+            used.Add(ability.Id);
+            round.TickAbilities[casterId] = ability;
+            uses.Add(new AbilityUse(casterId, abilityId, targets, StartedCooldown: ability.Cooldown > 0));
+        }
+        return uses;
+    }
+
+    /// <summary>The chosen targets of an action: the single target, or the list (3B.3 PR 2).</summary>
+    private static IReadOnlyList<string> TargetIdsOf(PlannedAction action) =>
+        action.TargetCombatantIds is { Count: > 0 } list ? list
+        : string.IsNullOrEmpty(action.TargetCombatantId) ? []
+        : [action.TargetCombatantId];
 
     // ----- Phase 1: Movement -----
 
@@ -180,57 +234,51 @@ public static class RoundResolver
 
     private sealed record PendingAttack(
         string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
-        AttackRoll? Roll, bool Finishing);
+        AttackRoll? Roll, bool Finishing, string? AbilityId);
 
     private static List<AttackOutcome> ResolveAttackPhase(RoundContext round, int tick)
     {
         var pending = new List<PendingAttack>();
         var hpDeltas = new Dictionary<string, int>(); // targetId → net delta (negative = damage)
 
+        // Basic attacks and ability attacks share one batch: dice are rolled in plan order (then
+        // target order within an ability), and all damage is netted together.
         foreach (var (attackerId, queue) in round.Plans)
         {
             if (round.IsOut(attackerId)) continue;
             var action = ActionAt(queue, tick);
-            if (action?.Type is not (ActionType.MeleeAttack or ActionType.RangedAttack)) continue;
-
-            var targetId = action.TargetCombatantId ?? "";
-
-            // Validate against post-movement positions. Damage within a tick is simultaneous, so
-            // nobody falls mid-phase (quirk 6). A target that fell in an EARLIER tick is wasted as
-            // defeated — dead, or downed this round: finishing blows must be planned, so only
-            // someone already Downed or Stable when the round began can be finished off (3B.5).
-            // That way a queued second attack never kills a hero before allies can react.
-            var wasted = WastedReason.None;
-            bool finishing = false;
-            if (!round.Combatants.ContainsKey(targetId))
+            switch (action?.Type)
             {
-                wasted = WastedReason.InvalidTarget;
+                case ActionType.MeleeAttack:
+                case ActionType.RangedAttack:
+                {
+                    bool melee = action.Type == ActionType.MeleeAttack;
+                    // Ranged attacks have unlimited range in 3A; melee needs reach after movement.
+                    var wasted = CheckAttackTarget(round, attackerId, action.TargetCombatantId ?? "",
+                        targeting: null, range: melee ? round.Config.MeleeReach : null, WastedReason.OutOfMeleeReach);
+                    pending.Add(RollAttack(round, hpDeltas, attackerId, action.TargetCombatantId ?? "", action.Type,
+                        melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, accuracyBonus: 0, wasted, abilityId: null));
+                    break;
+                }
+                case ActionType.Ability when round.TickAbilities.TryGetValue(attackerId, out var ability):
+                    foreach (var effect in ability.Effects.OfType<AttackEffect>())
+                    {
+                        var type = effect.Roll switch
+                        {
+                            AttackKind.Melee => ActionType.MeleeAttack,
+                            AttackKind.Ranged => ActionType.RangedAttack,
+                            _ => ActionType.Ability,
+                        };
+                        foreach (var targetId in TargetIdsOf(action))
+                        {
+                            var wasted = CheckAttackTarget(round, attackerId, targetId,
+                                ability.Targeting, ability.Targeting.Range, WastedReason.OutOfRange);
+                            pending.Add(RollAttack(round, hpDeltas, attackerId, targetId, type,
+                                effect.Roll, effect.Damage, effect.AccuracyBonus, wasted, ability.Id));
+                        }
+                    }
+                    break;
             }
-            else if (round.Status[targetId] == CombatantStatus.Dead
-                     || (round.IsOut(targetId) && !round.OutAtStart.Contains(targetId)))
-            {
-                wasted = WastedReason.TargetDefeated;
-            }
-            else if (action.Type == ActionType.MeleeAttack && !round.InMeleeReach(attackerId, targetId))
-            {
-                wasted = WastedReason.OutOfMeleeReach;
-            }
-            // Ranged attacks have unlimited range in 3A.
-
-            bool hit = false, isCrit = false;
-            int damage = 0;
-            AttackRoll? roll = null;
-            if (wasted == WastedReason.None)
-            {
-                // Downed or Stable before this tick's attacks: any hit kills, with no damage roll.
-                finishing = round.Status[targetId] != CombatantStatus.Standing;
-                (hit, damage, isCrit, roll) = ComputeAttack(
-                    round.Combatants[attackerId], round.Combatants[targetId], action.Type, round.Dice, rollDamage: !finishing);
-                if (hit && !finishing)
-                    hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - damage;
-            }
-
-            pending.Add(new PendingAttack(attackerId, targetId, action.Type, wasted, hit, damage, isCrit, roll, finishing));
         }
 
         // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3).
@@ -281,30 +329,93 @@ public static class RoundResolver
             a.Wasted,
             a.Roll,
             TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
-            FinishingBlow: a.Finishing)).ToList();
+            FinishingBlow: a.Finishing,
+            AbilityId: a.AbilityId)).ToList();
     }
 
     /// <summary>
-    /// Damage pipeline (DESIGN_SPIKE Decision 4). The slots exist now so items, abilities,
-    /// stats and crits can fill them in later without restructuring.
+    /// The single place that decides whether an attacker can hit a target right now (ABILITIES.md
+    /// A4): the target exists → it's on the side the targeting allows → it isn't already out of
+    /// reach of attacks by status → it's within range of the attacker's current cell. Line of
+    /// sight (3M.2), the high-ground range bonus (3M.4) and "the attacker can see the target"
+    /// (3C.1) belong here too. Nothing else in the resolver checks range.
     /// </summary>
-    private static (bool Hit, int Damage, bool IsCrit, AttackRoll Roll) ComputeAttack(
-        CombatantState attacker, CombatantState target, ActionType type, IDiceRoller dice, bool rollDamage = true)
+    /// <param name="targeting">The ability's targeting, for its side filter; null for basic attacks (anyone).</param>
+    /// <param name="range">Max Chebyshev distance, or null for unlimited (basic ranged attacks).</param>
+    /// <param name="outOfRange">The reason to report when the target is too far (basic melee keeps its own).</param>
+    private static WastedReason CheckAttackTarget(
+        RoundContext round, string attackerId, string targetId, Targeting? targeting, int? range, WastedReason outOfRange)
     {
-        int accuracy = type == ActionType.MeleeAttack
-            ? attacker.Profile.MeleeAccuracy
-            : attacker.Profile.RangedAccuracy;
-        var roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
-        if (roll.Total < roll.TargetDodge)
-            return (false, 0, false, roll);
+        if (!round.Combatants.TryGetValue(targetId, out var target))
+            return WastedReason.InvalidTarget;
+        if (targeting is not null && !Relations.Matches(round.Combatants[attackerId], target, targeting))
+            return WastedReason.InvalidTargetType;
+
+        // Damage within a tick is simultaneous, so nobody falls mid-phase (quirk 6). A target that
+        // fell in an EARLIER tick is wasted as defeated — dead, or downed this round: finishing
+        // blows must be planned, so only someone already Downed or Stable when the round began can
+        // be finished off (3B.5). That way a queued second attack never kills a hero before allies
+        // can react.
+        if (round.Status[targetId] == CombatantStatus.Dead
+            || (round.IsOut(targetId) && !round.OutAtStart.Contains(targetId)))
+            return WastedReason.TargetDefeated;
+
+        // A combatant with no map position isn't on the map: it can't be reached by anything with a range.
+        if (range is { } r && !round.WithinRange(attackerId, targetId, r))
+            return outOfRange;
+        return WastedReason.None;
+    }
+
+    /// <summary>Rolls one attack (unless wasted) and adds its damage to the tick's netting batch.</summary>
+    private static PendingAttack RollAttack(
+        RoundContext round, Dictionary<string, int> hpDeltas, string attackerId, string targetId, ActionType type,
+        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, string? abilityId)
+    {
+        bool hit = false, isCrit = false, finishing = false;
+        int amount = 0;
+        AttackRoll? roll = null;
+        if (wasted == WastedReason.None)
+        {
+            // Downed or Stable before this tick's attacks: any hit kills, with no damage roll.
+            finishing = round.Status[targetId] != CombatantStatus.Standing;
+            (hit, amount, isCrit, roll) = ComputeAttack(
+                round.Combatants[attackerId], round.Combatants[targetId], kind, damage, accuracyBonus, round.Dice,
+                rollDamage: !finishing);
+            if (hit && !finishing)
+                hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - amount;
+        }
+        return new PendingAttack(attackerId, targetId, type, wasted, hit, amount, isCrit, roll, finishing, abilityId);
+    }
+
+    /// <summary>
+    /// Damage pipeline (DESIGN_SPIKE Decision 4, MAGIC_SYSTEM.md). The slots exist now so items,
+    /// stats, resonance and crits can fill them in later without restructuring.
+    /// </summary>
+    /// <returns>Roll is null for an attack that can't miss (<see cref="AttackKind.None"/>).</returns>
+    private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll) ComputeAttack(
+        CombatantState attacker, CombatantState target, AttackKind kind, DamageSpec spec, int accuracyBonus,
+        IDiceRoller dice, bool rollDamage = true)
+    {
+        AttackRoll? roll = null;
+        if (kind != AttackKind.None)
+        {
+            int accuracy = (kind == AttackKind.Melee ? attacker.Profile.MeleeAccuracy : attacker.Profile.RangedAccuracy)
+                + accuracyBonus;
+            roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
+            if (roll.Total < roll.TargetDodge)
+                return (false, 0, false, roll);
+        }
         if (!rollDamage)
             return (true, 0, false, roll); // a finishing blow: the hit is what counts
 
-        int baseDamage = dice.Roll(attacker.Profile.BaseDamage.Sides);
+        int baseDamage = dice.Roll((spec.Die ?? attacker.Profile.BaseDamage).Sides);
         int statModifier = 0;                                // stats (deferred)
         int weaponBonus = 0;                                 // items (4.2)
-        int abilityModifier = 0;                             // abilities (3B.3+)
-        int totalDamage = baseDamage + statModifier + weaponBonus + abilityModifier;
+        int abilityModifier = spec.Bonus;                    // abilities (3B.3)
+        int resonanceBonus = 0;                              // resonance (3M.5)
+        int leyBonus = 0;                                    // ley points (3M.5)
+        int totalDamage = (baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + leyBonus)
+            * spec.Multiplier;
 
         bool isCrit = false;                                 // crit system (3B+)
         if (isCrit) totalDamage *= 2;
@@ -376,6 +487,28 @@ public static class RoundResolver
             results.Add(new BleedoutOutcome(c.Id, left, left == 0));
         }
         return results;
+    }
+
+    /// <summary>
+    /// Cooldowns for the next round (ABILITIES.md A10): every existing cooldown goes down by one
+    /// (and is dropped at 0), then each ability used this round is set to its full cooldown. Used in
+    /// round 3 with cooldown 2: not plannable in rounds 4 and 5, ready again in round 6.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyDictionary<string, int>> ResolveCooldowns(RoundContext round)
+    {
+        var result = new Dictionary<string, IReadOnlyDictionary<string, int>>();
+        foreach (var c in round.State.Combatants)
+        {
+            var next = new Dictionary<string, int>();
+            foreach (var (abilityId, left) in c.Cooldowns)
+                if (left > 1) next[abilityId] = left - 1;
+            if (round.UsedAbilities.TryGetValue(c.Id, out var used))
+                foreach (var abilityId in used)
+                    if (c.Profile.FindAbility(abilityId) is { Cooldown: > 0 } ability)
+                        next[abilityId] = ability.Cooldown;
+            result[c.Id] = next.Count == 0 && c.Cooldowns.Count == 0 ? c.Cooldowns : next;
+        }
+        return result;
     }
 
     // ----- Helpers -----
@@ -460,6 +593,12 @@ public static class RoundResolver
 
         public List<string> DefeatedThisRound { get; } = [];
 
+        /// <summary>Abilities each combatant has used so far this round (they start cooldowns at its end).</summary>
+        public Dictionary<string, HashSet<string>> UsedAbilities { get; } = [];
+
+        /// <summary>The abilities going ahead in the current tick, by caster (set at the start of each tick).</summary>
+        public Dictionary<string, AbilityDefinition> TickAbilities { get; } = [];
+
         public RoundContext(
             EncounterState state,
             IReadOnlyDictionary<string, IReadOnlyList<PlannedAction>> plans,
@@ -490,7 +629,7 @@ public static class RoundResolver
             var affordable = new Dictionary<string, IReadOnlyList<PlannedAction>>();
             foreach (var (id, queue) in plans)
             {
-                int n = PlanValidator.AffordableCount(queue, Combatants[id].Profile.MaxAp, config);
+                int n = PlanValidator.AffordableCount(queue, Combatants[id].Profile, config);
                 affordable[id] = n == queue.Count ? queue : queue.Take(n).ToList();
             }
             Plans = affordable;
@@ -511,9 +650,12 @@ public static class RoundResolver
         /// Both combatants are on the map and within melee reach. A combatant with no map
         /// position isn't on the map, so it can't make or receive melee attacks.
         /// </summary>
-        public bool InMeleeReach(string attackerId, string targetId) =>
+        public bool InMeleeReach(string attackerId, string targetId) => WithinRange(attackerId, targetId, Config.MeleeReach);
+
+        /// <summary>Both combatants are on the map and at most <paramref name="range"/> cells apart.</summary>
+        public bool WithinRange(string attackerId, string targetId, int range) =>
             Positions.TryGetValue(attackerId, out var a)
             && Positions.TryGetValue(targetId, out var t)
-            && a.ChebyshevDistanceTo(t) <= Config.MeleeReach;
+            && a.ChebyshevDistanceTo(t) <= range;
     }
 }

@@ -20,6 +20,10 @@ public interface IRedisGameState
     /// <summary>Downed / stable / dead detail for a defeated combatant (3B.5); null if none was stored.</summary>
     Task<CombatantStatusEntry?> GetStatusAsync(string encounterId, string combatantId);
     Task SetStatusAsync(string encounterId, string combatantId, CombatantStatusEntry status);
+    /// <summary>Abilities on cooldown for one combatant (3B.3): ability id → rounds left. Empty when none.</summary>
+    Task<Dictionary<string, int>> GetCooldownsAsync(string encounterId, string combatantId);
+    /// <summary>Replaces one combatant's cooldowns; an empty map removes the entry.</summary>
+    Task SetCooldownsAsync(string encounterId, string combatantId, IReadOnlyDictionary<string, int> cooldowns);
 
     // Planning phase
     Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson);

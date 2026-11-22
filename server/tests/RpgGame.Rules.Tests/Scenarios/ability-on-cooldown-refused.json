@@ -1,0 +1,21 @@
+{
+  "description": "An ability still on cooldown is refused if it reaches the resolver (planning rejects it first): no roll, no new cooldown",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["power_strike"], "cooldowns": { "power_strike": 1 } },
+    { "id": "Goblin",  "side": "enemy", "at": [1, 0] }
+  ],
+  "plans": { "Bruiser": ["ability power_strike Goblin"] },
+  "dice": [],
+  "expect": {
+    "hp": { "Goblin": 20 },
+    "abilityUses": [ { "tick": 1, "id": "Bruiser", "ability": "power_strike", "wasted": "on_cooldown" } ],
+    "cooldowns": { "Bruiser": {} }
+  }
+}

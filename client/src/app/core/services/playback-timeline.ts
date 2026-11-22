@@ -28,8 +28,11 @@ export interface FloatCue {
   /** The combatant the text floats above. */
   combatantId: string;
   text: string;
-  /** damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized / bleeding (3B.5). */
-  kind: 'damage' | 'miss' | 'wasted' | 'status';
+  /**
+   * damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized /
+   * bleeding (3B.5); ability: the ability's name above its user (3B.3).
+   */
+  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability';
 }
 
 /** Short words for why an attack was wasted (the server's wastedReason). */
@@ -39,6 +42,11 @@ export function wastedLabel(reason: string | null): string {
     case 'out_of_melee_reach': return 'out of reach';
     case 'invalid_target': return 'no target';
     case 'target_not_downed': return 'not bleeding out';
+    case 'out_of_range': return 'out of range';
+    case 'on_cooldown': return 'on cooldown';
+    case 'not_in_loadout': return 'no such ability';
+    case 'invalid_target_type': return 'wrong target';
+    case 'no_targets': return 'no targets';
     default: return 'wasted';
   }
 }
@@ -179,14 +187,26 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
       }
     }
 
+    // Abilities used this tick (3B.3): the name floats over the user as its attacks land. A refused
+    // one (e.g. still on cooldown) made no attacks, so it gets its own feed line and label.
+    const abilityFloats: FloatCue[] = [];
+    for (const use of tick.abilityUses ?? []) {
+      if (use.wastedReason) {
+        pendingFeed.push(use.feedText);
+        abilityFloats.push({ combatantId: use.combatantId, text: wastedLabel(use.wastedReason), kind: 'wasted' });
+      } else {
+        abilityFloats.push({ combatantId: use.combatantId, text: use.abilityName, kind: 'ability' });
+      }
+    }
+
     // Attacks: all of this tick's attacks land together.
     pendingFeed.push(...tick.attacks.map(a => a.feedText));
-    if (tick.attacks.length > 0) {
+    if (tick.attacks.length > 0 || abilityFloats.length > 0) {
       const auras: AuraCue[] = [];
       const addAura = (combatantId: string, kind: AuraKind) => {
         if (!auras.some(a => a.combatantId === combatantId && a.kind === kind)) auras.push({ combatantId, kind });
       };
-      const floats: FloatCue[] = [];
+      const floats: FloatCue[] = [...abilityFloats];
       const hp: Record<string, number> = {};
       for (const a of tick.attacks) {
         if (a.wasted) {

@@ -114,6 +114,7 @@ resolve_round(all_combatants):
 | Ranged Attack | Attack | 2 | Requires target within range post-movement. Unlimited range in 3A. |
 | Defend | Effects | 1 | No resolution in 3A. Future: damage reduction buff. |
 | Disengage | Movement | 1 | Move without provoking reactive attacks. See Decision 5. |
+| Ability (3B.3) | Per effect | Its own (`abilities.json`) | One queue slot. Each effect runs in its own phase of that tick: attacks and heals with the Attacks phase (heals net with damage), moves with Movement, stabilize with Effects. See `ABILITIES.md` |
 | Prepared Action | Special | Varies | Doesn't resolve at its queue position. Activates reactively. See Decision 4. |
 
 ### Movement Budget per Round (3B.2) ✅

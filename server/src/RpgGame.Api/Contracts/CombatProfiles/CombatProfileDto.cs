@@ -13,4 +13,13 @@ public record CombatProfileDto(
     int RangedAccuracy,
     int Dodge,
     string BaseDamage,
-    int MaxAp);
+    int MaxAp,
+    IReadOnlyList<CombatProfileAbilityDto> Abilities);
+
+/// <summary>An ability in a profile's loadout (3B.3), for showing what a profile can do.</summary>
+public record CombatProfileAbilityDto(
+    string Id,
+    string Name,
+    string Description,
+    int ApCost,
+    int Cooldown);

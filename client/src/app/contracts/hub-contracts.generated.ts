@@ -1,6 +1,34 @@
 // AUTO-GENERATED — do not edit by hand.
 // Source: C# records in server/src/RpgGame.Api/Contracts/Hub/
 // Regenerate: npm run contracts:hub
+export interface AbilityDto {
+  id: string;
+  name: string;
+  description: string;
+  apCost: number;
+  cooldown: number;
+  tags: string[];
+  targeting: AbilityTargetingDto;
+}
+
+export interface AbilityTargetingDto {
+  kind: string;
+  filter: string;
+  range: number;
+  count: number | null;
+  includeSelf: boolean;
+}
+
+export interface AbilityUseResult {
+  combatantId: string;
+  combatantName: string;
+  abilityId: string;
+  abilityName: string;
+  targetIds: string[];
+  wastedReason: string | null;
+  feedText: string;
+}
+
 export interface ActionRejectedPayload {
   reason: string;
 }
@@ -22,6 +50,7 @@ export interface CombatantDto {
   profileName: string;
   movementRange: number;
   maxAp: number;
+  abilities: AbilityDto[] | null;
 }
 
 export interface EncounterEndedPayload {
@@ -57,6 +86,8 @@ export interface PlannedActionEntry {
   type: string;
   targetCell: PositionDto | null;
   targetCombatantId: string | null;
+  abilityId: string | null;
+  targetCombatantIds: string[] | null;
 }
 
 export interface PlannedActionArray {
@@ -85,6 +116,8 @@ export interface PlanningCombatantDto {
   maxAp: number;
   status: string;
   bleedoutRoundsLeft: number;
+  abilities: AbilityDto[] | null;
+  cooldowns: { [key: string]: number } | null;
 }
 
 export interface PlayerLockedInPayload {
@@ -143,6 +176,7 @@ export interface QueuedActionDto {
   apCost: number;
   targetCombatantId: string | null;
   targetCell: PositionDto | null;
+  abilityId: string | null;
 }
 
 export interface TickResult {
@@ -150,6 +184,7 @@ export interface TickResult {
   movements: MovementResult[];
   attacks: AttackResult[];
   effects: EffectResult[];
+  abilityUses: AbilityUseResult[] | null;
 }
 
 export interface MovementResult {
@@ -177,6 +212,7 @@ export interface AttackResult {
   wastedReason: string | null;
   targetStatus: string;
   finishingBlow: boolean;
+  abilityId: string | null;
 }
 
 export interface AttackRollDto {

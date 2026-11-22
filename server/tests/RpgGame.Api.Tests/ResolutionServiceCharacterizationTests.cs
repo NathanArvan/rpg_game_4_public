@@ -35,6 +35,12 @@ public partial class ResolutionServiceTests
         private readonly Dictionary<string, CombatantStatusEntry> _statuses = [];
         public Dictionary<string, string> HpKeys { get; } = [];
 
+        /// <summary>Abilities on cooldown at the start of the round (3B.3), by combatant.</summary>
+        public Dictionary<string, Dictionary<string, int>> Cooldowns { get; } = [];
+
+        /// <summary>Every SetCooldownsAsync call, in order (3B.3).</summary>
+        public List<(string Id, Dictionary<string, int> Cooldowns)> CooldownWrites { get; } = [];
+
         /// <summary>Starts the round with this combatant downed (3B.5), at 0 HP with the given rounds left.</summary>
         public void StartDowned(string id, int roundsLeft)
         {
@@ -109,6 +115,11 @@ public partial class ResolutionServiceTests
             Redis = BuildMockRedis(EncounterId.ToString(), SessionId.ToString(), _plans, map, _hpByKey, _preDefeated);
             foreach (var (id, status) in _statuses)
                 Redis.Setup(r => r.GetStatusAsync(EncounterId.ToString(), id)).ReturnsAsync(status);
+            Redis.Setup(r => r.GetCooldownsAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync((string _, string id) => Cooldowns.TryGetValue(id, out var c) ? new Dictionary<string, int>(c) : []);
+            Redis.Setup(r => r.SetCooldownsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, int>>()))
+                .Callback<string, string, IReadOnlyDictionary<string, int>>((_, id, c) => CooldownWrites.Add((id, new Dictionary<string, int>(c))))
+                .Returns(Task.CompletedTask);
             Redis.Setup(r => r.SetHpAsync(It.IsAny<string>(), It.IsAny<long>()))
                 .Callback<string, long>((k, v) => CallLog.Add($"SetHp {k}={v} events={Db.GameEvents.Count()}"))
                 .Returns(Task.CompletedTask);

@@ -1,0 +1,24 @@
+{
+  "description": "Cooldowns go down by one at the end of every round; one that reaches 0 is ready again",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+    ,{
+      "id": "firebolt", "name": "Firebolt", "ap": 3, "cooldown": 1,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0], "abilities": ["power_strike", "firebolt"],
+      "cooldowns": { "power_strike": 2, "firebolt": 1 } }
+  ],
+  "plans": { "Hero": ["defend"] },
+  "dice": [],
+  "expect": {
+    "cooldowns": { "Hero": { "power_strike": 1 } }
+  }
+}

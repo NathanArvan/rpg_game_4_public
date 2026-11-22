@@ -32,6 +32,16 @@
           (will defend)
         </div>
 
+        <app-ability-bar
+          *ngIf="(gmSelectedEnemyId$ | async) === enemy.id"
+          class="enemy-abilities"
+          [combatant]="enemy"
+          [queue]="getPlan(enemy.id) ?? []"
+          [apCosts]="apCosts"
+          [armedAbilityId]="armedAbilityId"
+          [disabled]="lockedIn"
+          (toggle)="toggleAbility($event)"></app-ability-bar>
+
         <div class="enemy-actions">
           <button class="defend-btn" (click)="onDefend(enemy)" title="Add Defend">
             🛡

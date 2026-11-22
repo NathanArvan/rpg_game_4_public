@@ -8,11 +8,11 @@ const move = (id: string, path: [number, number][], wasBlocked = false): Movemen
 
 const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult => ({
   attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit, damage,
-  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, ...extra,
+  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], ...parts });
+  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], ...parts });
 
 const payload = (...ticks: TickResult[]): ResolutionPayload =>
   ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [] });
@@ -103,7 +103,7 @@ describe('playback timeline', () => {
 
   describe('bleedout (3B.5)', () => {
     const downedRow = { id: 'hero', userId: 'me', characterName: 'hero', currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
-      isAiControlled: false, profileId: 'p', profileName: 'P', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 2 };
+      isAiControlled: false, profileId: 'p', profileName: 'P', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 2, abilities: [], cooldowns: {} };
 
     it('shows a hero going down: damage, then DOWN with the rounds left', () => {
       const beats = buildTimeline({
@@ -118,7 +118,7 @@ describe('playback timeline', () => {
 
     it('labels a finishing blow instead of showing 0 damage', () => {
       const [beat] = buildTimeline(payload(tick(0, {
-        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true })],
+        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true, abilityId: null })],
       })));
       expect(beat.floats).toEqual([{ combatantId: 'hero', text: 'finished', kind: 'damage' }]);
     });
@@ -156,5 +156,29 @@ describe('playback timeline', () => {
       ]);
       expect(last.feed).toEqual(['End of round', 'a is bleeding out — 1 round left', 'b bleeds out']);
     });
+  });
+
+  it('floats the ability name over its user as its attack lands (3B.3)', () => {
+    const use = { combatantId: 'hero', combatantName: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
+      targetIds: ['ogre'], wastedReason: null, feedText: 'hero uses Power Strike on ogre' };
+    const beats = buildTimeline(payload(tick(0, {
+      attacks: [attack('hero', 'ogre', true, 9, 11, { abilityId: 'power_strike', feedText: "hero's Power Strike hits ogre" })],
+      abilityUses: [use],
+    })));
+    expect(beats[0].phase).toBe('attacks');
+    expect(beats[0].floats).toEqual([
+      { combatantId: 'hero', text: 'Power Strike', kind: 'ability' },
+      { combatantId: 'ogre', text: '-9', kind: 'damage' },
+    ]);
+    // The attack line names the ability; the "uses" line isn't repeated.
+    expect(beats[0].feed).toEqual(['— Round 1 Resolution —', "hero's Power Strike hits ogre"]);
+  });
+
+  it('shows a refused ability (on cooldown) with its own feed line and label (3B.3)', () => {
+    const use = { combatantId: 'hero', combatantName: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
+      targetIds: ['ogre'], wastedReason: 'on_cooldown', feedText: "hero can't use Power Strike — still on cooldown" };
+    const beats = buildTimeline(payload(tick(0, { abilityUses: [use] })));
+    expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'on cooldown', kind: 'wasted' }]);
+    expect(beats[0].feed).toContain("hero can't use Power Strike — still on cooldown");
   });
 });

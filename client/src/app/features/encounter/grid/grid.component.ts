@@ -1,19 +1,23 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, HostListener, Input, OnInit } from '@angular/core';
 import { GmEnemyPlannerComponent } from '../gm-enemy-planner/gm-enemy-planner.component';
+import { AbilityBarComponent } from '../ability-bar/ability-bar.component';
 import { Store } from '@ngxs/store';
 import { Observable, combineLatest, map } from 'rxjs';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
 import {
-  DEFAULT_AP_COSTS, apCost, apSpent, canAfford, chebyshev, describeQueue, moveCellsUsed, projectedPosition,
+  ArmAbility, DisarmAbility, GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction,
+} from '../../../state/encounter/encounter.actions';
+import {
+  DEFAULT_AP_COSTS, apCost, apSpent, canAfford, canAffordEntry, canTargetWithAbility, chebyshev, describeQueue, entry,
+  moveCellsUsed, projectedPosition,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant, isControlledBy } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
-import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
+import { AbilityDto, PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
 import { ActiveAura, ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 
 interface Cell {
@@ -48,7 +52,7 @@ const FADE_MS = 500;
 @Component({
   selector: 'app-grid',
   standalone: true,
-  imports: [CommonModule, GmEnemyPlannerComponent],
+  imports: [CommonModule, GmEnemyPlannerComponent, AbilityBarComponent],
   templateUrl: './grid.component.html',
   styleUrl: './grid.component.css',
 })
@@ -72,7 +76,9 @@ export class GridComponent implements OnInit {
   lockedIn = false;
   gmSelectedEnemyId: string | null = null;
   enemyPlannedActions: Record<string, PlannedActionEntry[]> = {};
-  private apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
+  apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
+  /** The ability the next click on a token uses (3B.3), or null. */
+  armedAbilityId: string | null = null;
 
   constructor(private store: Store, private hub: GameHubService, private playback: ResolutionPlaybackService) {}
 
@@ -111,6 +117,7 @@ export class GridComponent implements OnInit {
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
     this.store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
+    this.store.select(EncounterState.armedAbilityId).subscribe(id => this.armedAbilityId = id);
   }
 
   // ----- Who am I planning for -----
@@ -267,6 +274,7 @@ export class GridComponent implements OnInit {
   }
 
   isInRange(cell: Cell): boolean {
+    if (this.armedAbility) return false; // the ability's reach is shown instead
     // GM enemy planning mode — show range around selected enemy
     if (this.isGm && this.gmSelectedEnemyId) {
       const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
@@ -283,7 +291,7 @@ export class GridComponent implements OnInit {
    */
   private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
     const start = this.positions[combatant.id];
-    if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts)) return false;
+    if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts, combatant.abilities)) return false;
     const from = projectedPosition(start, queue)!;
     const cellsLeft = combatant.movementRange - moveCellsUsed(start, queue);
     const distance = chebyshev(from, cell);
@@ -325,7 +333,74 @@ export class GridComponent implements OnInit {
 
   isTargeted(combatant: Combatant): boolean {
     return Object.values(this.myPlans).some(plan => plan.some(a =>
-      (a.type === 'melee_attack' || a.type === 'ranged_attack') && a.targetCombatantId === combatant.id));
+      (a.type === 'melee_attack' || a.type === 'ranged_attack' || a.type === 'ability') && a.targetCombatantId === combatant.id));
+  }
+
+  // ----- Abilities (3B.3) -----
+
+  /** Who an armed ability belongs to: the monster the GM is planning, or the character being planned for. */
+  private get abilityUser(): Combatant | null {
+    if (this.isGm) return this.combatants.find(c => c.id === this.gmSelectedEnemyId) ?? null;
+    return this.selected;
+  }
+
+  private queueOf(combatant: Combatant): PlannedActionEntry[] {
+    return this.isGm ? this.enemyQueue(combatant.id) : this.myPlans[combatant.id] ?? [];
+  }
+
+  get armedAbility(): AbilityDto | null {
+    const user = this.abilityUser;
+    return (this.armedAbilityId && user?.abilities.find(a => a.id === this.armedAbilityId)) || null;
+  }
+
+  /** Cells within the armed ability's range of where the user's queued moves end. */
+  isInAbilityRange(cell: Cell): boolean {
+    const ability = this.armedAbility;
+    const user = this.abilityUser;
+    if (!ability || !user) return false;
+    const from = projectedPosition(this.positions[user.id], this.queueOf(user));
+    const distance = from ? chebyshev(from, cell) : Infinity;
+    return distance > 0 && distance <= ability.targeting.range;
+  }
+
+  /** A token the armed ability may be planned on (side and status; range is checked at resolution). */
+  isAbilityTarget(combatant: Combatant): boolean {
+    const ability = this.armedAbility;
+    const user = this.abilityUser;
+    return !!ability && !!user && canTargetWithAbility(user, combatant, ability);
+  }
+
+  /** "Power Strike: click an enemy (adjacent)", shown while an ability is armed. */
+  get armedHint(): string {
+    const ability = this.armedAbility;
+    if (!ability) return '';
+    const t = ability.targeting;
+    const who = t.filter === 'enemy' ? 'an enemy' : t.filter === 'ally' ? 'an ally' : t.filter === 'downed_ally' ? 'a downed ally' : 'a target';
+    const reach = t.range === 1 ? 'adjacent' : `up to ${t.range} cells away`;
+    return `${ability.name}: click ${who} (${reach} when it resolves). Esc or click the button again to cancel.`;
+  }
+
+  toggleAbility(abilityId: string): void {
+    this.store.dispatch(this.armedAbilityId === abilityId ? new DisarmAbility() : new ArmAbility(abilityId));
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
+  }
+
+  /**
+   * A click while an ability is armed: on a legal target, queue the ability (if AP allows) and
+   * disarm; anywhere else, just disarm. Returns false when nothing is armed.
+   */
+  private useArmedAbility(user: Combatant, cell: Cell, enqueue: (action: PlannedActionEntry) => void): boolean {
+    const ability = this.armedAbility;
+    if (!ability) return false;
+    const target = this.tokenAt(cell);
+    if (target && canTargetWithAbility(user, target, ability))
+      enqueue(entry('ability', { abilityId: ability.id, targetCombatantId: target.id }));
+    this.store.dispatch(new DisarmAbility());
+    return true;
   }
 
   get hasDefendPlanned(): boolean {
@@ -333,12 +408,14 @@ export class GridComponent implements OnInit {
   }
 
   get plannedActionSummary(): string {
-    return describeQueue(this.selectedPlan, id => this.combatants.find(c => c.id === id)?.characterName);
+    const abilities = this.selected?.abilities ?? [];
+    return describeQueue(this.selectedPlan, id => this.combatants.find(c => c.id === id)?.characterName,
+      id => abilities.find(a => a.id === id)?.name);
   }
 
   /** AP the selected character's queue costs. */
   get apUsed(): number {
-    return apSpent(this.selectedPlan, this.apCosts);
+    return apSpent(this.selectedPlan, this.apCosts, this.selected?.abilities ?? []);
   }
 
   get maxAp(): number {
@@ -347,7 +424,7 @@ export class GridComponent implements OnInit {
 
   get canAffordDefend(): boolean {
     const selected = this.selected;
-    return !!selected && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts);
+    return !!selected && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts, selected.abilities);
   }
 
   /** Cells the selected character can still move this round. */
@@ -386,36 +463,32 @@ export class GridComponent implements OnInit {
       const enemy = this.combatants.find(c => c.id === this.gmSelectedEnemyId);
       if (!enemy) return;
       const queue = this.enemyQueue(enemy.id);
+      if (this.useArmedAbility(enemy, cell, action => this.planEnemy(enemy, queue, action))) return;
       const targetCombatant = this.tokenAt(cell);
 
       let action: PlannedActionEntry | null = null;
       // Anyone not dead can be attacked: a downed or stable target is finished off by a hit (3B.5).
       if (targetCombatant && targetCombatant.id !== enemy.id && targetCombatant.status !== 'dead') {
-        action = { type: this.attackTypeAgainst(enemy.id, queue, targetCombatant), targetCell: null, targetCombatantId: targetCombatant.id };
+        action = entry(this.attackTypeAgainst(enemy.id, queue, targetCombatant), { targetCombatantId: targetCombatant.id });
       } else if (this.isInRange(cell)) {
-        action = { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null };
+        action = entry('move', { targetCell: { x: cell.x, y: cell.y } });
       }
-      if (!action || !canAfford(queue, action.type, enemy.maxAp, this.apCosts)) return;
-
-      const next = [...queue, action];
-      this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
-      this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
-      // Done with this monster once it can't afford even the cheapest action.
-      const cheapest = Math.min(...Object.keys(this.apCosts).map(t => apCost(t, this.apCosts)));
-      if (apSpent(next, this.apCosts) + cheapest > enemy.maxAp) this.store.dispatch(new GmSelectEnemy(null));
+      if (action) this.planEnemy(enemy, queue, action);
       return;
     }
 
     // Normal player mode
     if (this.lockedIn) return;
 
+    const me = this.selected;
+    if (me && this.useArmedAbility(me, cell, action => this.plan(me, action))) return;
+
     const targetCombatant = this.tokenAt(cell);
 
     // A downed ally: stabilize them, if the selected character's queued moves end next to them (3B.5).
     if (targetCombatant && targetCombatant.status === 'downed' && targetCombatant.combatantType === 'player') {
-      const me = this.selected;
       if (me && me.id !== targetCombatant.id && this.endsNextTo(me.id, this.selectedPlan, targetCombatant))
-        this.plan(me, { type: 'stabilize', targetCell: null, targetCombatantId: targetCombatant.id });
+        this.plan(me, entry('stabilize', { targetCombatantId: targetCombatant.id }));
       return;
     }
 
@@ -431,19 +504,32 @@ export class GridComponent implements OnInit {
     const queue = this.selectedPlan;
     if (targetCombatant && targetCombatant.status !== 'dead') {
       const type = this.attackTypeAgainst(myCombatant.id, queue, targetCombatant);
-      this.plan(myCombatant, { type, targetCell: null, targetCombatantId: targetCombatant.id });
+      this.plan(myCombatant, entry(type, { targetCombatantId: targetCombatant.id }));
     } else if (!targetCombatant && this.isLastMoveTarget(cell)) {
       this.undoLast();
     } else if (this.isInRange(cell)) {
-      this.plan(myCombatant, { type: 'move', targetCell: { x: cell.x, y: cell.y }, targetCombatantId: null });
+      this.plan(myCombatant, entry('move', { targetCell: { x: cell.x, y: cell.y } }));
     }
   }
 
   /** Appends an action to the character's queue if its AP allows, and sends the whole queue. */
   private plan(combatant: Combatant, action: PlannedActionEntry): void {
     const queue = this.myPlans[combatant.id] ?? [];
-    if (!canAfford(queue, action.type, combatant.maxAp, this.apCosts)) return;
+    if (!canAffordEntry(queue, action, combatant.maxAp, this.apCosts, combatant.abilities)) return;
     this.setPlan(combatant, [...queue, action]);
+  }
+
+  /** Appends an action to a monster's queue (GM planning) if its AP allows, and sends it. */
+  private planEnemy(enemy: Combatant, queue: PlannedActionEntry[], action: PlannedActionEntry): void {
+    if (!canAffordEntry(queue, action, enemy.maxAp, this.apCosts, enemy.abilities)) return;
+    const next = [...queue, action];
+    this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
+    this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
+    // Done with this monster once it can't afford even the cheapest action (basic or ability).
+    const cheapest = Math.min(
+      ...Object.keys(this.apCosts).map(t => apCost(t, this.apCosts)),
+      ...enemy.abilities.filter(a => !(enemy.cooldowns[a.id] > 0)).map(a => a.apCost));
+    if (apSpent(next, this.apCosts, enemy.abilities) + cheapest > enemy.maxAp) this.store.dispatch(new GmSelectEnemy(null));
   }
 
   /** Stores and sends a character's queue; an empty queue clears the plan on the server too. */
@@ -455,7 +541,7 @@ export class GridComponent implements OnInit {
   planDefend(): void {
     const selected = this.selected;
     if (this.lockedIn || !selected) return;
-    this.plan(selected, { type: 'defend', targetCell: null, targetCombatantId: null });
+    this.plan(selected, entry('defend'));
   }
 
   /** Drops the last queued action of the selected character. */
@@ -475,6 +561,7 @@ export class GridComponent implements OnInit {
   onLockIn(): void {
     if (this.lockedIn || this.plannedCount === 0) return;
     this.lockedIn = true;
+    if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
     this.hub.lockIn(this.joinCode);
   }
 
