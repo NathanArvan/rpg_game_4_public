@@ -1,12 +1,5 @@
 {
   "description": "Firebolt can't reach a target 9 cells away: wasted, no roll",
-  "abilities": [
-    {
-      "id": "firebolt", "name": "Firebolt", "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
-      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
-      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ]
-    }
-  ],
   "combatants": [
     { "id": "Mage",   "side": "party", "at": [0, 0], "abilities": ["firebolt"] },
     { "id": "Goblin", "side": "enemy", "at": [9, 0] }

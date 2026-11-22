@@ -1,8 +1,8 @@
 # Combat scenarios
 
-Each `*.json` file in this folder describes one round of combat. The file lists who is
-where, what each combatant plans to do, and which numbers the dice roll. It also says
-what the result should be. `ScenarioTests` runs every file through `RoundResolver` (the
+Each `*.json` file in this folder describes one round of combat, or several in a row (see
+[`rounds`](#rounds-optional)). The file lists who is where, what each combatant plans to do,
+and which numbers the dice roll. It also says what the result should be. `ScenarioTests` runs every file through `RoundResolver` (the
 pure rules engine in `server/src/RpgGame.Rules`).
 
 ```bash
@@ -106,9 +106,15 @@ stops; plan order then only decides who each one reports as its blocker.
 
 ### `abilities` (optional, 3B.3)
 
-Ability definitions combatants can list, in the same shape as the server's
-`server/src/RpgGame.Api/Abilities/abilities.json` (written inline so these tests don't depend on
-the server's catalog):
+A combatant's `abilities` list names abilities by id. They come from the **shared library**,
+[`library/abilities.json`](library/abilities.json) (Power Strike, Cleave, Twin Shot, Mend,
+Firebolt), so most scenarios don't need an `abilities` block at all. The library holds test
+versions of the shipped abilities, owned by these tests: retuning the server's `abilities.json`
+doesn't change them, so scenarios keep testing mechanics rather than current balance.
+
+A scenario's own `abilities` block adds abilities or **overrides** a library entry with the same id
+(to try other numbers). Definitions use the same shape as the server's
+`server/src/RpgGame.Api/Abilities/abilities.json`:
 
 ```jsonc
 "abilities": [
@@ -180,6 +186,51 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `heals` | The exact set of `{ "tick", "id" (healer), "target", "amount" }` heals (`amount` = die + bonus, before the max-HP cap); add `"revived": true` when it got the target back up, or `"wasted": "out_of_range"` (amount ignored) |
 | `revived` | The exact set of combatants who were down at the start of the round and are standing at its end |
 | `plans` | `{ "id": "move 0,13" }` or `{ "id": ["move 5,6", "melee Hero"] }`, the queue the AI chose for an `"ai"` plan (same syntax as `plans`). A single string means a one-action queue |
+| `events` | Lines of the round's **event log** (below) that must happen, in the order listed. Other lines may come between them |
 
 When a check fails, the test lists every mismatch, for example
-`hp of B: expected 12, got 13`.
+`hp of B: expected 12, got 13`, followed by the round's whole event log.
+
+### The event log
+
+The runner writes down everything a round did, one line per event. `expect.events` checks lines
+of it, and a failing scenario prints all of it, so a quick way to write expectations is to run
+the scenario once and copy the lines you care about. Within each tick (`t1`, `t2`, …) the order is:
+ability uses, moves, attacks, heals, effects; then the end of round.
+
+| Event | Line |
+|---|---|
+| Ability use | `t1 Bruiser uses cleave on G1,G2`, `t1 Bruiser uses cleave (no_targets)`, `t2 Bruiser uses power_strike on G1 (on_cooldown)` |
+| Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2` |
+| Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
+| Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |
+| Effect | `t1 Hero defends`, `t1 Knight stabilizes Archer`, `t1 Knight stabilizes Archer: wasted target_not_downed` |
+| End of round | `end Hero bleeds, 1 left`, `end Hero bleeds out` |
+
+Attacks name the ability that made them (`cleave`), or `melee` / `ranged` for basic attacks.
+Wasted reasons are written in snake case, as on the wire. A new kind of outcome gets one line
+in `ScenarioTests.EventLog` and is then checkable with `events`, with no new `expect` key needed.
+
+### `rounds` (optional)
+
+To play several rounds in a row, put `plans`, `dice` and `expect` inside each entry of a `rounds`
+list instead of at the top level. Each round starts from the state the previous one left: HP,
+positions, statuses, bleedout and cooldowns carry over, exactly as they would between two server
+rounds. `"ai"` plans are chosen from the state at the start of their round. Leftover dice are
+checked per round, and failures say which round they're in.
+
+```jsonc
+{
+  "description": "Power Strike is refused while it cools down",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["power_strike"] },
+    { "id": "Goblin",  "side": "enemy", "hp": 40, "at": [1, 0] }
+  ],
+  "rounds": [
+    { "plans": { "Bruiser": ["ability power_strike Goblin"] }, "dice": [14, 5],
+      "expect": { "cooldowns": { "Bruiser": { "power_strike": 2 } } } },
+    { "plans": { "Bruiser": ["ability power_strike Goblin"] },
+      "expect": { "events": ["t1 Bruiser uses power_strike on Goblin (on_cooldown)"] } }
+  ]
+}
+```

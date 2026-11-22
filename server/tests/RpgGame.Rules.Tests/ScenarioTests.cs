@@ -5,7 +5,9 @@ using RpgGame.Rules;
 namespace RpgGame.Rules.Tests;
 
 /// <summary>
-/// Runs every <c>Scenarios/*.json</c> file through <see cref="RoundResolver"/>.
+/// Runs every <c>Scenarios/*.json</c> file through <see cref="RoundResolver"/>: one round, or several
+/// in a row (<c>"rounds"</c>), each starting from the state the previous one left. Abilities come from
+/// the scenario's own <c>"abilities"</c> block or the shared <c>Scenarios/library/abilities.json</c>.
 /// The file format is documented in <c>Scenarios/README.md</c>.
 /// </summary>
 public partial class ScenarioTests
@@ -32,17 +34,49 @@ public partial class ScenarioTests
     public void Scenario(string file)
     {
         var scenario = Load(file);
-        var (state, plans, aiPlans, dice, config) = Build(scenario, file);
+        var (state, config) = BuildStart(scenario, file);
+        var rounds = RoundsOf(scenario, file);
 
-        var outcome = RoundResolver.Resolve(state, plans, dice, config);
+        var failures = new List<string>();
+        var logs = new List<string>();
+        for (int i = 0; i < rounds.Count; i++)
+        {
+            var round = rounds[i];
+            var label = rounds.Count > 1 ? $"round {i + 1}" : "";
+            var (plans, aiPlans) = BuildPlans(round.Plans, state, scenario.Combatants!, config, $"{file}{(label.Length > 0 ? " " + label : "")}");
+            var dice = new ScriptedDice(round.Dice ?? []);
 
-        var failures = Check(scenario.Expect ?? new ExpectDto(), outcome);
-        CheckAiPlans(ExpectedAiPlans(scenario.Expect?.Plans, file), aiPlans, failures);
-        if (dice.Remaining != 0)
-            failures.Add($"dice: {dice.Remaining} scripted roll(s) were never used");
+            var outcome = RoundResolver.Resolve(state, plans, dice, config);
+
+            var expect = round.Expect ?? new ExpectDto();
+            var roundFailures = Check(expect, outcome);
+            CheckAiPlans(ExpectedAiPlans(expect.Plans, file), aiPlans, roundFailures);
+            var log = EventLog(outcome);
+            CheckEvents(expect.Events, log, roundFailures);
+            if (dice.Remaining != 0)
+                roundFailures.Add($"dice: {dice.Remaining} scripted roll(s) were never used");
+
+            var prefix = label.Length > 0 ? label + ": " : "";
+            failures.AddRange(roundFailures.Select(f => prefix + f));
+            if (roundFailures.Count > 0)
+                logs.Add($"what happened{(label.Length > 0 ? " in " + label : "")}:\n      " + string.Join("\n      ", log));
+            state = outcome.Next;
+        }
 
         Assert.True(failures.Count == 0,
-            $"{file}: {scenario.Description}\n  - " + string.Join("\n  - ", failures));
+            $"{file}: {scenario.Description}\n  - " + string.Join("\n  - ", failures) + "\n  " + string.Join("\n  ", logs));
+    }
+
+    /// <summary>The rounds to play: the "rounds" list, or the one round written at the top level.</summary>
+    private static List<RoundDto> RoundsOf(ScenarioDto s, string file)
+    {
+        if (s.Rounds is null)
+            return [new RoundDto { Plans = s.Plans, Dice = s.Dice, Expect = s.Expect }];
+        if (s.Plans is not null || s.Dice is not null || s.Expect is not null)
+            throw new InvalidDataException($"{file}: with \"rounds\", put 'plans', 'dice' and 'expect' inside each round, not at the top level");
+        if (s.Rounds.Count == 0)
+            throw new InvalidDataException($"{file}: 'rounds' must list at least one round");
+        return s.Rounds;
     }
 
     [Fact]
@@ -57,14 +91,30 @@ public partial class ScenarioTests
             ?? throw new InvalidDataException($"{file}: empty scenario");
     }
 
-    private static (EncounterState, Dictionary<string, IReadOnlyList<PlannedAction>>, Dictionary<string, IReadOnlyList<PlannedAction>>, ScriptedDice, RulesConfig) Build(
-        ScenarioDto s, string file)
+    /// <summary>
+    /// Shared ability definitions (<c>Scenarios/library/abilities.json</c>): test versions of the
+    /// shipped abilities, so scenarios don't each paste the same block. They're owned by these tests
+    /// and don't change when the server's abilities.json is retuned.
+    /// </summary>
+    private static readonly Lazy<Dictionary<string, AbilityDefinition>> Library = new(() =>
+    {
+        const string file = "library/abilities.json";
+        var dto = JsonSerializer.Deserialize<LibraryDto>(File.ReadAllText(Path.Combine(ScenarioDir, file)), JsonOptions)
+            ?? throw new InvalidDataException($"{file}: empty");
+        return (dto.Abilities ?? []).ToDictionary(a => a.Id, a => ToAbility(a, file));
+    });
+
+    /// <summary>The starting state and rule constants. Plans, dice and checks are per round.</summary>
+    private static (EncounterState, RulesConfig) BuildStart(ScenarioDto s, string file)
     {
         if (s.Combatants is not { Count: > 0 })
             throw new InvalidDataException($"{file}: 'combatants' must list at least one combatant");
 
         var grid = s.Grid ?? [20, 20];
-        var abilities = (s.Abilities ?? []).ToDictionary(a => a.Id, a => ToAbility(a, file));
+        // The scenario's own definitions win over the shared library's (to test other numbers).
+        var abilities = new Dictionary<string, AbilityDefinition>(Library.Value);
+        foreach (var a in s.Abilities ?? [])
+            abilities[a.Id] = ToAbility(a, file);
         var combatants = s.Combatants.Select(c =>
         {
             if (string.IsNullOrWhiteSpace(c.Id)) throw new InvalidDataException($"{file}: every combatant needs an 'id'");
@@ -82,7 +132,7 @@ public partial class ScenarioTests
                 CanBeDowned: c.Downs ?? false)
             {
                 Abilities = (c.Abilities ?? []).Select(id => abilities.TryGetValue(id, out var a) ? a
-                    : throw new InvalidDataException($"{file}: combatant {c.Id} lists ability '{id}', which isn't in 'abilities'")).ToList(),
+                    : throw new InvalidDataException($"{file}: combatant {c.Id} lists ability '{id}', which is neither in 'abilities' nor in Scenarios/library/abilities.json")).ToList(),
             };
             // "status" sets a starting status (3B.5); the older "defeated": true means dead.
             var status = c.Status is { } st ? ParseStatus(st, $"{file}: combatant {c.Id} 'status'")
@@ -101,22 +151,6 @@ public partial class ScenarioTests
             };
         }).ToList();
 
-        // JSON object key order is preserved: plan order is meaningful to the resolver.
-        var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
-        var aiIds = new List<string>();
-        foreach (var (id, queue) in s.Plans ?? [])
-        {
-            if (queue.Any(IsAi))
-            {
-                if (queue.Count != 1)
-                    throw new InvalidDataException($"{file}: plan for {id}: \"ai\" must be the only entry");
-                aiIds.Add(id);
-                plans[id] = []; // placeholder keeps the combatant's place in plan order
-                continue;
-            }
-            plans[id] = queue.Select(text => ParseAction(text, $"{file}: plan for {id}")).ToList();
-        }
-
         var config = s.Config is null
             ? RulesConfig.Default
             : RulesConfig.Default with
@@ -125,19 +159,40 @@ public partial class ScenarioTests
                 BleedoutRounds = s.Config.BleedoutRounds ?? RulesConfig.Default.BleedoutRounds,
             };
 
-        var state = new EncounterState(grid[0], grid[1], combatants);
+        return (new EncounterState(grid[0], grid[1], combatants), config);
+    }
 
-        // "ai" plans are filled in by EnemyAi from the starting state, before the round resolves.
+    /// <summary>
+    /// One round's plans, in the order written (plan order is meaningful to the resolver). "ai" plans
+    /// are filled in by EnemyAi from the state at the start of that round.
+    /// </summary>
+    private static (Dictionary<string, IReadOnlyList<PlannedAction>> Plans, Dictionary<string, IReadOnlyList<PlannedAction>> AiPlans) BuildPlans(
+        Dictionary<string, List<string>>? written, EncounterState state, List<CombatantDto> combatants, RulesConfig config, string where)
+    {
+        var plans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
+        var aiIds = new List<string>();
+        foreach (var (id, queue) in written ?? [])
+        {
+            if (queue.Any(IsAi))
+            {
+                if (queue.Count != 1)
+                    throw new InvalidDataException($"{where}: plan for {id}: \"ai\" must be the only entry");
+                aiIds.Add(id);
+                plans[id] = []; // placeholder keeps the combatant's place in plan order
+                continue;
+            }
+            plans[id] = queue.Select(text => ParseAction(text, $"{where}: plan for {id}")).ToList();
+        }
+
         var aiPlans = new Dictionary<string, IReadOnlyList<PlannedAction>>();
         if (aiIds.Count > 0)
         {
-            var teams = s.Combatants.ToDictionary(c => c.Id, c => c.Side ?? "party");
+            var teams = combatants.ToDictionary(c => c.Id, c => c.Side ?? "party");
             aiPlans = EnemyAi.PlanRound(state, teams, aiIds, config);
             foreach (var id in aiIds)
                 plans[id] = aiPlans.TryGetValue(id, out var queue) ? queue : [];
         }
-
-        return (state, plans, aiPlans, new ScriptedDice(s.Dice ?? []), config);
+        return (plans, aiPlans);
     }
 
     private static bool IsAi(string text) => text.Trim().Equals("ai", StringComparison.OrdinalIgnoreCase);
@@ -351,6 +406,76 @@ public partial class ScenarioTests
             failures.Add($"{what}: expected [{string.Join(", ", exp)}], got [{string.Join(", ", act)}]");
     }
 
+    // ----- Event log -----
+
+    /// <summary>
+    /// Everything the round did, one line per event, in resolution order: per tick (from 1) the ability
+    /// uses, moves, attacks, heals and effects, then the end of round. Lines use ids and wire-style
+    /// reasons, e.g. "t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6, revived",
+    /// "end Hero bleeds out". A new kind of outcome needs one line here to be checkable with
+    /// <c>expect.events</c>. Printed whenever a scenario fails, so it doubles as an authoring aid.
+    /// </summary>
+    internal static List<string> EventLog(RoundOutcome o)
+    {
+        var log = new List<string>();
+        foreach (var t in o.Ticks)
+        {
+            var at = $"t{t.Index + 1}";
+            foreach (var u in t.AbilityUses)
+            {
+                var targets = u.TargetIds.Count > 0 ? $" on {string.Join(",", u.TargetIds)}" : "";
+                log.Add($"{at} {u.CombatantId} uses {u.AbilityId}{targets}{(u.Wasted ? $" ({Snake(u.WastedReason)})" : "")}");
+            }
+            foreach (var m in t.Movements)
+            {
+                var end = $"{m.FinalPosition.X},{m.FinalPosition.Y}";
+                log.Add(m.WasBlocked ? $"{at} {m.CombatantId} moves to {end} (blocked by {m.BlockedById})"
+                    : m.Path.Count <= 1 ? $"{at} {m.CombatantId} stays at {end}"
+                    : $"{at} {m.CombatantId} moves to {end}");
+            }
+            foreach (var a in t.Attacks)
+            {
+                var what = a.AbilityId ?? (a.AttackType == ActionType.RangedAttack ? "ranged" : "melee");
+                var result = a.Wasted ? $"wasted {Snake(a.WastedReason)}"
+                    : !a.Hit ? "miss"
+                    : a.FinishingBlow ? "finishing blow"
+                    : $"hit {a.Damage}";
+                var fell = a.TargetDefeated ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
+                log.Add($"{at} {a.AttackerId} {what} {a.TargetId}: {result}{fell}");
+            }
+            foreach (var h in t.Heals)
+            {
+                var result = h.Wasted ? $"wasted {Snake(h.WastedReason)}"
+                    : h.TargetStatus == CombatantStatus.Dead ? $"+{h.Amount}, too late"
+                    : $"+{h.Amount}{(h.Revived ? ", revived" : "")}";
+                log.Add($"{at} {h.HealerId} {h.AbilityId} {h.TargetId}: {result}");
+            }
+            foreach (var e in t.Effects)
+                log.Add(e.Type == EffectType.Defend ? $"{at} {e.CombatantId} defends"
+                    : e.Wasted ? $"{at} {e.CombatantId} stabilizes {e.TargetId}: wasted {Snake(e.WastedReason)}"
+                    : $"{at} {e.CombatantId} stabilizes {e.TargetId}");
+        }
+        foreach (var b in o.EndOfRound)
+            log.Add(b.Died ? $"end {b.CombatantId} bleeds out" : $"end {b.CombatantId} bleeds, {b.RoundsLeft} left");
+        return log;
+    }
+
+    /// <summary>Every expected line must appear in the log, in the order listed (other lines may come between).</summary>
+    private static void CheckEvents(List<string>? expected, List<string> log, List<string> failures)
+    {
+        if (expected is null) return;
+        int from = 0;
+        foreach (var line in expected)
+        {
+            int found = log.FindIndex(from, l => l == line.Trim());
+            if (found >= 0) { from = found + 1; continue; }
+            failures.Add(log.Contains(line.Trim())
+                ? $"events: \"{line}\" happened, but not in the order listed"
+                : $"events: expected \"{line}\", which didn't happen");
+            return;
+        }
+    }
+
     // ----- File format -----
 
     private sealed class ScenarioDto
@@ -362,7 +487,22 @@ public partial class ScenarioTests
         public int[]? Dice { get; set; }
         public ConfigDto? Config { get; set; }
         public ExpectDto? Expect { get; set; }
-        /// <summary>Ability definitions combatants can list (3B.3), same shape as abilities.json.</summary>
+        /// <summary>Ability definitions combatants can list (3B.3), same shape as abilities.json. They override the shared library.</summary>
+        public List<AbilityDto>? Abilities { get; set; }
+        /// <summary>Several rounds in a row, each with its own plans, dice and expect (instead of the top-level ones).</summary>
+        public List<RoundDto>? Rounds { get; set; }
+    }
+
+    private sealed class RoundDto
+    {
+        public string? Description { get; set; }
+        public Dictionary<string, List<string>>? Plans { get; set; }
+        public int[]? Dice { get; set; }
+        public ExpectDto? Expect { get; set; }
+    }
+
+    private sealed class LibraryDto
+    {
         public List<AbilityDto>? Abilities { get; set; }
     }
 
@@ -462,6 +602,8 @@ public partial class ScenarioTests
         public List<HealDto>? Heals { get; set; }
         /// <summary>The exact set of combatants who were down at the start and are standing at the end.</summary>
         public List<string>? Revived { get; set; }
+        /// <summary>Lines of the event log (see <see cref="EventLog"/>) that must happen, in this order.</summary>
+        public List<string>? Events { get; set; }
     }
 
     private sealed class HealDto

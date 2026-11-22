@@ -1,12 +1,5 @@
 {
   "description": "Twin Shot on two chosen targets: the first fell earlier in the round (wasted, no roll), the second still resolves",
-  "abilities": [
-    {
-      "id": "twin_shot", "name": "Twin Shot", "ap": 3, "cooldown": 1,
-      "target": { "kind": "combatants", "filter": "enemy", "range": 8, "count": 2 },
-      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
-    }
-  ],
   "combatants": [
     { "id": "Hero",  "side": "party", "at": [2, 0] },
     { "id": "Scout", "side": "party", "at": [0, 0], "abilities": ["twin_shot"] },

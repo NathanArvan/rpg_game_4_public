@@ -1,12 +1,5 @@
 {
   "description": "Cleave finds its targets after the tick's movement: a goblin that steps in is hit, one that steps away isn't",
-  "abilities": [
-    {
-      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
-      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
-    }
-  ],
   "combatants": [
     { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["cleave"] },
     { "id": "Runner",  "side": "enemy", "at": [6, 5] },

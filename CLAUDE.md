@@ -21,6 +21,7 @@ Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning)
 - `docs/DEVELOPMENT_WORKFLOW.md` — Local dev guidance; which services to run in containers vs on the host.
 - `docs/smoke-test.md` — Automated E2E (Playwright) + manual two-browser smoke test for the current planning/resolution loop.
 - `docs/CODE_QUALITY.md` — Historical refactoring checklist (all items done; kept for context).
+- `docs/TESTING_ROADMAP.md` — Planned test-suite improvements (real-Redis and hub integration tests, client test-data builders, shared client/server plan-validation cases, seeded dice for E2E, a `game-hub.service` spec) and when each should land.
 
 ### Roadmap
 - `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan: what to build, in what order, data contracts per slice.
@@ -79,7 +80,7 @@ Note: `dotnet build` of the API also rewrites `contracts/openapi.json` via a pos
 ### Design Loop (game-rule changes)
 Combat rules live in the pure `RpgGame.Rules` library, so a rule change doesn't need the server, a browser or containers:
 1. Change the rule in `server/src/RpgGame.Rules/` (usually `RoundResolver`, `CombatProfile` or `RulesConfig`). To retune a profile instead, edit `server/src/RpgGame.Api/CombatProfiles/profiles.json`.
-2. Add or adjust a scenario JSON in `server/tests/RpgGame.Rules.Tests/Scenarios/` (format: that folder's `README.md`; `"ai"` plans run the enemy AI) and/or a `RoundResolverTests` / `EnemyAiTests` case.
+2. Add or adjust a scenario JSON in `server/tests/RpgGame.Rules.Tests/Scenarios/` (format: that folder's `README.md`; `"ai"` plans run the enemy AI; `"rounds"` plays several rounds in a row; abilities come from the shared `Scenarios/library/abilities.json` unless the scenario defines its own; `expect.events` checks lines of the event log, which a failing scenario prints) and/or a `RoundResolverTests` / `EnemyAiTests` case.
 3. `dotnet test server/tests/RpgGame.Rules.Tests` — runs in about a second.
 4. Then the full `dotnet test` (the `ResolutionServiceTests` characterization tests pin exact feed text and persistence) and E2E if the change reaches the client.
 
@@ -334,6 +335,6 @@ All branches target `master`. Branch protection requires CI to pass and a PR bef
 
 ### Tests
 - **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests` (+ `ResolutionServiceCharacterizationTests`, which pin exact feed text, roll order, persistence and known quirks using `ScriptedDice`), `CombatProfileCatalogTests`, `BattlePresetCatalogTests`, `QuickBattleServiceTests`. `TestProfiles` gives tests the shipped profile catalog and a `Values(...)` builder. Redis is mocked via `IRedisGameState`.
-- **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `EnemyAiTests`, `DiceTests`, `ModelTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable round scenarios; see `Scenarios/README.md`).
+- **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `EnemyAiTests`, `DiceTests`, `ModelTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable scenarios of one round or several; see `Scenarios/README.md`).
 - **Client (Karma/Jasmine)** — specs for all NGXS state slices (`state/*/*.state.spec.ts`) plus component smoke specs.
 - **E2E (Playwright)** — `e2e/tests/`; see the command section above.

@@ -1,12 +1,5 @@
 {
   "description": "AI step 1: a shaman with a ready Mend heals a Downed ally in range first, then attacks the adjacent hero with the AP left",
-  "abilities": [
-    {
-      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2,
-      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
-      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
-    }
-  ],
   "combatants": [
     { "id": "Hero",   "side": "party", "at": [5, 6] },
     { "id": "Shaman", "side": "enemy", "at": [5, 5], "abilities": ["mend"] },

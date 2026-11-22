@@ -1,12 +1,5 @@
 {
   "description": "The AI walks next to its target, then uses Power Strike with the 3 AP left",
-  "abilities": [
-    {
-      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
-      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
-    }
-  ],
   "combatants": [
     { "id": "Hero",  "side": "party", "at": [5, 5] },
     { "id": "Brute", "side": "enemy", "at": [5, 9], "abilities": ["power_strike"] }

@@ -1,12 +1,5 @@
 {
   "description": "Cleave hits every adjacent enemy, nearest first then by id, with a separate roll each; allies and enemies out of reach are left alone",
-  "abilities": [
-    {
-      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
-      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
-      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
-    }
-  ],
   "combatants": [
     { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["cleave"] },
     { "id": "Ally",    "side": "party", "at": [5, 6] },
