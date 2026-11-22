@@ -1,0 +1,13 @@
+{
+  // Integration tests: the Ogre (manual, GM-planned) stands next to a 1-HP Hero, so any hit downs
+  // them; the Medic (Mend, range 3) stands next to both and brings the Hero back up.
+  "id": "it-revive",
+  "name": "IT: Revive",
+  "description": "Integration tests: a 1-HP Hero, a Medic with Mend and a manual Ogre.",
+  "order": 2,
+  "combatants": [
+    { "name": "Medic", "side": "party", "profile": "skirmisher", "hp": 20, "abilities": ["mend"], "at": [8, 9] },
+    { "name": "Hero",  "side": "party", "profile": "skirmisher", "hp": 10, "startHp": 1, "dodge": 1, "at": [9, 9] },
+    { "name": "Ogre",  "side": "enemy", "profile": "brute", "hp": 30, "ai": false, "abilities": [], "at": [9, 10] }
+  ]
+}

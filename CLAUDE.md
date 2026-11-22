@@ -21,7 +21,7 @@ Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning)
 - `docs/DEVELOPMENT_WORKFLOW.md` — Local dev guidance; which services to run in containers vs on the host.
 - `docs/smoke-test.md` — Automated E2E (Playwright) + manual two-browser smoke test for the current planning/resolution loop.
 - `docs/CODE_QUALITY.md` — Historical refactoring checklist (all items done; kept for context).
-- `docs/TESTING_ROADMAP.md` — Planned test-suite improvements (real-Redis and hub integration tests, client test-data builders, shared client/server plan-validation cases, seeded dice for E2E, a `game-hub.service` spec) and when each should land.
+- `docs/TESTING_ROADMAP.md` — Test-suite improvements: done (multi-round scenarios, event log, real-Redis and hub integration tests) and planned (client test-data builders, shared client/server plan-validation cases, seeded dice for E2E, a `game-hub.service` spec) and when each should land.
 
 ### Roadmap
 - `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan: what to build, in what order, data contracts per slice.
@@ -65,8 +65,10 @@ npm run contracts:hub            # Regenerate hub-contracts.generated.ts from C#
 cd server
 dotnet build
 dotnet watch --project src/RpgGame.Api   # Host API on http://localhost:5291 with hot reload
-dotnet test                              # xUnit tests: RpgGame.Api.Tests + RpgGame.Rules.Tests
+dotnet test                              # all xUnit tests: Rules, Api unit tests and Api integration tests (needs Docker)
 dotnet test tests/RpgGame.Rules.Tests    # rules engine + scenarios only (no DB/Redis, ~1s)
+dotnet test tests/RpgGame.Api.Tests      # Api unit tests (mocked Redis, EF InMemory, ~8s)
+dotnet test tests/RpgGame.Api.IntegrationTests  # real Redis + hub via Testcontainers (needs Docker, ~30s)
 
 # EF migrations (from server/src/RpgGame.Infrastructure/)
 dotnet ef migrations add <Name> --startup-project ../RpgGame.Api
@@ -82,7 +84,7 @@ Combat rules live in the pure `RpgGame.Rules` library, so a rule change doesn't 
 1. Change the rule in `server/src/RpgGame.Rules/` (usually `RoundResolver`, `CombatProfile` or `RulesConfig`). To retune a profile instead, edit `server/src/RpgGame.Api/CombatProfiles/profiles.json`.
 2. Add or adjust a scenario JSON in `server/tests/RpgGame.Rules.Tests/Scenarios/` (format: that folder's `README.md`; `"ai"` plans run the enemy AI; `"rounds"` plays several rounds in a row; abilities come from the shared `Scenarios/library/abilities.json` unless the scenario defines its own; `expect.events` checks lines of the event log, which a failing scenario prints) and/or a `RoundResolverTests` / `EnemyAiTests` case.
 3. `dotnet test server/tests/RpgGame.Rules.Tests` — runs in about a second.
-4. Then the full `dotnet test` (the `ResolutionServiceTests` characterization tests pin exact feed text and persistence) and E2E if the change reaches the client.
+4. Then the full `dotnet test` (the `ResolutionServiceTests` characterization tests pin exact feed text and persistence; the integration tests play whole rounds over the hub with real Redis/Postgres) and E2E if the change reaches the client.
 
 ### End-to-End Tests (Playwright)
 ```bash
@@ -321,7 +323,7 @@ All branches target `master`. Branch protection requires CI to pass and a PR bef
 
 ### CI/CD (GitHub Actions)
 `.github/workflows/ci.yml` runs on PRs to `master`:
-- **build-server** — `dotnet test`
+- **build-server** — `dotnet build`, then the Rules and Api unit tests, then the integration tests (Testcontainers; Docker is on the runner)
 - **test-client** — contract-drift check (`npm run contracts:hub` must produce no diff) + Karma unit tests (Firefox headless)
 - **e2e** — builds the full stack with Docker Compose and runs the Playwright suite in `e2e/`; uploads the HTML report on failure
 
@@ -335,6 +337,7 @@ All branches target `master`. Branch protection requires CI to pass and a PR bef
 
 ### Tests
 - **Server (xUnit + Moq + EF InMemory)** — `server/tests/RpgGame.Api.Tests/`: `EncounterServiceTests`, `PlanningServiceTests`, `ResolutionServiceTests` (+ `ResolutionServiceCharacterizationTests`, which pin exact feed text, roll order, persistence and known quirks using `ScriptedDice`), `CombatProfileCatalogTests`, `BattlePresetCatalogTests`, `QuickBattleServiceTests`. `TestProfiles` gives tests the shipped profile catalog and a `Values(...)` builder. Redis is mocked via `IRedisGameState`.
+- **Api integration (xUnit + Testcontainers, needs Docker)** — `server/tests/RpgGame.Api.IntegrationTests/`: `Redis/` tests `RedisGameState` against a real Redis (round trips plus the key names, types and stored formats in the Redis key table above — change a key and update both). `Hub/` runs the real API (`ApiFactory`: `WebApplicationFactory<Program>` on Postgres + Redis containers, `TestDice` scripted per test, no playback delay, presets from its own `Presets/it-*.json`) and drives it with `HubClient` (a registered user on a real SignalR connection that records every broadcast as raw JSON); `ContractShape` checks every received payload against `hub-contracts.generated.ts`. A new broadcast needs an entry in `ContractShape.PayloadInterface`. New Redis state (e.g. 3B.4 conditions) gets a round-trip test there; 3C per-player visibility goes in `Hub/` with two `HubClient`s.
 - **Rules (xUnit only, no Moq/EF)** — `server/tests/RpgGame.Rules.Tests/`: `RoundResolverTests`, `EnemyAiTests`, `DiceTests`, `ModelTests`, and `ScenarioTests`, which runs every `Scenarios/*.json` (designer-writable scenarios of one round or several; see `Scenarios/README.md`).
 - **Client (Karma/Jasmine)** — specs for all NGXS state slices (`state/*/*.state.spec.ts`) plus component smoke specs.
 - **E2E (Playwright)** — `e2e/tests/`; see the command section above.

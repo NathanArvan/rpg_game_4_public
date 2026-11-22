@@ -1,0 +1,12 @@
+{
+  // Integration tests: one hero next to one manual (GM-planned) goblin. The goblin defends unless
+  // a test plans for it, so a round's only rolls are the ones a test plans for the hero.
+  "id": "it-duel",
+  "name": "IT: Duel",
+  "description": "Integration tests: Hero next to a manual Goblin.",
+  "order": 1,
+  "combatants": [
+    { "name": "Hero",   "side": "party", "profile": "skirmisher", "hp": 20, "at": [9, 9] },
+    { "name": "Goblin", "side": "enemy", "profile": "grunt", "hp": 10, "dodge": 10, "ai": false, "at": [9, 10] }
+  ]
+}
