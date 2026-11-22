@@ -152,7 +152,7 @@ When abilities land in 3B.3, a second targeting paradigm is introduced:
 - **Combatant-targeted** (melee attacks, ranged attacks, single-target spells): Track the target combatant. Validity checked against the target's current position at resolution time.
 - **Cell-targeted** (AoE abilities, area denial): Hit the committed cell regardless of who occupies it after movement. Friendly fire risk exists — if an ally moves into the targeted area between planning and resolution, they take the effect.
 
-For 3A, all attacks are combatant-targeted. Cell targeting is deferred to 3B.3.
+For 3A, all attacks are combatant-targeted. 3B.3 abilities add multi-target and caster-centred `auto` targeting (`ABILITIES.md` A4); cell targeting is deferred to 4.1.
 
 ---
 
@@ -394,7 +394,7 @@ When AP lands in 3B.2, the constraint is lifted. Queue length becomes dynamic, d
 }
 ```
 
-### PlannedAction Schema (3B.3+ with Prepared Reactions)
+### PlannedAction Schema (3B.6+ with Prepared Reactions)
 
 ```json
 {
@@ -500,7 +500,7 @@ Tick 3:
 
 **Takeaway:** Two melee combatants running at each other both connect in Tick 2. Neither gets an advantage from moving first — they moved simultaneously. The fight is decided by stats, hit rolls, and damage rolls. Clean and fair.
 
-### Scenario 4: Prepared Counterspell (3B.3+ example)
+### Scenario 4: Prepared Counterspell (3B.6+ example)
 
 ```
 A (mage, 5 AP):   [Move to ley point, Cast Fireball at C (cell-targeted)]
@@ -532,13 +532,13 @@ These decisions are explicitly **not locked** and will be resolved through playt
 
 | Question | Slice | Options | Current Lean |
 |---|---|---|---|
-| Should unused prepared actions refund AP? | 3B.3 | Full refund / partial / none | No refund. Preparation is a gamble. |
-| Can a prepared action trigger in the same tick it's queued? | 3B.3 | Yes (instant readiness) / No (ready next tick) | Yes — you're declaring readiness, not performing a setup ritual. |
-| If multiple prepared reactions trigger on the same event, do all fire? | 3B.3 | All fire (wasted duplicates) / only first | All fire. Wasted counterspell is the cost of imperfect coordination. |
+| Should unused prepared actions refund AP? | 3B.6 | Full refund / partial / none | No refund. Preparation is a gamble. |
+| Can a prepared action trigger in the same tick it's queued? | 3B.6 | Yes (instant readiness) / No (ready next tick) | Yes — you're declaring readiness, not performing a setup ritual. |
+| If multiple prepared reactions trigger on the same event, do all fire? | 3B.6 | All fire (wasted duplicates) / only first | All fire. Wasted counterspell is the cost of imperfect coordination. |
 | Should opportunity attacks be passive-free or cost a stance? | 3B+ | Free passive / stance slot (no AP but limits other stances) | Free passive. Stances are a good concept but add complexity — defer. |
 | Can players choose their movement path? | 3B+ | Server-computed shortest / player-drawn path | Server-computed for 3A. Player-drawn is a UI enhancement. |
 | Should ranged attacks in melee range have a penalty? | 3B+ | Penalty (disadvantage on hit roll) / no penalty | Penalty. Makes positioning matter for ranged characters. |
-| Does Disengage prevent prepared movement reactions? | 3B.3 | Yes (full safety) / No (only prevents passives) | No. Disengage avoids free reactions, not committed ones. |
+| Does Disengage prevent prepared movement reactions? | 3B.6 | Yes (full safety) / No (only prevents passives) | No. Disengage avoids free reactions, not committed ones. |
 
 ---
 

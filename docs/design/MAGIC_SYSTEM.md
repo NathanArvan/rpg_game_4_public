@@ -2,7 +2,7 @@
 
 > **Status:** Draft. This document defines the environmental magic layer — how magic exists in the world, how the battlefield expresses it, and how it interacts with the ability system. The question of *internal* magic sources (how individual characters connect to environmental magic) is explicitly deferred to post-playtesting.
 >
-> **Depends on:** `GAME_DESIGN.md` (design philosophy), `ROADMAP_STRATEGIC.md` (slices 3B.3 Abilities, 3B.4 Conditions, 3D.4 Dynamic Environments), `DESIGN_SPIKE.md` (resolution pipeline, damage pipeline).
+> **Depends on:** `GAME_DESIGN.md` (design philosophy), `ROADMAP_STRATEGIC.md` (slices 3B.3 Abilities, 3M.5 Ley Points & Resonance, 3B.4 Conditions, 3D.4 Dynamic Environments), `DESIGN_SPIKE.md` (resolution pipeline, damage pipeline).
 >
 > **Core principle:** Magic is an external force that exists in the world. The battlefield is a magical landscape. Characters have abilities that interact with that landscape. The environment amplifies, restricts, enables, or transforms what those abilities can do.
 
@@ -365,9 +365,11 @@ The resolution engine processes ley points and resonance during its existing pha
 - **Phase 2 (Attacks/Abilities):** The damage/healing pipeline includes `resonanceBonus` and `leyBonus` as described above.
 - **Phase 3 (Effects):** Process volatile ley point behaviors (drift, surge, depletion, eruption). Update ley point state in Redis. Broadcast any changes for the next planning phase.
 
-### Slice 3B.3 — Abilities & Cooldowns
+### Slice 3B.3 — Abilities & Cooldowns (ability side) and 3M.5 — Ley Points & Resonance (map side)
 
-The `ability_definitions` table already includes `tags[]`. Resonance tags are stored here. The `effect` JSONB can include fields for resonance interaction:
+*Split in November 2026 (`ABILITIES.md` A12): 3B.3 ships ability tags, the zero-valued `resonanceBonus` / `leyBonus` slots and parses `resonanceScaling`; 3M.5, right after 3M.2's map files, adds the map's resonance profile and ley points and applies the scaling.*
+
+Ability definitions (the 3B.3 JSON catalog) include `tags[]`. Resonance tags are stored there. A definition can include fields for resonance interaction:
 
 ```json
 {
@@ -488,21 +490,21 @@ Environmental magic doesn't need its own roadmap phase — it integrates into ex
 
 | Component | Lands in Slice | Rationale |
 |---|---|---|
-| Map resonance profile (Redis schema, base resonance per map) | 3B.3 (Abilities) | Abilities need resonance to be meaningful. Ship them together. |
-| Ability resonance tags | 3B.3 (Abilities) | Tags are already in the schema. Just populate with resonance values. |
-| Resonance bonus in damage pipeline | 3B.3 (Abilities) | Extends the existing pipeline. No structural change. |
-| Ley point data in map schema (Redis) | 3B.3 (Abilities) | Ley points are part of the map. Need to exist for abilities to interact with them. |
-| Channeling state check in resolution | 3B.3 (Abilities) | Resolution engine checks position vs. ley points after movement phase. |
-| Client: ley point rendering | 3B.3 (Abilities) | Players need to see ley points to make decisions during planning. |
-| Client: resonance preview on abilities | 3B.3 (Abilities) | Players need to see environmental modifiers during planning. |
-| Resonance zones (cell-level overrides) | 3D.4 (Dynamic Environments) | Zone overrides are a refinement. Base resonance profile is sufficient for 3B.3. |
+| Map resonance profile (map file + Redis, base resonance per map) | 3M.5 (Ley Points & Resonance) | Map content; lands once 3M.2's map files exist. (Was 3B.3 until November 2026.) |
+| Ability resonance tags, `resonanceScaling` parsed | 3B.3 (Abilities) | Part of the ability definition. |
+| Resonance / ley bonus slots in the pipeline | 3B.3 slots (always 0), 3M.5 values | Extends the existing pipeline. No structural change. |
+| Ley point data in map schema (map file + Redis) | 3M.5 (Ley Points & Resonance) | Ley points are part of the map. |
+| Channeling state check in resolution | 3M.5 (Ley Points & Resonance) | Resolution engine checks position vs. ley points after movement phase. |
+| Client: ley point rendering | 3M.5 (Ley Points & Resonance) | Players need to see ley points to make decisions during planning. |
+| Client: resonance preview on abilities | 3M.5 (Ley Points & Resonance) | Players need to see environmental modifiers during planning. |
+| Resonance zones (cell-level overrides) | 3D.4 (Dynamic Environments) | Zone overrides are a refinement. Base resonance profile is sufficient for 3M.5. |
 | Volatile ley point behaviors | 3D.4 (Dynamic Environments) | Drift, surge, depletion, eruption are environmental effects. Ship with that system. |
 | Dynamic resonance changes (fire spread → flame, mass death → death, consecration → holy) | 3D.4 (Dynamic Environments) | Requires the environmental effect system to be in place first. |
 | AI ley point awareness | 3D.1+ (Enemy AI) | Tier 2+ AI considers ley points in positioning. |
 | Encounter template table (Postgres) | 3D.4 (Dynamic Environments) | Persistent encounter design needs this. |
 | Resonance penalty for opposing types (if adopted) | Post-playtesting | Only add if testing shows resonance diversity is too safe. |
 
-The minimum viable environmental magic is: base resonance profile on the map (including both elemental and metaphysical types), resonance tags on abilities, resonance bonus in the pipeline, static ley points on the grid, and client rendering. This all fits into Slice 3B.3 without expanding its scope dramatically — the ability system needs *something* to interact with, and this is it.
+The minimum viable environmental magic is: base resonance profile on the map (including both elemental and metaphysical types), resonance tags on abilities, resonance bonus in the pipeline, static ley points on the grid, and client rendering. This was planned for Slice 3B.3; in November 2026 the map side moved to 3M.5 (right after 3M.2) so it lands once in the map file format, while 3B.3 ships the ability-side hooks.
 
 ---
 
@@ -516,7 +518,7 @@ The minimum viable environmental magic is: base resonance profile on the map (in
 
 4. **How many ley points per map is right?** Too few and they dominate the encounter. Too many and they become background noise. Starting guess: 1–3 per 20×20 map, depending on encounter design intent. This is a GM guidance question, not a mechanical constraint.
 
-5. **Should players be able to create or destroy ley points?** Some high-level abilities might manipulate the magical landscape directly. This is a rich design space but adds complexity. Defer to post-3B.3 playtesting. If added, it would be a separate ability category with its own tags and costs.
+5. **Should players be able to create or destroy ley points?** Some high-level abilities might manipulate the magical landscape directly. This is a rich design space but adds complexity. Defer to post-3M.5 playtesting. If added, it would be a separate ability category with its own tags and costs.
 
 6. **How does resonance interact with the future crafting system?** If crafting is a thing (hinted at in early design conversations), resonance on the map could affect what can be crafted during downtime or between encounters. Park this until crafting is designed.
 
