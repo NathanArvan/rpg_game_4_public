@@ -21,7 +21,19 @@ const FIREBOLT: AbilityDto = {
   tags: ['flame', 'ranged', 'spell'], targeting: { kind: 'combatant', filter: 'enemy', range: 8, count: null, includeSelf: false },
 };
 /** Loadouts (3B.3), and Firebolt shown on cooldown. */
-const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, FIREBOLT], c4: [POWER_STRIKE] };
+const CLEAVE: AbilityDto = {
+  id: 'cleave', name: 'Cleave', description: 'A wide swing that hits every adjacent enemy, each with its own roll.', apCost: 3, cooldown: 2,
+  tags: ['melee'], targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+};
+const TWIN_SHOT: AbilityDto = {
+  id: 'twin_shot', name: 'Twin Shot', description: 'Two quick shots at up to two enemies within 8 cells.', apCost: 3, cooldown: 1,
+  tags: ['ranged'], targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+};
+const MEND: AbilityDto = {
+  id: 'mend', name: 'Mend', description: 'Heal an ally within 3 cells (or yourself) for d6 + 2.', apCost: 2, cooldown: 2,
+  tags: ['healing'], targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true },
+};
+const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND], c4: [POWER_STRIKE] };
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
 
 const COMBATANTS_DTO: CombatantDto[] = [
@@ -80,32 +92,32 @@ const MOCK_RESOLUTION: ResolutionPayload = {
   newRoundNumber: 4,
   defeatedCombatantIds: [],
   updatedCombatants: PLANNING_COMBATANTS,
-  endOfRound: [],
+  endOfRound: [], revivedCombatantIds: [],
   queues: [
     { combatantId: 'c1', combatantName: 'Zara Forge', maxAp: 4, actions: [
-      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 12 }, abilityId: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null },
+      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 12 }, abilityId: null, targetCombatantIds: null },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null, targetCombatantIds: null },
+      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
     ] },
     { combatantId: 'c2', combatantName: 'Isolde Blade', maxAp: 5, actions: [
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null },
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c4', targetCell: null, abilityId: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null },
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c3', targetCell: null, abilityId: null, targetCombatantIds: null },
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c4', targetCell: null, abilityId: null, targetCombatantIds: null },
+      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
     ] },
     { combatantId: 'c3', combatantName: 'Goblin 1', maxAp: 4, actions: [
-      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c2', targetCell: null, abilityId: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null },
+      { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c2', targetCell: null, abilityId: null, targetCombatantIds: null },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null, targetCombatantIds: null },
     ] },
     { combatantId: 'c4', combatantName: 'Goblin 2', maxAp: 4, actions: [
-      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 14 }, abilityId: null },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null },
-      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null },
+      { type: 'move', apCost: 1, targetCombatantId: null, targetCell: { x: 6, y: 14 }, abilityId: null, targetCombatantIds: null },
+      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1', targetCell: null, abilityId: null, targetCombatantIds: null },
+      { type: 'defend', apCost: 1, targetCombatantId: null, targetCell: null, abilityId: null, targetCombatantIds: null },
     ] },
   ],
   ticks: [
     {
       tickIndex: 0,
-      abilityUses: [],
+      abilityUses: [], heals: [],
       movements: [
         { combatantId: 'c1', combatantName: 'Zara Forge', path: [{ x: 8, y: 10 }, { x: 7, y: 11 }, { x: 6, y: 12 }], finalPosition: { x: 6, y: 12 }, wasBlocked: false, blockedByCombatantId: null },
         { combatantId: 'c4', combatantName: 'Goblin 2', path: [{ x: 6, y: 16 }, { x: 6, y: 15 }, { x: 6, y: 14 }], finalPosition: { x: 6, y: 14 }, wasBlocked: false, blockedByCombatantId: null },
@@ -118,7 +130,7 @@ const MOCK_RESOLUTION: ResolutionPayload = {
     },
     {
       tickIndex: 1,
-      abilityUses: [],
+      abilityUses: [], heals: [],
       movements: [],
       attacks: [
         { attackerId: 'c1', attackerName: 'Zara Forge', targetId: 'c3', targetName: 'Goblin 1', attackType: 'melee_attack', hit: true, damage: 5, targetNewHp: 12, targetDefeated: false, wasted: false, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null },
@@ -130,7 +142,7 @@ const MOCK_RESOLUTION: ResolutionPayload = {
     },
     {
       tickIndex: 2,
-      abilityUses: [],
+      abilityUses: [], heals: [],
       movements: [],
       attacks: [],
       effects: [

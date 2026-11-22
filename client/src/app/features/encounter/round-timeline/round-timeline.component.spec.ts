@@ -26,16 +26,16 @@ describe('RoundTimelineComponent', () => {
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.
-  const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null, abilityId: null });
+  const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null, abilityId: null, targetCombatantIds: null });
   const resolution: ResolutionPayload = {
-    newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [],
+    newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [], revivedCombatantIds: [],
     queues: [
       { combatantId: 'goblin', combatantName: 'goblin', maxAp: 4, actions: [melee('hero'), melee('hero')] },
       { combatantId: 'hero', combatantName: 'hero', maxAp: 4, actions: [melee('goblin'), melee('goblin')] },
     ],
     ticks: [
-      { tickIndex: 0, movements: [], attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)], effects: [], abilityUses: [] },
-      { tickIndex: 1, movements: [], attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)], effects: [], abilityUses: [] },
+      { tickIndex: 0, movements: [], attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)], effects: [], abilityUses: [], heals: [] },
+      { tickIndex: 1, movements: [], attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)], effects: [], abilityUses: [], heals: [] },
     ],
   };
 

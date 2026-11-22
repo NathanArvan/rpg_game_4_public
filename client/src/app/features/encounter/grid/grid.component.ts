@@ -10,8 +10,8 @@ import {
   ArmAbility, DisarmAbility, GmSelectEnemy, GmSetEnemyPlan, SelectMyCombatant, SetMyPlannedAction,
 } from '../../../state/encounter/encounter.actions';
 import {
-  DEFAULT_AP_COSTS, apCost, apSpent, canAfford, canAffordEntry, canTargetWithAbility, chebyshev, describeQueue, entry,
-  moveCellsUsed, projectedPosition,
+  DEFAULT_AP_COSTS, abilityTakesTargets, apCost, apSpent, canAfford, canAffordEntry, canTargetWithAbility, chebyshev,
+  describeQueue, entry, maxTargets, moveCellsUsed, projectedPosition,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -79,6 +79,8 @@ export class GridComponent implements OnInit {
   apCosts: Record<string, number> = { ...DEFAULT_AP_COSTS };
   /** The ability the next click on a token uses (3B.3), or null. */
   armedAbilityId: string | null = null;
+  /** Targets picked so far for an armed "combatants" ability, in pick order (their roll order). */
+  pickedTargetIds: string[] = [];
 
   constructor(private store: Store, private hub: GameHubService, private playback: ResolutionPlaybackService) {}
 
@@ -117,7 +119,10 @@ export class GridComponent implements OnInit {
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
     this.store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
-    this.store.select(EncounterState.armedAbilityId).subscribe(id => this.armedAbilityId = id);
+    this.store.select(EncounterState.armedAbilityId).subscribe(id => {
+      this.armedAbilityId = id;
+      this.pickedTargetIds = []; // a new (or no) ability starts a fresh pick
+    });
   }
 
   // ----- Who am I planning for -----
@@ -333,7 +338,14 @@ export class GridComponent implements OnInit {
 
   isTargeted(combatant: Combatant): boolean {
     return Object.values(this.myPlans).some(plan => plan.some(a =>
-      (a.type === 'melee_attack' || a.type === 'ranged_attack' || a.type === 'ability') && a.targetCombatantId === combatant.id));
+      (a.type === 'melee_attack' || a.type === 'ranged_attack' || a.type === 'ability')
+      && (a.targetCombatantId === combatant.id || !!a.targetCombatantIds?.includes(combatant.id))));
+  }
+
+  /** 1-based pick number of a target chosen for the armed multi-target ability, or null. */
+  pickNumber(combatant: Combatant): number | null {
+    const i = this.pickedTargetIds.indexOf(combatant.id);
+    return i === -1 ? null : i + 1;
   }
 
   // ----- Abilities (3B.3) -----
@@ -375,9 +387,60 @@ export class GridComponent implements OnInit {
     const ability = this.armedAbility;
     if (!ability) return '';
     const t = ability.targeting;
-    const who = t.filter === 'enemy' ? 'an enemy' : t.filter === 'ally' ? 'an ally' : t.filter === 'downed_ally' ? 'a downed ally' : 'a target';
     const reach = t.range === 1 ? 'adjacent' : `up to ${t.range} cells away`;
-    return `${ability.name}: click ${who} (${reach} when it resolves). Esc or click the button again to cancel.`;
+    const cancel = 'Esc or click the button again to cancel.';
+    if (!abilityTakesTargets(ability)) {
+      const whom = t.filter === 'enemy' ? 'enemy' : t.filter === 'downed_ally' ? 'downed ally' : t.filter === 'ally' ? 'ally' : 'combatant';
+      const hits = t.count ? `the nearest ${t.count} ${whom === 'ally' ? 'allies' : whom + 's'}` : `every ${whom}`;
+      return `${ability.name} hits ${hits} ${reach} when it resolves (highlighted). Click the grid or press Enter to queue it. ${cancel}`;
+    }
+    const self = t.includeSelf ? ' or yourself' : '';
+    if (ability.targeting.kind === 'combatants') {
+      const many = t.filter === 'enemy' ? 'enemies' : t.filter === 'ally' ? 'allies' : 'targets';
+      return `${ability.name}: click up to ${maxTargets(ability)} ${many}${self} (${reach} when it resolves), then Done or Enter. Click a picked one again to drop it. ${cancel}`;
+    }
+    const who = t.filter === 'enemy' ? 'an enemy' : t.filter === 'ally' ? 'an ally' : t.filter === 'downed_ally' ? 'a downed ally' : 'a target';
+    return `${ability.name}: click ${who}${self} (${reach} when it resolves). ${cancel}`;
+  }
+
+  /**
+   * The armed ability's confirm button: "Done (1/2)" while picking targets for a multi-target
+   * ability, "Use Cleave" for one that finds its own targets; null when clicking a target is the
+   * only way to queue it.
+   */
+  get armedConfirmLabel(): string | null {
+    const ability = this.armedAbility;
+    if (!ability) return null;
+    if (!abilityTakesTargets(ability)) return `Use ${ability.name}`;
+    if (ability.targeting.kind === 'combatants') return `Done (${this.pickedTargetIds.length}/${maxTargets(ability)})`;
+    return null;
+  }
+
+  get canConfirmArmed(): boolean {
+    const ability = this.armedAbility;
+    return !!ability && (!abilityTakesTargets(ability) || this.pickedTargetIds.length > 0);
+  }
+
+  /** Queues the armed ability as it stands: no targets (auto / self), or the targets picked so far. */
+  confirmArmed(): void {
+    const ability = this.armedAbility;
+    const user = this.abilityUser;
+    if (!ability || !user || !this.canConfirmArmed || this.isPlayingBack || (!this.isGm && this.lockedIn)) return;
+    this.enqueueFor(user, abilityTakesTargets(ability)
+      ? entry('ability', { abilityId: ability.id, targetCombatantIds: [...this.pickedTargetIds] })
+      : entry('ability', { abilityId: ability.id }));
+    this.store.dispatch(new DisarmAbility());
+  }
+
+  @HostListener('document:keydown.enter')
+  onEnter(): void {
+    if (this.armedAbilityId) this.confirmArmed();
+  }
+
+  /** Appends to the user's queue: the GM's monster or one of this player's characters. */
+  private enqueueFor(user: Combatant, action: PlannedActionEntry): void {
+    if (this.isGm) this.planEnemy(user, this.enemyQueue(user.id), action);
+    else this.plan(user, action);
   }
 
   toggleAbility(abilityId: string): void {
@@ -390,15 +453,43 @@ export class GridComponent implements OnInit {
   }
 
   /**
-   * A click while an ability is armed: on a legal target, queue the ability (if AP allows) and
-   * disarm; anywhere else, just disarm. Returns false when nothing is armed.
+   * A click while an ability is armed (returns false when nothing is armed):
+   *  - one that finds its own targets ("auto"): any click queues it;
+   *  - a multi-target one ("combatants"): a legal target is picked (or dropped, if already picked),
+   *    and the ability is queued once `count` are picked; a click on an empty cell cancels;
+   *  - a single-target one: a legal target queues it; anywhere else cancels.
+   * Ally targeting goes first, so clicking one of your own characters targets them rather than
+   * switching who you plan for.
    */
   private useArmedAbility(user: Combatant, cell: Cell, enqueue: (action: PlannedActionEntry) => void): boolean {
     const ability = this.armedAbility;
     if (!ability) return false;
+    if (!abilityTakesTargets(ability)) {
+      enqueue(entry('ability', { abilityId: ability.id }));
+      this.store.dispatch(new DisarmAbility());
+      return true;
+    }
+
     const target = this.tokenAt(cell);
-    if (target && canTargetWithAbility(user, target, ability))
-      enqueue(entry('ability', { abilityId: ability.id, targetCombatantId: target.id }));
+    const legal = !!target && canTargetWithAbility(user, target, ability);
+    if (ability.targeting.kind === 'combatants') {
+      if (!target) {
+        this.store.dispatch(new DisarmAbility());
+      } else if (legal) {
+        const picked = this.pickedTargetIds.includes(target.id)
+          ? this.pickedTargetIds.filter(id => id !== target.id)
+          : [...this.pickedTargetIds, target.id];
+        if (picked.length >= maxTargets(ability)) {
+          enqueue(entry('ability', { abilityId: ability.id, targetCombatantIds: picked }));
+          this.store.dispatch(new DisarmAbility());
+        } else {
+          this.pickedTargetIds = picked;
+        }
+      }
+      return true;
+    }
+
+    if (legal) enqueue(entry('ability', { abilityId: ability.id, targetCombatantId: target!.id }));
     this.store.dispatch(new DisarmAbility());
     return true;
   }

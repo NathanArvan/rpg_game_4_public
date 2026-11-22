@@ -9,7 +9,16 @@ public sealed record RoundOutcome(
     IReadOnlyList<TickOutcome> Ticks,
     IReadOnlyList<string> DefeatedThisRound,
     IReadOnlyDictionary<string, IReadOnlyList<PlannedAction>> ResolvedPlans,
-    IReadOnlyList<BleedoutOutcome> EndOfRound);
+    IReadOnlyList<BleedoutOutcome> EndOfRound)
+{
+    /// <summary>
+    /// Combatants who were out of the fight (Downed or Stable) when the round started and are
+    /// standing again at its end, because a heal brought them back (3B.3, ABILITIES.md A8).
+    /// Someone who went down and was healed back up within the round is in neither this list nor
+    /// <see cref="DefeatedThisRound"/>.
+    /// </summary>
+    public IReadOnlyList<string> RevivedThisRound { get; init; } = [];
+}
 
 /// <summary>
 /// End of round for one combatant who was already Downed when the round started (3B.5): its
@@ -25,14 +34,20 @@ public sealed record TickOutcome(
 {
     /// <summary>Abilities used this tick (3B.3), one entry per activation, in plan order.</summary>
     public IReadOnlyList<AbilityUse> AbilityUses { get; init; } = [];
+
+    /// <summary>Heals this tick (3B.3), resolved with the attacks, in plan order then target order.</summary>
+    public IReadOnlyList<HealOutcome> Heals { get; init; } = [];
 }
 
 /// <summary>
 /// One ability activation (3B.3): who used what, on whom. Its effects' results are in the tick's
-/// other lists, tagged with the same ability id. <see cref="WastedReason"/> is set only when the
-/// activation itself failed (not in the loadout, on cooldown); a target that turned out out of
-/// range or already defeated is reported on that target's attack instead.
+/// other lists, tagged with the same ability id. <see cref="WastedReason"/> is set when the
+/// activation itself failed: refused (not in the loadout, on cooldown) or, for an
+/// <see cref="TargetKind.Auto"/> ability, nobody to hit (<see cref="WastedReason.NoTargets"/>, which
+/// still starts the cooldown). A chosen target that turned out out of range or already defeated is
+/// reported on that target's attack or heal instead.
 /// </summary>
+/// <param name="TargetIds">The chosen targets; for an <see cref="TargetKind.Auto"/> ability, the ones found when it resolved.</param>
 /// <param name="StartedCooldown">The use put the ability on cooldown (every use that wasn't refused).</param>
 public sealed record AbilityUse(
     string CombatantId,
@@ -56,13 +71,16 @@ public sealed record MovementOutcome(
 public enum WastedReason
 {
     None,
-    /// <summary>The target is dead, or went down earlier this round (finishing blows must be planned, 3B.5).</summary>
+    /// <summary>
+    /// The target is dead, or went down earlier this round (finishing blows must be planned, 3B.5).
+    /// Heals: the target is dead, or down and the heal can't revive.
+    /// </summary>
     TargetDefeated,
     /// <summary>Melee target was beyond reach after this tick's movement, or attacker or target has no map position.</summary>
     OutOfMeleeReach,
     /// <summary>The target id is not a combatant in this encounter.</summary>
     InvalidTarget,
-    /// <summary>Stabilize: the target wasn't Downed when it resolved (standing, already stable, or dead).</summary>
+    /// <summary>Stabilize, or a heal that only targets downed allies: the target wasn't Downed when it resolved.</summary>
     TargetNotDowned,
     /// <summary>Ability: the target was beyond the ability's range after this tick's movement (3B.3).</summary>
     OutOfRange,
@@ -104,6 +122,26 @@ public sealed record AttackOutcome(
     CombatantStatus TargetStatus = CombatantStatus.Standing,
     bool FinishingBlow = false,
     string? AbilityId = null)
+{
+    public bool Wasted => WastedReason != WastedReason.None;
+}
+
+/// <summary>One heal on one target (3B.3), resolved in the Attacks phase with the tick's damage.</summary>
+/// <param name="Amount">HP rolled (die + bonus), before netting and the MaxHp cap; 0 when wasted.</param>
+/// <param name="TargetHpBefore">Target HP at the start of this tick's attack phase.</param>
+/// <param name="TargetHpAfter">Target HP after all of this tick's damage and healing was netted (capped at MaxHp).</param>
+/// <param name="Revived">The target was Downed or Stable and is standing again.</param>
+/// <param name="TargetStatus">The target's status after this tick's attacks and heals.</param>
+public sealed record HealOutcome(
+    string HealerId,
+    string TargetId,
+    string AbilityId,
+    int Amount,
+    int TargetHpBefore,
+    int TargetHpAfter,
+    bool Revived,
+    WastedReason WastedReason,
+    CombatantStatus TargetStatus = CombatantStatus.Standing)
 {
     public bool Wasted => WastedReason != WastedReason.None;
 }

@@ -7,15 +7,23 @@
   //   cooldown    rounds the ability can't be planned after the round it was used (0 = none).
   //               An ability with a cooldown can be queued at most once per round
   //   tags        mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …)
-  //   target      kind:   "combatant" (one chosen target, tracked like an attack). More kinds
-  //                       ("combatants", "auto", "self") come in later 3B.3 PRs
+  //   target      kind:   "combatant"  one chosen target, tracked like an attack
+  //                       "combatants" up to "count" distinct chosen targets, each tracked on its own
+  //                       "auto"       everyone matching the filter within range when it resolves
+  //                                    (after the tick's movement), nearest first; "count" caps it
+  //                       ("self" comes with movement abilities)
   //               filter: "enemy" | "ally" | "any" | "downed_ally"
   //               range:  Chebyshev cells from the caster when it resolves (1 = adjacent)
+  //               count:  "combatants": max targets (required). "auto": max hit (optional)
+  //               includeSelf: ally abilities can target the caster too
   //   effects     resolved in order, each in its own phase of the tick:
   //               { "kind": "attack", "roll": "melee" | "ranged" | "none",
   //                 "accuracyBonus": 0,
   //                 "damage": { "die": "weapon" | "d10", "bonus": 0, "multiplier": 1 } }
   //               "weapon" rolls the caster's own damage die. One hit roll per target
+  //               { "kind": "heal", "amount": { "die": "d6", "bonus": 2 }, "canRevive": true }
+  //               resolved with the attacks and netted with the tick's damage, capped at max HP.
+  //               canRevive (default true): brings a downed or stable ally back on their feet
   //   resonanceScaling   optional (MAGIC_SYSTEM.md format). Checked, but only applied from 3M.5
   "abilities": [
     {
@@ -24,6 +32,27 @@
       "ap": 3, "cooldown": 2, "tags": ["melee"],
       "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
       "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    },
+    {
+      "id": "cleave", "name": "Cleave",
+      "description": "A wide swing that hits every adjacent enemy, each with its own roll.",
+      "ap": 3, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
+    },
+    {
+      "id": "twin_shot", "name": "Twin Shot",
+      "description": "Two quick shots at up to two enemies within 8 cells.",
+      "ap": 3, "cooldown": 1, "tags": ["ranged"],
+      "target": { "kind": "combatants", "filter": "enemy", "range": 8, "count": 2 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
+    },
+    {
+      "id": "mend", "name": "Mend",
+      "description": "Heal an ally within 3 cells (or yourself) for d6 + 2. Brings a downed ally back on their feet.",
+      "ap": 2, "cooldown": 2, "tags": ["healing"],
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
     },
     {
       "id": "firebolt", "name": "Firebolt",

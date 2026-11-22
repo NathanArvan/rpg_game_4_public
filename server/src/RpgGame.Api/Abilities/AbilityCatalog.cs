@@ -22,8 +22,11 @@ public sealed class AbilityCatalog
     /// <summary>Allowed ranges for an ability's numbers.</summary>
     public const int MaxApCost = 10, MaxCooldown = 10, MaxRange = 30;
 
-    /// <summary>Target kinds the resolver supports so far. "combatants", "auto" and "self" arrive in later 3B.3 PRs; "cell" in 4.1.</summary>
-    private static readonly HashSet<string> SupportedTargetKinds = ["combatant"];
+    /// <summary>Target kinds the resolver supports so far. "self" arrives with movement abilities (3B.3 PR 3); "cell" in 4.1.</summary>
+    private static readonly HashSet<string> SupportedTargetKinds = ["combatant", "combatants", "auto"];
+
+    /// <summary>Most targets a "combatants" ability may pick.</summary>
+    public const int MaxTargetCount = 6;
 
     /// <summary>Resonance types (MAGIC_SYSTEM.md), allowed as keys of "resonanceScaling".</summary>
     private static readonly HashSet<string> ResonanceTypes =
@@ -93,15 +96,20 @@ public sealed class AbilityCatalog
         var target = a.Target ?? throw new InvalidDataException($"Abilities {file}: {who}: 'target' is required");
         var kind = target.Kind?.Trim().ToLowerInvariant() ?? "";
         if (!SupportedTargetKinds.Contains(kind))
-            Fail($"target kind '{target.Kind}' isn't supported yet (use \"combatant\")");
+            Fail($"target kind '{target.Kind}' isn't supported yet (use \"combatant\", \"combatants\" or \"auto\")");
         var filter = target.Filter?.Trim().ToLowerInvariant() ?? "";
         if (filter is not ("enemy" or "ally" or "any" or "downed_ally"))
             Fail("target 'filter' must be \"enemy\", \"ally\", \"any\" or \"downed_ally\"");
         if (target.Range is not (>= 1 and <= MaxRange)) Fail($"target 'range' must be between 1 and {MaxRange}");
         if (target.Count is not null && kind is not ("combatants" or "auto")) Fail("target 'count' only applies to \"combatants\" and \"auto\"");
+        if (kind == "combatants" && target.Count is not (>= 1 and <= MaxTargetCount))
+            Fail($"a \"combatants\" ability needs a target 'count' between 1 and {MaxTargetCount}");
+        if (kind == "auto" && target.Count is < 1) Fail("target 'count' must be at least 1 (leave it out for no limit)");
+        if (target.IncludeSelf == true && filter == "enemy") Fail("target 'includeSelf' doesn't apply to an \"enemy\" filter");
 
         if (a.Effects is not { Count: > 0 }) Fail("'effects' must list at least one effect");
         var effects = a.Effects!.Select((e, i) => ValidateEffect(e, $"effect {i + 1}", Fail)).ToList();
+        if (filter == "enemy" && effects.Any(e => e.Kind == "heal")) Fail("a heal can't target enemies (use an \"ally\" or \"any\" filter)");
 
         ValidateResonanceScaling(a.ResonanceScaling, Fail);
 
@@ -146,8 +154,24 @@ public sealed class AbilityCatalog
                         Die = die, Bonus = e.Damage?.Bonus ?? 0, Multiplier = e.Damage?.Multiplier ?? 1,
                     },
                 };
+            case "heal":
+                var healDie = e.Amount?.Die?.Trim().ToLowerInvariant();
+                if (healDie is not null)
+                {
+                    try { DamageDie.Parse(healDie); }
+                    catch (FormatException) { fail($"{which}: amount 'die' must be a die like \"d6\" (or left out)"); }
+                }
+                var healBonus = e.Amount?.Bonus ?? 0;
+                if (healBonus < 0) fail($"{which}: amount 'bonus' can't be negative");
+                if (healDie is null && healBonus == 0) fail($"{which}: a heal needs an amount (a 'die', a 'bonus' or both)");
+                return new AbilityEffectValues
+                {
+                    Kind = "heal",
+                    Amount = new AbilityAmountValues { Die = healDie, Bonus = healBonus },
+                    CanRevive = e.CanRevive ?? true,
+                };
             default:
-                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\")");
+                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\")");
                 return null!;
         }
     }
@@ -202,6 +226,14 @@ public sealed class AbilityCatalog
         public string? Roll { get; set; }
         public int? AccuracyBonus { get; set; }
         public DamageDto? Damage { get; set; }
+        public AmountDto? Amount { get; set; }
+        public bool? CanRevive { get; set; }
+    }
+
+    private sealed class AmountDto
+    {
+        public string? Die { get; set; }
+        public int? Bonus { get; set; }
     }
 
     private sealed class DamageDto
@@ -240,6 +272,10 @@ internal static class AbilityMapping
                 e.Damage?.Bonus ?? 0,
                 e.Damage?.Multiplier ?? 1),
             e.AccuracyBonus),
+        "heal" => new HealEffect(
+            e.Amount?.Die is { } die ? DamageDie.Parse(die) : null,
+            e.Amount?.Bonus ?? 0,
+            e.CanRevive),
         _ => throw new InvalidDataException($"Unknown ability effect kind '{e.Kind}'."),
     };
 

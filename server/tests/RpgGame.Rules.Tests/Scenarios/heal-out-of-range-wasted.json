@@ -1,0 +1,24 @@
+{
+  "description": "The heal's target walked out of range before it resolved: wasted, nothing rolled, cooldown still starts",
+  "abilities": [
+    {
+      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero", "side": "party", "hp": 10, "maxHp": 20, "at": [5, 5] },
+    { "id": "Mira", "side": "party", "at": [5, 3], "abilities": ["mend"] }
+  ],
+  "plans": {
+    "Hero": ["move 5,9"],
+    "Mira": ["ability mend Hero"]
+  },
+  "dice": [],
+  "expect": {
+    "hp": { "Hero": 10 },
+    "heals": [ { "tick": 1, "id": "Mira", "target": "Hero", "wasted": "out_of_range" } ],
+    "cooldowns": { "Mira": { "mend": 2 } }
+  }
+}

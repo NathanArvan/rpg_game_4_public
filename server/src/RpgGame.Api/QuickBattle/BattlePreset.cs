@@ -15,10 +15,12 @@ public sealed record BattlePreset(
 /// <param name="Side">"party" (controlled by the player) or "enemy".</param>
 /// <param name="Profile">The combatant's combat profile with the preset's overrides applied.</param>
 /// <param name="IsAiControlled">Enemies default to AI-controlled.</param>
+/// <param name="StartHp">HP at the start of the battle; null = max HP (3B.3).</param>
 public sealed record PresetCombatant(
     string Name,
     string Side,
     CombatProfileValues Profile,
     int X,
     int Y,
-    bool IsAiControlled);
+    bool IsAiControlled,
+    int? StartHp = null);

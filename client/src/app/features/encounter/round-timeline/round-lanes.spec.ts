@@ -1,4 +1,4 @@
-import { AttackResult, CombatantQueueDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, CombatantQueueDto, HealResult, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import { buildLanes } from './round-lanes';
 
 const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): CombatantQueueDto => ({
@@ -8,6 +8,7 @@ const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): 
     targetCombatantId: type.endsWith('attack') || type === 'stabilize' ? target ?? null : null,
     targetCell: type === 'move' ? { x: 1, y: 0 } : null,
     abilityId: null,
+    targetCombatantIds: null,
   })),
 });
 
@@ -18,10 +19,10 @@ const attack = (attackerId: string, targetId: string, extra: Partial<AttackResul
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], ...parts });
+  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], ...parts });
 
 const payload = (queues: CombatantQueueDto[], ...ticks: TickResult[]): ResolutionPayload =>
-  ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [] });
+  ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [], revivedCombatantIds: [] });
 
 describe('buildLanes', () => {
   it('puts action i of every queue in column i: both first attacks, then both second attacks', () => {
@@ -115,7 +116,7 @@ describe('buildLanes', () => {
 
   it('names ability slots and reports their attacks (3B.3)', () => {
     const queue: CombatantQueueDto = { combatantId: 'B', combatantName: 'B', maxAp: 4, actions: [
-      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'power_strike' },
+      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'power_strike', targetCombatantIds: null },
     ] };
     const use = { combatantId: 'B', combatantName: 'B', abilityId: 'power_strike', abilityName: 'Power Strike',
       targetIds: ['G'], wastedReason: null, feedText: '' };
@@ -124,5 +125,37 @@ describe('buildLanes', () => {
     const s0 = lane.slots[0];
     expect([s0.kind, s0.icon, s0.outcome, s0.label]).toEqual(['ability', '✦', 'hit', 'Power Strike on G (3 AP)']);
     expect(s0.detail).toContain('Power Strike: B → G');
+  });
+});
+
+describe('buildLanes: multi-target & heals (3B.3)', () => {
+  const use = (abilityId: string, abilityName: string, wastedReason: string | null = null) =>
+    ({ combatantId: 'M', combatantName: 'M', abilityId, abilityName, targetIds: [], wastedReason, feedText: '' });
+
+  it('reports a heal and names every picked target', () => {
+    const queue: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
+      { type: 'ability', apCost: 2, targetCombatantId: 'H', targetCell: null, abilityId: 'mend', targetCombatantIds: null },
+    ] };
+    const heal: HealResult = { healerId: 'M', healerName: 'M', targetId: 'H', targetName: 'H', abilityId: 'mend', amount: 6,
+      targetNewHp: 6, revived: true, targetStatus: 'standing', wastedReason: null, feedText: '' };
+    const [lane] = buildLanes(payload([queue], tick(0, { abilityUses: [use('mend', 'Mend')], heals: [heal] })));
+    expect([lane.slots[0].outcome, lane.slots[0].label]).toEqual(['healed', 'Mend on H (2 AP)']);
+    expect(lane.slots[0].detail).toBe('Mend: M → H: healed 6 (H now 6 HP, back on their feet).');
+
+    const twin: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
+      { type: 'ability', apCost: 3, targetCombatantId: null, targetCell: null, abilityId: 'twin_shot', targetCombatantIds: ['A', 'B'] },
+    ] };
+    const [lane2] = buildLanes(payload([twin], tick(0, { abilityUses: [use('twin_shot', 'Twin Shot')], attacks: [
+      attack('M', 'A', { abilityId: 'twin_shot' }), attack('M', 'B', { abilityId: 'twin_shot', hit: false }),
+    ] })));
+    expect([lane2.slots[0].outcome, lane2.slots[0].label]).toEqual(['hit', 'Twin Shot on A, B (3 AP)']);
+  });
+
+  it('says so when an auto ability found nobody', () => {
+    const queue: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
+      { type: 'ability', apCost: 3, targetCombatantId: null, targetCell: null, abilityId: 'cleave', targetCombatantIds: null },
+    ] };
+    const [lane] = buildLanes(payload([queue], tick(0, { abilityUses: [use('cleave', 'Cleave', 'no_targets')] })));
+    expect([lane.slots[0].outcome, lane.slots[0].detail]).toEqual(['wasted', "M uses Cleave, but there's nobody in reach."]);
   });
 });

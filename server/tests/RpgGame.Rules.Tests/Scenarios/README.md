@@ -89,7 +89,9 @@ toward it, then melee with the AP left if the walk ends next to it. Give combata
 | `"ranged ID"` | Ranged attack, unlimited range |
 | `"defend"` | No mechanical effect yet |
 | `"stabilize ID"` | Stops an adjacent **Downed** combatant bleeding out (they become Stable). Resolves with the effects, after the tick's attacks |
-| `"ability ABILITY ID"` | Uses one of the combatant's abilities (3B.3) on the target. It takes one queue slot and costs the ability's own AP. Its attacks resolve with the tick's other attacks, one hit roll per target |
+| `"ability ABILITY ID"` | Uses one of the combatant's abilities (3B.3) on the target. It takes one queue slot and costs the ability's own AP. Its attacks and heals resolve with the tick's other attacks, one hit roll per target |
+| `"ability ABILITY A,B"` | An ability with several chosen targets (`"kind": "combatants"`), in the order their rolls are made |
+| `"ability ABILITY"` | An ability that finds its own targets (`"kind": "auto"`) |
 
 Within each tick, all movement happens first, then all attacks, then effects. Damage
 within a tick is simultaneous, so two combatants can kill each other. Anyone who falls in
@@ -118,6 +120,21 @@ the server's catalog):
 ]
 ```
 
+Target kinds: `combatant` (one chosen target), `combatants` (up to `count` chosen targets, each
+checked on its own: one out of range or already down is wasted, the rest still resolve) and `auto`
+(found when the ability resolves, after the tick's movement: every **standing** combatant matching
+`filter` within `range` of the caster, nearest first, ties by id, at most `count` if given). An
+`auto` ability that finds nobody is a use wasted with `no_targets`; its cooldown still starts.
+`includeSelf: true` lets an ally ability target the caster.
+
+Effects: `{ "kind": "attack", … }` (below) and `{ "kind": "heal", "amount": { "die": "d6", "bonus": 2 } }`
+(`die` optional; `"canRevive": false` to stop it bringing someone back up). A heal never rolls to
+hit: it rolls its die (in the same dice order as the attacks) and adds the amount to the tick's
+netting batch, so a heal can save someone from that tick's damage. After netting, HP is capped at
+max. A heal on someone **Downed or Stable** gets them back up (Standing, healed HP, no more bleedout),
+unless a finishing blow hits them in the same tick (the blow wins). They stay off their queue for the
+rest of the round. Dead targets can't be healed.
+
 `roll` is `melee`, `ranged` (d20 + that accuracy + `accuracyBonus`) or `none` (always hits, no d20).
 `die` is `"weapon"` (the caster's own `damage`) or a die like `"d8"`; damage is `(die + bonus) × multiplier`.
 An ability is **used** once its tick is reached by a caster who is still standing, even if its
@@ -131,7 +148,7 @@ of the round every cooldown goes down by one, then each ability used this round 
 These are the exact rolls, used in order. Every attack that isn't wasted rolls a d20 to
 hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die, except
 against a Downed or Stable target: that's a finishing blow, and a hit kills with no damage
-roll. Within a tick, attackers roll in plan order (an ability rolls once per target, in target order). Wasted attacks don't roll at all. A
+roll. Within a tick, attackers and healers roll in plan order (an ability rolls once per target, in target order; a heal rolls only its die). Wasted attacks don't roll at all. A
 wasted attack is one where the target is already dead, or a melee target is out of reach.
 
 The test fails if the resolver asks for more rolls than you listed. It also fails if a
@@ -159,7 +176,9 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
 | `cooldowns` | `{ "id": { "power_strike": 2 } }`, the **exact** cooldowns at the end of the round (`{}` = none) |
-| `abilityUses` | The exact set of `{ "tick", "id", "ability" }` activations; add `"wasted": "on_cooldown"` (or `"not_in_loadout"`) for a refused one |
+| `abilityUses` | The exact set of `{ "tick", "id", "ability" }` activations; add `"wasted": "on_cooldown"` (or `"not_in_loadout"`, `"no_targets"`) for a failed one, and optionally `"targets": ["G1", "G2"]` to check its targets in order (for `auto`, the ones it found) |
+| `heals` | The exact set of `{ "tick", "id" (healer), "target", "amount" }` heals (`amount` = die + bonus, before the max-HP cap); add `"revived": true` when it got the target back up, or `"wasted": "out_of_range"` (amount ignored) |
+| `revived` | The exact set of combatants who were down at the start of the round and are standing at its end |
 | `plans` | `{ "id": "move 0,13" }` or `{ "id": ["move 5,6", "melee Hero"] }`, the queue the AI chose for an `"ai"` plan (same syntax as `plans`). A single string means a one-action queue |
 
 When a check fails, the test lists every mismatch, for example

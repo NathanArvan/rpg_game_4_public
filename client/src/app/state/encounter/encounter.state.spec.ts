@@ -250,13 +250,13 @@ describe('EncounterState', () => {
           roll: { d20: 15, accuracy: 0, targetDodge: 10 },
           wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null,
         }],
-        effects: [], abilityUses: [],
+        effects: [], abilityUses: [], heals: [],
       }],
       newRoundNumber: 2,
       defeatedCombatantIds: [],
       updatedCombatants: [],
       queues: [],
-      endOfRound: [],
+      endOfRound: [], revivedCombatantIds: [],
       ...overrides,
     });
 

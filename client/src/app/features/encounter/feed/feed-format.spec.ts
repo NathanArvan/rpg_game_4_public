@@ -70,3 +70,18 @@ describe('formatFeedLine', () => {
       .toEqual(['[party]Zara Forge', " can't use ", '[ability]Power Strike', ' — still on cooldown']);
   });
 });
+
+describe('formatFeedLine heals (3B.3)', () => {
+  const sides: NameSides = new Map([['Zara Forge', 'party'], ['Mira', 'party'], ['Goblin 1', 'enemy']]);
+  const show = (segments: FeedSegment[]) => segments.map(s => (s.style ? `[${s.style}]` : '') + s.text);
+
+  it('styles the heal amount and the revive teal, and the ability name purple', () => {
+    expect(show(formatFeedLine("Mira's Mend heals Zara Forge for 6 (HP: 0 → 6) — back on their feet!", sides).segments))
+      .toEqual(['[party]Mira', "'s ", '[ability]Mend', ' heals ', '[party]Zara Forge', ' ', '[save]for 6 (HP: 0 → 6) — back on their feet!']);
+  });
+
+  it('names an auto ability that found nobody', () => {
+    expect(show(formatFeedLine('Zara Forge uses Cleave — no targets in range', sides).segments))
+      .toEqual(['[party]Zara Forge', ' uses ', '[ability]Cleave', ' — no targets in range']);
+  });
+});

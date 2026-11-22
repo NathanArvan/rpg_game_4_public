@@ -1,0 +1,29 @@
+{
+  "description": "A hero who goes down in tick 1 and is healed back up in tick 2 is standing at the end, but the rest of their queue stays void this round",
+  "abilities": [
+    {
+      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6] },
+    { "id": "Mira",   "side": "party", "at": [5, 3], "abilities": ["mend"] }
+  ],
+  "plans": {
+    "Hero":   ["melee Goblin", "melee Goblin"],
+    "Goblin": ["melee Hero"],
+    "Mira":   ["defend", "ability mend Hero"]
+  },
+  "dice": [3, 15, 5, 1],                 // tick 1: Hero misses, Goblin hits for 5 (down); tick 2: Hero's swing is void, Mend d6 = 1, +2 = 3
+  "expect": {
+    "hp": { "Hero": 3, "Goblin": 20 },
+    "status": { "Hero": "standing" },
+    "defeated": [],
+    "revived": [],
+    "hits": [ { "tick": 1, "attacker": "Goblin" } ],
+    "heals": [ { "tick": 2, "id": "Mira", "target": "Hero", "amount": 3, "revived": true } ]
+  }
+}

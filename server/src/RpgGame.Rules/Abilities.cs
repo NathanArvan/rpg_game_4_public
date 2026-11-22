@@ -12,9 +12,12 @@ public enum TargetKind
     Self,
     /// <summary>One chosen combatant, tracked like an attack target.</summary>
     Combatant,
-    /// <summary>Up to <see cref="Targeting.Count"/> distinct chosen combatants (3B.3 PR 2).</summary>
+    /// <summary>Up to <see cref="Targeting.Count"/> distinct chosen combatants, each checked on its own.</summary>
     Combatants,
-    /// <summary>Everyone matching the filter within range at resolution time (3B.3 PR 2).</summary>
+    /// <summary>
+    /// Found when the ability resolves, after the tick's movement: everyone matching the filter within
+    /// range of the caster, nearest first (ties by id), at most <see cref="Targeting.Count"/>.
+    /// </summary>
     Auto,
     /// <summary>A grid cell (4.1, reserved).</summary>
     Cell,
@@ -81,6 +84,18 @@ public abstract record AbilityEffect;
 /// <summary>An attack on each target, resolved in the Attacks phase with one hit roll per target.</summary>
 /// <param name="AccuracyBonus">Added to the caster's accuracy for this attack.</param>
 public sealed record AttackEffect(AttackKind Roll, DamageSpec Damage, int AccuracyBonus = 0) : AbilityEffect;
+
+/// <summary>
+/// Heals each target, resolved in the Attacks phase: the amount is a positive HP delta netted with the
+/// tick's damage, then HP is capped at MaxHp (ABILITIES.md A8). Healing never rolls to hit.
+/// </summary>
+/// <param name="Die">The die to roll, or null for no die (only <paramref name="Bonus"/>).</param>
+/// <param name="Bonus">Flat healing added after the die.</param>
+/// <param name="CanRevive">
+/// A heal on a Downed or Stable target brings it back to Standing with the healed HP, unless a
+/// finishing blow hits it in the same tick. Without this, such targets can't be healed.
+/// </param>
+public sealed record HealEffect(DamageDie? Die, int Bonus = 0, bool CanRevive = true) : AbilityEffect;
 
 /// <param name="Cooldown">Rounds the ability can't be planned after the round it was used (0 = none).</param>
 /// <param name="Tags">Mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …).</param>

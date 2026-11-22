@@ -36,13 +36,17 @@ public static class RoundResolver
         var ticks = new List<TickOutcome>(tickCount);
         for (int tick = 0; tick < tickCount; tick++)
         {
-            // Combatants defeated in an earlier tick are skipped by IsOut(), which voids
+            // Combatants defeated in an earlier tick are skipped (CanAct), which voids
             // their remaining queued actions.
-            var abilityUses = ResolveAbilityActivations(round, tick);
+            ResolveAbilityActivations(round, tick);
             var movements = ResolveMovementPhase(round, tick);
-            var attacks = ResolveAttackPhase(round, tick);
+            var (attacks, heals) = ResolveAttackPhase(round, tick);
             var effects = ResolveEffectsPhase(round, tick);
-            ticks.Add(new TickOutcome(tick, movements, attacks, effects) { AbilityUses = abilityUses });
+            ticks.Add(new TickOutcome(tick, movements, attacks, effects)
+            {
+                AbilityUses = round.TickUses.ToList(),
+                Heals = heals,
+            });
         }
 
         var endOfRound = ResolveBleedout(round);
@@ -60,7 +64,10 @@ public static class RoundResolver
             }).ToList(),
         };
 
-        return new RoundOutcome(next, ticks, round.DefeatedThisRound.ToList(), round.Plans, endOfRound);
+        // Net change over the round: someone who went down and was healed back up is in neither list.
+        var defeated = round.DefeatedThisRound.Distinct().Where(round.IsOut).ToList();
+        var revived = state.Combatants.Where(c => c.IsDefeated && !round.IsOut(c.Id)).Select(c => c.Id).ToList();
+        return new RoundOutcome(next, ticks, defeated, round.Plans, endOfRound) { RevivedThisRound = revived };
     }
 
     // ----- Ability activations (start of each tick) -----
@@ -70,15 +77,17 @@ public static class RoundResolver
     /// is reached by a caster who is still standing, whatever then happens to its targets, and that
     /// starts its cooldown (ABILITIES.md A10). One that isn't in the loadout or is on cooldown is
     /// refused (planning rejects both; this only guards the engine). The ones that go ahead are
-    /// recorded in <see cref="RoundContext.TickAbilities"/> for this tick's phases.
+    /// recorded in <see cref="RoundContext.TickAbilities"/> for this tick's phases, and every
+    /// activation in <see cref="RoundContext.TickUses"/>.
     /// </summary>
-    private static List<AbilityUse> ResolveAbilityActivations(RoundContext round, int tick)
+    private static void ResolveAbilityActivations(RoundContext round, int tick)
     {
         round.TickAbilities.Clear();
-        var uses = new List<AbilityUse>();
+        round.TickUses.Clear();
+        var uses = round.TickUses;
         foreach (var (casterId, queue) in round.Plans)
         {
-            if (round.IsOut(casterId)) continue;
+            if (!round.CanAct(casterId)) continue;
             var action = ActionAt(queue, tick);
             if (action?.Type != ActionType.Ability) continue;
 
@@ -102,17 +111,63 @@ public static class RoundResolver
             }
 
             used.Add(ability.Id);
-            round.TickAbilities[casterId] = ability;
+            round.TickAbilities[casterId] = new ActiveAbility(ability, action, uses.Count);
             uses.Add(new AbilityUse(casterId, abilityId, targets, StartedCooldown: ability.Cooldown > 0));
         }
-        return uses;
     }
 
-    /// <summary>The chosen targets of an action: the single target, or the list (3B.3 PR 2).</summary>
+    /// <summary>The chosen targets of an action: the single target, or the list.</summary>
     private static IReadOnlyList<string> TargetIdsOf(PlannedAction action) =>
         action.TargetCombatantIds is { Count: > 0 } list ? list
         : string.IsNullOrEmpty(action.TargetCombatantId) ? []
         : [action.TargetCombatantId];
+
+    /// <summary>
+    /// Who an ability affects this tick, in the order its rolls are made: the chosen targets in plan
+    /// order, the caster for <see cref="TargetKind.Self"/>, or for <see cref="TargetKind.Auto"/> the
+    /// ones found now (after this tick's movement). An auto ability that finds nobody is marked
+    /// <see cref="WastedReason.NoTargets"/> on its use; its cooldown still starts.
+    /// </summary>
+    private static IReadOnlyList<string> ResolveTargets(RoundContext round, string casterId, ActiveAbility active)
+    {
+        switch (active.Ability.Targeting.Kind)
+        {
+            case TargetKind.Self:
+                return [casterId];
+            case TargetKind.Auto:
+                var found = FindAutoTargets(round, casterId, active.Ability.Targeting);
+                round.TickUses[active.UseIndex] = round.TickUses[active.UseIndex] with
+                {
+                    TargetIds = found,
+                    WastedReason = found.Count == 0 ? WastedReason.NoTargets : WastedReason.None,
+                };
+                return found;
+            default:
+                return TargetIdsOf(active.Action);
+        }
+    }
+
+    /// <summary>
+    /// Targets of an <see cref="TargetKind.Auto"/> ability (ABILITIES.md A4): everyone who passes the
+    /// filter and is within range of the caster right now, nearest first, ties by id (ordinal), at
+    /// most <see cref="Targeting.Count"/>. Only standing combatants count, except for a
+    /// <see cref="TargetFilter.DownedAlly"/> filter, which looks for Downed ones; nobody is finished
+    /// off or revived by accident.
+    /// </summary>
+    private static List<string> FindAutoTargets(RoundContext round, string casterId, Targeting targeting)
+    {
+        if (!round.Positions.TryGetValue(casterId, out var from)) return [];
+        var caster = round.Combatants[casterId];
+        var wanted = targeting.Filter == TargetFilter.DownedAlly ? CombatantStatus.Downed : CombatantStatus.Standing;
+        var found = round.State.Combatants
+            .Where(c => round.Status[c.Id] == wanted
+                        && Relations.Matches(caster, c, targeting)
+                        && round.WithinRange(casterId, c.Id, targeting.Range))
+            .OrderBy(c => from.ChebyshevDistanceTo(round.Positions[c.Id]))
+            .ThenBy(c => c.Id, StringComparer.Ordinal)
+            .Select(c => c.Id);
+        return (targeting.Count is { } n ? found.Take(n) : found).ToList();
+    }
 
     // ----- Phase 1: Movement -----
 
@@ -121,7 +176,7 @@ public static class RoundResolver
         var movers = new List<Mover>();
         foreach (var (combatantId, queue) in round.Plans)
         {
-            if (round.IsOut(combatantId)) continue;
+            if (!round.CanAct(combatantId)) continue;
             var action = ActionAt(queue, tick);
             if (action?.Type != ActionType.Move || action.TargetCell is not { } target) continue;
 
@@ -236,16 +291,26 @@ public static class RoundResolver
         string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
         AttackRoll? Roll, bool Finishing, string? AbilityId);
 
-    private static List<AttackOutcome> ResolveAttackPhase(RoundContext round, int tick)
+    private sealed record PendingHeal(
+        string HealerId, string TargetId, string AbilityId, WastedReason Reason, int Amount, bool CanRevive)
+    {
+        public bool Wasted => Reason != WastedReason.None;
+    }
+
+    /// <summary>
+    /// Attacks and heals (ABILITIES.md A8) are one batch: dice are rolled in plan order (then effect
+    /// order, then target order within an ability), and all damage and healing is netted together
+    /// before anyone falls or gets back up.
+    /// </summary>
+    private static (List<AttackOutcome>, List<HealOutcome>) ResolveAttackPhase(RoundContext round, int tick)
     {
         var pending = new List<PendingAttack>();
+        var heals = new List<PendingHeal>();
         var hpDeltas = new Dictionary<string, int>(); // targetId → net delta (negative = damage)
 
-        // Basic attacks and ability attacks share one batch: dice are rolled in plan order (then
-        // target order within an ability), and all damage is netted together.
         foreach (var (attackerId, queue) in round.Plans)
         {
-            if (round.IsOut(attackerId)) continue;
+            if (!round.CanAct(attackerId)) continue;
             var action = ActionAt(queue, tick);
             switch (action?.Type)
             {
@@ -260,39 +325,75 @@ public static class RoundResolver
                         melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, accuracyBonus: 0, wasted, abilityId: null));
                     break;
                 }
-                case ActionType.Ability when round.TickAbilities.TryGetValue(attackerId, out var ability):
-                    foreach (var effect in ability.Effects.OfType<AttackEffect>())
+                case ActionType.Ability when round.TickAbilities.TryGetValue(attackerId, out var active):
+                {
+                    var ability = active.Ability;
+                    var targets = ResolveTargets(round, attackerId, active);
+                    foreach (var effect in ability.Effects)
                     {
-                        var type = effect.Roll switch
+                        switch (effect)
                         {
-                            AttackKind.Melee => ActionType.MeleeAttack,
-                            AttackKind.Ranged => ActionType.RangedAttack,
-                            _ => ActionType.Ability,
-                        };
-                        foreach (var targetId in TargetIdsOf(action))
-                        {
-                            var wasted = CheckAttackTarget(round, attackerId, targetId,
-                                ability.Targeting, ability.Targeting.Range, WastedReason.OutOfRange);
-                            pending.Add(RollAttack(round, hpDeltas, attackerId, targetId, type,
-                                effect.Roll, effect.Damage, effect.AccuracyBonus, wasted, ability.Id));
+                            case AttackEffect attack:
+                                var type = attack.Roll switch
+                                {
+                                    AttackKind.Melee => ActionType.MeleeAttack,
+                                    AttackKind.Ranged => ActionType.RangedAttack,
+                                    _ => ActionType.Ability,
+                                };
+                                foreach (var targetId in targets)
+                                {
+                                    var wasted = CheckAttackTarget(round, attackerId, targetId,
+                                        ability.Targeting, ability.Targeting.Range, WastedReason.OutOfRange);
+                                    pending.Add(RollAttack(round, hpDeltas, attackerId, targetId, type,
+                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability.Id));
+                                }
+                                break;
+                            case HealEffect heal:
+                                foreach (var targetId in targets)
+                                {
+                                    var wasted = CheckHealTarget(round, attackerId, targetId, ability.Targeting, heal);
+                                    heals.Add(RollHeal(round, hpDeltas, attackerId, targetId, heal, wasted, ability.Id));
+                                }
+                                break;
                         }
                     }
                     break;
+                }
             }
         }
 
-        // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3).
+        // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3). Anyone
+        // healed is capped at MaxHp after netting: 18/20 taking 5 and healing 8 ends on 20.
         var hpBefore = new Dictionary<string, int>(round.Hp);
         foreach (var (targetId, delta) in hpDeltas)
             round.Hp[targetId] += delta;
+        foreach (var h in heals.Where(h => !h.Wasted))
+            round.Hp[h.TargetId] = Math.Min(round.Hp[h.TargetId], round.Combatants[h.TargetId].MaxHp);
 
-        // Finishing blows land together with the damage: a Downed or Stable target that was hit dies.
+        // Finishing blows land together with the damage: a Downed or Stable target that was hit dies,
+        // even if a heal reached it in the same tick (the blow wins, ABILITIES.md A8).
         var fellThisTick = new HashSet<string>();
         foreach (var a in pending.Where(a => a.Finishing && a.Hit))
         {
+            round.Hp[a.TargetId] = 0;
             if (round.Status[a.TargetId] == CombatantStatus.Dead) continue;
             round.SetStatus(a.TargetId, CombatantStatus.Dead);
             fellThisTick.Add(a.TargetId);
+        }
+
+        // Revives: a healed target that was Downed or Stable before this tick and still is stands
+        // back up with the healed HP, and stops bleeding out. Their queue stays void this round.
+        var revivedThisTick = new HashSet<string>();
+        foreach (var h in heals.Where(h => !h.Wasted && h.CanRevive))
+        {
+            if (round.Status[h.TargetId] is not (CombatantStatus.Downed or CombatantStatus.Stable)) continue;
+            if (round.Hp[h.TargetId] <= 0) continue;
+            round.SetStatus(h.TargetId, CombatantStatus.Standing);
+            round.Bleedout[h.TargetId] = 0;
+            // If they fall again this round, that's a new fall: no finishing blow, no bleedout tick yet.
+            round.OutAtStart.Remove(h.TargetId);
+            round.DownedAtStart.Remove(h.TargetId);
+            revivedThisTick.Add(h.TargetId);
         }
 
         // The 0-HP check runs once, after ALL damage is applied — enables mutual kills
@@ -316,7 +417,7 @@ public static class RoundResolver
             fellThisTick.Add(c.Id);
         }
 
-        return pending.Select(a => new AttackOutcome(
+        var attackOutcomes = pending.Select(a => new AttackOutcome(
             a.AttackerId,
             a.TargetId,
             a.Type,
@@ -331,6 +432,61 @@ public static class RoundResolver
             TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
             FinishingBlow: a.Finishing,
             AbilityId: a.AbilityId)).ToList();
+
+        var healOutcomes = heals.Select(h => new HealOutcome(
+            h.HealerId,
+            h.TargetId,
+            h.AbilityId,
+            h.Amount,
+            TargetHpBefore: hpBefore.GetValueOrDefault(h.TargetId, 0),
+            TargetHpAfter: round.Hp.GetValueOrDefault(h.TargetId, 0),
+            Revived: revivedThisTick.Contains(h.TargetId) && !h.Wasted,
+            h.Reason,
+            TargetStatus: round.Status.GetValueOrDefault(h.TargetId, CombatantStatus.Standing))).ToList();
+
+        return (attackOutcomes, healOutcomes);
+    }
+
+    /// <summary>
+    /// Whether a heal can reach a target right now (the heal side of <see cref="CheckAttackTarget"/>):
+    /// the target exists → it's on the side the targeting allows → it isn't dead, and if it's down
+    /// the heal can revive (or, for a downed-ally heal, it is Downed) → it's within range of the
+    /// healer's current cell. Unlike attacks, a heal reaches someone who went down earlier this round.
+    /// </summary>
+    private static WastedReason CheckHealTarget(
+        RoundContext round, string healerId, string targetId, Targeting targeting, HealEffect heal)
+    {
+        if (!round.Combatants.TryGetValue(targetId, out var target))
+            return WastedReason.InvalidTarget;
+        if (!Relations.Matches(round.Combatants[healerId], target, targeting))
+            return WastedReason.InvalidTargetType;
+
+        var status = round.Status[targetId];
+        if (status == CombatantStatus.Dead || (status != CombatantStatus.Standing && !heal.CanRevive))
+            return WastedReason.TargetDefeated;
+        if (targeting.Filter == TargetFilter.DownedAlly && status != CombatantStatus.Downed)
+            return WastedReason.TargetNotDowned;
+
+        if (healerId != targetId && !round.WithinRange(healerId, targetId, targeting.Range))
+            return WastedReason.OutOfRange;
+        return WastedReason.None;
+    }
+
+    /// <summary>Rolls one heal (unless wasted) and adds it to the tick's netting batch as a positive delta.</summary>
+    private static PendingHeal RollHeal(
+        RoundContext round, Dictionary<string, int> hpDeltas, string healerId, string targetId, HealEffect heal,
+        WastedReason wasted, string abilityId)
+    {
+        int amount = 0;
+        if (wasted == WastedReason.None)
+        {
+            int rolled = heal.Die is { } die ? round.Dice.Roll(die.Sides) : 0;
+            int resonanceBonus = 0;                          // resonance (3M.5)
+            int leyBonus = 0;                                // ley points (3M.5)
+            amount = Math.Max(0, rolled + heal.Bonus + resonanceBonus + leyBonus);
+            hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) + amount;
+        }
+        return new PendingHeal(healerId, targetId, abilityId, wasted, amount, heal.CanRevive);
     }
 
     /// <summary>
@@ -431,7 +587,7 @@ public static class RoundResolver
         foreach (var (combatantId, queue) in round.Plans)
         {
             // Includes combatants who fell in this tick's attack phase.
-            if (round.IsOut(combatantId)) continue;
+            if (!round.CanAct(combatantId)) continue;
             var action = ActionAt(queue, tick);
             switch (action?.Type)
             {
@@ -553,6 +709,9 @@ public static class RoundResolver
         return path;
     }
 
+    /// <summary>An ability going ahead this tick: its definition, the queued action, and its entry in <see cref="RoundContext.TickUses"/>.</summary>
+    private sealed record ActiveAbility(AbilityDefinition Ability, PlannedAction Action, int UseIndex);
+
     private sealed class Mover(string combatantId, List<GridPosition> fullPath, int speed)
     {
         public string CombatantId { get; } = combatantId;
@@ -597,7 +756,16 @@ public static class RoundResolver
         public Dictionary<string, HashSet<string>> UsedAbilities { get; } = [];
 
         /// <summary>The abilities going ahead in the current tick, by caster (set at the start of each tick).</summary>
-        public Dictionary<string, AbilityDefinition> TickAbilities { get; } = [];
+        public Dictionary<string, ActiveAbility> TickAbilities { get; } = [];
+
+        /// <summary>Every ability activation of the current tick, in plan order (auto targets are filled in during the attack phase).</summary>
+        public List<AbilityUse> TickUses { get; } = [];
+
+        /// <summary>
+        /// Standing when the round started and hasn't fallen since: the only ones whose queues still
+        /// run. Someone healed back up mid-round stays off it until the next round.
+        /// </summary>
+        private HashSet<string> Acting { get; }
 
         public RoundContext(
             EncounterState state,
@@ -618,6 +786,7 @@ public static class RoundResolver
             DownedAtStart = state.Combatants.Where(c => c.Status == CombatantStatus.Downed).Select(c => c.Id).ToHashSet();
             OutAtStart = state.Combatants
                 .Where(c => c.Status is CombatantStatus.Downed or CombatantStatus.Stable).Select(c => c.Id).ToHashSet();
+            Acting = state.Combatants.Where(c => !c.IsDefeated).Select(c => c.Id).ToHashSet();
 
             foreach (var id in plans.Keys)
                 if (!Combatants.ContainsKey(id))
@@ -635,14 +804,20 @@ public static class RoundResolver
             Plans = affordable;
         }
 
-        /// <summary>Not standing (Downed, Stable or Dead): can't act this tick or later.</summary>
+        /// <summary>Not standing (Downed, Stable or Dead).</summary>
         public bool IsOut(string id) => Status[id] != CombatantStatus.Standing;
 
-        /// <summary>Changes a status, recording anyone who stops standing this round.</summary>
+        /// <summary>Its queued actions still run: standing since the start of the round.</summary>
+        public bool CanAct(string id) => Acting.Contains(id);
+
+        /// <summary>Changes a status, recording anyone who stops standing this round (their queue is void from then on).</summary>
         public void SetStatus(string id, CombatantStatus status)
         {
             if (Status[id] == CombatantStatus.Standing && status != CombatantStatus.Standing)
+            {
                 DefeatedThisRound.Add(id);
+                Acting.Remove(id);
+            }
             Status[id] = status;
         }
 

@@ -53,11 +53,32 @@ internal static class ResolutionFeedFormatter
     /// The attacks it made have their own lines.
     /// </summary>
     public static string AbilityUse(AbilityUse use, string combatantName, string abilityName, IReadOnlyList<string> targetNames) =>
-        use.Wasted
+        use.WastedReason == WastedReason.NoTargets
+            ? $"{combatantName} uses {abilityName} — {WastedReasonText(use.WastedReason)}"
+            : use.Wasted
             ? $"{combatantName} can't use {abilityName} — {WastedReasonText(use.WastedReason)}"
             : targetNames.Count == 0
                 ? $"{combatantName} uses {abilityName}"
                 : $"{combatantName} uses {abilityName} on {string.Join(", ", targetNames)}";
+
+    /// <summary>
+    /// One heal (3B.3): "Mira's Mend heals Brakka for 6 (HP: 0 → 6) — back on their feet!". HP is
+    /// shown after netting with the tick's damage and the max-HP cap.
+    /// </summary>
+    public static string Heal(HealOutcome heal, string healerName, string targetName, string abilityName)
+    {
+        var who = $"{healerName}'s {abilityName}";
+        if (heal.Wasted)
+            return $"{who} on {targetName} fails — {WastedReasonText(heal.WastedReason)}";
+        if (heal.TargetStatus == CombatantStatus.Dead)
+            return $"{who} on {targetName} comes too late";
+        var hp = $"(HP: {heal.TargetHpBefore} → {heal.TargetHpAfter})";
+        if (heal.Revived)
+            return $"{who} heals {targetName} for {heal.Amount} {hp} — back on their feet!";
+        if (heal.TargetStatus != CombatantStatus.Standing)
+            return $"{who} heals {targetName} for {heal.Amount} {hp}, but they stay down";
+        return $"{who} heals {targetName} for {heal.Amount} {hp}";
+    }
 
     /// <param name="targetName">Stabilize: the target's name.</param>
     public static string Effect(EffectOutcome effect, string combatantName, string targetName = "") => effect.Type switch

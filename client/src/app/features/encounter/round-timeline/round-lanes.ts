@@ -1,4 +1,4 @@
-import { AttackResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, HealResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
 import { wastedLabel } from '../../../core/services/playback-timeline';
 
 /**
@@ -10,7 +10,8 @@ import { wastedLabel } from '../../../core/services/playback-timeline';
 export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'ability' | 'idle' | 'lost';
 
 /** What happened. 'none' = nothing to report (idle, lost). */
-export type SlotOutcome = 'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'none';
+export type SlotOutcome =
+  'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'healed' | 'none';
 
 export interface LaneSlot {
   tick: number;
@@ -66,6 +67,10 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       names.set(a.attackerId, a.attackerName);
       names.set(a.targetId, a.targetName);
     }
+    for (const h of tick.heals ?? []) {
+      names.set(h.healerId, h.healerName);
+      names.set(h.targetId, h.targetName);
+    }
   }
   const nameOf = (id: string | null) => (id && names.get(id)) || 'someone';
   // Ability names (3B.3), from the activations the server reported.
@@ -99,7 +104,9 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
           : slot(i, 'idle', 0, 'none', 'Nothing queued', `${name} has no action left (queue used up).`);
       }
 
-      const what = actionLabel(action.type, action.targetCombatantId ? nameOf(action.targetCombatantId) : null, action.targetCell,
+      const targetIds = action.targetCombatantIds?.length ? action.targetCombatantIds
+        : action.targetCombatantId ? [action.targetCombatantId] : [];
+      const what = actionLabel(action.type, targetIds.length ? targetIds.map(nameOf).join(', ') : null, action.targetCell,
         action.abilityId ? abilityNames.get(action.abilityId) ?? action.abilityId : null);
       const label = `${what} (${action.apCost} AP)`;
       const kind = action.type as SlotKind;
@@ -134,8 +141,15 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       if (kind === 'ability') {
         const use = (tick.abilityUses ?? []).find(u => u.combatantId === q.combatantId);
         if (!use) return lost();
+        if (use.wastedReason === 'no_targets') return slot(i, kind, action.apCost, 'wasted', label,
+          `${name} uses ${use.abilityName}, but there's nobody in reach.`);
         if (use.wastedReason) return slot(i, kind, action.apCost, 'wasted', label,
           `${name} can't use ${use.abilityName} (${wastedLabel(use.wastedReason)}).`);
+        const heals = (tick.heals ?? []).filter(h => h.healerId === q.combatantId && h.abilityId === use.abilityId);
+        if (heals.length > 0) {
+          const outcome = heals.every(h => h.wastedReason) ? 'wasted' : 'healed';
+          return slot(i, kind, action.apCost, outcome, label, `${use.abilityName}: ` + heals.map(h => healDetail(name, h)).join(' '));
+        }
         const hits = tick.attacks.filter(a => a.attackerId === q.combatantId && a.abilityId === use.abilityId);
         if (hits.length === 0) return slot(i, kind, action.apCost, 'none', label, `${name} uses ${use.abilityName}.`);
         if (hits.every(a => a.wasted)) return slot(i, kind, action.apCost, 'wasted', label,
@@ -187,6 +201,14 @@ function actionLabel(
   const action = type === 'ability' ? abilityName ?? 'Ability' : ACTION_NAMES[type] ?? type;
   if (type === 'move' && cell) return `${action} to (${cell.x}, ${cell.y})`;
   return targetName ? `${action} on ${targetName}` : action;
+}
+
+/** "Mira → Brakka: healed 6 (Brakka now 6 HP, back on their feet)." (3B.3) */
+export function healDetail(name: string, h: HealResult): string {
+  if (h.wastedReason) return `${name} → ${h.targetName}: wasted (${wastedLabel(h.wastedReason)}).`;
+  if (h.targetStatus === 'dead') return `${name} → ${h.targetName}: healed ${h.amount}, but too late.`;
+  const up = h.revived ? ', back on their feet' : '';
+  return `${name} → ${h.targetName}: healed ${h.amount} (${h.targetName} now ${h.targetNewHp} HP${up}).`;
 }
 
 /** "Zara Forge → Goblin 1: rolled 13 + 3 = 16 vs dodge 12, hit for 5 (Goblin 1 now 12 HP)." */

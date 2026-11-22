@@ -650,6 +650,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                                             b3.Property<int>("AccuracyBonus");
 
+                                            b3.Property<bool>("CanRevive");
+
                                             b3.Property<string>("Kind")
                                                 .IsRequired();
 
@@ -661,6 +663,27 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                                             b3.WithOwner()
                                                 .HasForeignKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+
+                                            b3.OwnsOne("RpgGame.Domain.Entities.AbilityAmountValues", "Amount", b4 =>
+                                                {
+                                                    b4.Property<Guid>("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                        .HasColumnName("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCo~");
+
+                                                    b4.Property<int>("AbilityEffectValuesAbilityValues__synthesizedOrdinal");
+
+                                                    b4.Property<int>("AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.Property<int>("Bonus");
+
+                                                    b4.Property<string>("Die");
+
+                                                    b4.HasKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.ToTable("EncounterCombatants");
+
+                                                    b4.WithOwner()
+                                                        .HasForeignKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+                                                });
 
                                             b3.OwnsOne("RpgGame.Domain.Entities.AbilityDamageValues", "Damage", b4 =>
                                                 {
@@ -685,6 +708,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
                                                     b4.WithOwner()
                                                         .HasForeignKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
                                                 });
+
+                                            b3.Navigation("Amount");
 
                                             b3.Navigation("Damage");
                                         });

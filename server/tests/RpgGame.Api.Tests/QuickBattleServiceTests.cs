@@ -84,8 +84,8 @@ public class QuickBattleServiceTests
         var skirmisher = combatants.Single(c => c.CharacterName == "Skirmisher").Profile!;
         Assert.Equal(5, skirmisher.MaxAp);
         var bruiser = combatants.Single(c => c.CharacterName == "Bruiser").Profile!;
-        Assert.Equal(["power_strike"], bruiser.Abilities!.Select(a => a.Id));
-        Assert.Equal(["firebolt"], combatants.Single(c => c.CharacterName == "Scout").Profile!.Abilities!.Select(a => a.Id));
+        Assert.Equal(["power_strike", "cleave"], bruiser.Abilities!.Select(a => a.Id));
+        Assert.Equal(["twin_shot", "firebolt"], combatants.Single(c => c.CharacterName == "Scout").Profile!.Abilities!.Select(a => a.Id));
 
         await Service().StartAsync("user-2", "rescue");
         var archer = (await _db.EncounterCombatants.ToListAsync()).Single(c => c.CharacterName == "Archer").Profile!;

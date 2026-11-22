@@ -2,6 +2,8 @@
 
 > **Status:** ✅ Locked 2026-11-22. A8 (revive by healing), A9 (prepared reactions get their own slice, 3B.6) and A12 (ley points and resonance move to 3M.5, after 3M.2) were chosen explicitly; A3 was amended (team relations go through one function, so non-hostile rival teams can be added later); everything else is locked as first written. Change a decision here (with a note) if implementation shows it doesn't work. Decisions for Slice 3B.3, written so the ability families planned for later (spells, perception, concealment, AoE, conditions, reactions) slot in without reworking `RoundResolver`. Implementation plan: `docs/roadmap/SPRINT_3B3.md`.
 >
+> **Implementation notes (3B.3 PR 2, 2026-11-22):** `auto` targets are Standing combatants only (Downed ones for a `downed_ally` filter), so area attacks never finish anyone off by accident. A combatant healed back up mid-round stands again but doesn't act for the rest of that round. A heal that can't revive is wasted on a Downed or Stable target. Details in `SPRINT_3B3.md` (PR 2 differences).
+>
 > **Builds on:** `TICK_RESOLUTION.md` (tick loop, phases, targeting, reactions), `DESIGN_SPIKE.md` (HP netting, damage pipeline), `DEFEAT_AND_INCAPACITATION.md` (statuses, Stabilize), `MAGIC_SYSTEM.md` (tags, resonance, ley points).
 
 ---

@@ -154,6 +154,7 @@ export interface ResolutionPayload {
   updatedCombatants: PlanningCombatantDto[];
   queues: CombatantQueueDto[];
   endOfRound: BleedoutResultDto[];
+  revivedCombatantIds: string[] | null;
 }
 
 export interface BleedoutResultDto {
@@ -177,6 +178,7 @@ export interface QueuedActionDto {
   targetCombatantId: string | null;
   targetCell: PositionDto | null;
   abilityId: string | null;
+  targetCombatantIds: string[] | null;
 }
 
 export interface TickResult {
@@ -185,6 +187,21 @@ export interface TickResult {
   attacks: AttackResult[];
   effects: EffectResult[];
   abilityUses: AbilityUseResult[] | null;
+  heals: HealResult[] | null;
+}
+
+export interface HealResult {
+  healerId: string;
+  healerName: string;
+  targetId: string;
+  targetName: string;
+  abilityId: string;
+  amount: number;
+  targetNewHp: number;
+  revived: boolean;
+  targetStatus: string;
+  wastedReason: string | null;
+  feedText: string;
 }
 
 export interface MovementResult {

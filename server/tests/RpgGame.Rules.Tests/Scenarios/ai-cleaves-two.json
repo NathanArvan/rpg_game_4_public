@@ -1,0 +1,27 @@
+{
+  "description": "AI step 2: with two heroes adjacent, the brute opens with Cleave rather than Power Strike",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    },
+    {
+      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
+      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "H1",    "side": "party", "at": [5, 6] },
+    { "id": "H2",    "side": "party", "at": [6, 5] },
+    { "id": "Brute", "side": "enemy", "at": [5, 5], "abilities": ["power_strike", "cleave"] }
+  ],
+  "plans": { "Brute": ["ai"] },
+  "dice": [15, 4, 3],                    // H1: hit for 4; H2: miss
+  "expect": {
+    "plans": { "Brute": "ability cleave" },
+    "hp": { "H1": 16, "H2": 20 },
+    "abilityUses": [ { "tick": 1, "id": "Brute", "ability": "cleave", "targets": ["H1", "H2"] } ]
+  }
+}

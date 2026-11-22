@@ -1,0 +1,29 @@
+{
+  "description": "Twin Shot on two chosen targets: the first fell earlier in the round (wasted, no roll), the second still resolves",
+  "abilities": [
+    {
+      "id": "twin_shot", "name": "Twin Shot", "ap": 3, "cooldown": 1,
+      "target": { "kind": "combatants", "filter": "enemy", "range": 8, "count": 2 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [2, 0] },
+    { "id": "Scout", "side": "party", "at": [0, 0], "abilities": ["twin_shot"] },
+    { "id": "G1",    "side": "enemy", "hp": 3, "maxHp": 10, "at": [3, 0] },
+    { "id": "G2",    "side": "enemy", "at": [5, 0] }
+  ],
+  "plans": {
+    "Hero":  ["melee G1"],
+    "Scout": ["defend", "ability twin_shot G1,G2"]
+  },
+  "dice": [15, 5, 12, 4],                // tick 1: Hero kills G1; tick 2: G1 wasted, G2 hit for 4
+  "expect": {
+    "hp": { "G2": 16 },
+    "defeated": ["G1"],
+    "hits": [ { "tick": 1, "attacker": "Hero" }, { "tick": 2, "attacker": "Scout" } ],
+    "wasted": [ { "tick": 2, "attacker": "Scout" } ],
+    "abilityUses": [ { "tick": 2, "id": "Scout", "ability": "twin_shot", "targets": ["G1", "G2"] } ],
+    "cooldowns": { "Scout": { "twin_shot": 1 } }
+  }
+}

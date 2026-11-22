@@ -126,6 +126,9 @@ public partial class ResolutionServiceTests
             Redis.Setup(r => r.MarkDefeatedAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .Callback<string, string>((_, id) => CallLog.Add($"MarkDefeated {id} events={Db.GameEvents.Count()}"))
                 .Returns(Task.CompletedTask);
+            Redis.Setup(r => r.ReviveAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .Callback<string, string>((_, id) => CallLog.Add($"Revive {id} events={Db.GameEvents.Count()}"))
+                .Returns(Task.CompletedTask);
             Redis.Setup(r => r.SetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CombatantStatusEntry>()))
                 .Callback<string, string, CombatantStatusEntry>((_, id, st) => CallLog.Add($"SetStatus {id}={st.Status} events={Db.GameEvents.Count()}"))
                 .Returns(Task.CompletedTask);

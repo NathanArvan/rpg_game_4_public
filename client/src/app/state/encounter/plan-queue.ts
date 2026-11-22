@@ -79,6 +79,42 @@ export function abilityUnavailableReason(
   return null;
 }
 
+/** The ability's targets are picked by the player ("combatant", "combatants"), not found when it resolves. */
+export function abilityTakesTargets(ability: AbilityDto): boolean {
+  return ability.targeting.kind === 'combatant' || ability.targeting.kind === 'combatants';
+}
+
+/** Most targets the player picks for the ability: 1, or its count for "combatants"; 0 if none are picked. */
+export function maxTargets(ability: AbilityDto): number {
+  if (ability.targeting.kind === 'combatants') return ability.targeting.count ?? 1;
+  return ability.targeting.kind === 'combatant' ? 1 : 0;
+}
+
+/**
+ * Why an ability entry has the wrong target shape for its targeting kind, or null (3B.3; mirrors
+ * the server's PlanValidator): one target for "combatant", 1..count distinct ones for
+ * "combatants", none for "auto" and "self".
+ */
+export function targetShapeError(ability: AbilityDto, action: PlannedActionEntry): string | null {
+  const hasOne = !!action.targetCombatantId;
+  const listed = action.targetCombatantIds?.length ?? 0;
+  const count = ability.targeting.count ?? 1;
+  switch (ability.targeting.kind) {
+    case 'combatant':
+      return !hasOne || listed > 0 ? `${ability.name} needs one target.` : null;
+    case 'self':
+    case 'auto':
+      return hasOne || listed > 0 ? `${ability.name} doesn't take a target.` : null;
+    case 'combatants':
+      if (hasOne || listed === 0) return `${ability.name} needs between 1 and ${count} targets.`;
+      if (listed > count) return `${ability.name} can target at most ${count}.`;
+      if (new Set(action.targetCombatantIds).size !== listed) return `${ability.name} can't target the same combatant twice.`;
+      return null;
+    default:
+      return `${ability.name} targets a cell, which isn't supported yet.`;
+  }
+}
+
 export function chebyshev(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
@@ -117,7 +153,10 @@ export function describeAction(
   if (action.type === 'stabilize') return target ? `Stabilize ${target}` : 'Stabilize';
   if (action.type === 'ability') {
     const name = (action.abilityId && abilityNameOf(action.abilityId)) || action.abilityId || 'Ability';
-    return target ? `${name} on ${target}` : name;
+    const targets = action.targetCombatantIds?.length
+      ? action.targetCombatantIds.map(id => nameOf(id) ?? '?').join(', ')
+      : target;
+    return targets ? `${name} on ${targets}` : name;
   }
   return action.type;
 }

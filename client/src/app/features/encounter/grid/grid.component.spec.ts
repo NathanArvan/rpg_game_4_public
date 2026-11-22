@@ -4,7 +4,7 @@ import { GridComponent } from './grid.component';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { EncounterState } from '../../../state/encounter/encounter.state';
 import { MapState } from '../../../state/map/map.state';
-import { PlanningPhaseStarted, SelectMyCombatant } from '../../../state/encounter/encounter.actions';
+import { PlanningPhaseStarted, SelectMyCombatant, SetMyPlannedAction } from '../../../state/encounter/encounter.actions';
 import { PlanningCombatantDto, AbilityDto } from '../../../contracts/hub-contracts.generated';
 import { MapInitialized } from '../../../state/map/map.actions';
 import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
@@ -193,12 +193,12 @@ describe('GridComponent', () => {
       fixture.detectChanges();
 
       TestBed.inject(ResolutionPlaybackService).receiveResolution({
-        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [],
+        newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
         ticks: [{
           tickIndex: 0,
           movements: [{ combatantId: 'bruiser', combatantName: 'Bruiser', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null }],
           attacks: [{ attackerId: 'goblin', attackerName: 'Goblin', targetId: 'bruiser', targetName: 'Bruiser', attackType: 'melee_attack', hit: true, damage: 2, targetNewHp: 8, targetDefeated: false, wasted: false, feedText: 'Goblin hits Bruiser', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null }],
-          effects: [], abilityUses: [],
+          effects: [], abilityUses: [], heals: [],
         }],
       });
       fixture.detectChanges();
@@ -263,6 +263,88 @@ describe('GridComponent', () => {
       grid.toggleAbility('power_strike');
       store.dispatch(new SelectMyCombatant('scout'));
       expect(grid.armedAbilityId).toBeNull();
+    });
+  });
+
+  describe('multi-target & healing (3B.3)', () => {
+    const twinShot: AbilityDto = {
+      id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: ['ranged'],
+      targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+    };
+    const cleave: AbilityDto = {
+      id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
+      targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+    };
+    const mend: AbilityDto = {
+      id: 'mend', name: 'Mend', description: '', apCost: 2, cooldown: 2, tags: ['healing'],
+      targeting: { kind: 'combatant', filter: 'ally', range: 3, count: null, includeSelf: true },
+    };
+
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('bruiser', 'Bruiser', 'player', false, 4, 5, [twinShot, cleave, mend]),
+        row('scout', 'Scout', 'player'),
+        row('g1', 'Goblin 1', 'monster'),
+        row('g2', 'Goblin 2', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20,
+        { bruiser: { x: 5, y: 5 }, scout: { x: 4, y: 5 }, g1: { x: 5, y: 6 }, g2: { x: 9, y: 9 } }));
+      hub.planAction.calls.reset();
+    });
+
+    const sent = () => hub.planAction.calls.mostRecent().args[1].actions;
+
+    it('collects distinct targets for a multi-target ability and queues it once the count is reached', () => {
+      grid.toggleAbility('twin_shot');
+      expect(grid.armedConfirmLabel).toBe('Done (0/2)');
+      expect(grid.canConfirmArmed).toBeFalse();
+
+      grid.onCellClick({ x: 9, y: 9 });
+      expect(hub.planAction).not.toHaveBeenCalled();
+      expect(grid.armedConfirmLabel).toBe('Done (1/2)');
+      const g2 = store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'g2')!;
+      expect(grid.pickNumber(g2)).toBe(1);
+
+      grid.onCellClick({ x: 4, y: 5 }); // an ally: not a legal pick, stays armed
+      expect(grid.armedAbilityId).toBe('twin_shot');
+
+      grid.onCellClick({ x: 5, y: 6 });
+      expect(sent()).toEqual([jasmine.objectContaining({ type: 'ability', abilityId: 'twin_shot', targetCombatantIds: ['g2', 'g1'], targetCombatantId: null })]);
+      expect(grid.armedAbilityId).toBeNull();
+      expect(grid.plannedActionSummary).toBe('Twin Shot on Goblin 2, Goblin 1');
+    });
+
+    it('queues fewer targets with Done (or Enter), and a second click drops a pick', () => {
+      grid.toggleAbility('twin_shot');
+      grid.onCellClick({ x: 9, y: 9 });
+      grid.onCellClick({ x: 9, y: 9 }); // dropped again
+      expect(grid.pickedTargetIds).toEqual([]);
+      grid.onCellClick({ x: 5, y: 6 });
+      grid.onEnter();
+      expect(sent()).toEqual([jasmine.objectContaining({ abilityId: 'twin_shot', targetCombatantIds: ['g1'] })]);
+    });
+
+    it('queues an auto ability with no targets on a grid click, showing its area while armed', () => {
+      grid.toggleAbility('cleave');
+      expect(grid.armedConfirmLabel).toBe('Use Cleave');
+      expect(grid.isInAbilityRange({ x: 6, y: 6 })).toBeTrue();
+      expect(grid.isInAbilityRange({ x: 7, y: 7 })).toBeFalse();
+
+      grid.onCellClick({ x: 15, y: 15 });
+      expect(sent()).toEqual([jasmine.objectContaining({ type: 'ability', abilityId: 'cleave', targetCombatantId: null, targetCombatantIds: null })]);
+      expect(grid.armedAbilityId).toBeNull();
+    });
+
+    it('targets an ally (or yourself) with an ally ability instead of switching characters', () => {
+      grid.toggleAbility('mend');
+      grid.onCellClick({ x: 4, y: 5 }); // the Scout, one of mine
+      expect(sent()).toEqual([jasmine.objectContaining({ abilityId: 'mend', targetCombatantId: 'scout' })]);
+      expect(grid.selected?.id).toBe('bruiser');
+
+      store.dispatch(new SetMyPlannedAction('bruiser', []));
+      grid.toggleAbility('mend');
+      grid.onCellClick({ x: 5, y: 5 }); // yourself
+      expect(sent()).toEqual([jasmine.objectContaining({ abilityId: 'mend', targetCombatantId: 'bruiser' })]);
     });
   });
 });
