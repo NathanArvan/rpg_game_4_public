@@ -90,6 +90,11 @@ public class ResolutionService(
         foreach (var combatantId in outcome.DefeatedThisRound)
             await redisState.MarkDefeatedAsync(encounterIdStr, combatantId);
 
+        // Healed back up (3B.3): out of the defeated set and the status hash, so they plan,
+        // lock in and count as standing again from the next round.
+        foreach (var combatantId in outcome.RevivedThisRound)
+            await redisState.ReviveAsync(encounterIdStr, combatantId);
+
         // Statuses beyond standing (3B.5): write any that changed, including bleedout countdowns.
         foreach (var final in outcome.Next.Combatants)
         {
@@ -139,7 +144,7 @@ public class ResolutionService(
         }).ToList();
 
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records), endOfRound);
+            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList());
     }
 
     // ----- Inbound mapping -----
@@ -225,7 +230,17 @@ public class ResolutionService(
                 ResolutionFeedFormatter.AbilityUse(u, name, abilityName, u.TargetIds.Select(NameOf).ToList()));
         }).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects, abilityUses);
+        var heals = tick.Heals.Select(h =>
+        {
+            var healerName = NameOf(h.HealerId);
+            var targetName = NameOf(h.TargetId);
+            return new HealResult(
+                h.HealerId, healerName, h.TargetId, targetName, h.AbilityId, h.Amount, h.TargetHpAfter, h.Revived,
+                RulesWireMapping.ToWire(h.TargetStatus), RulesWireMapping.ToWire(h.WastedReason),
+                ResolutionFeedFormatter.Heal(h, healerName, targetName, AbilityNameOf(h.HealerId, h.AbilityId)));
+        }).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -247,7 +262,8 @@ public class ResolutionService(
                         config.ApCost(a, state.Profile),
                         a.TargetCombatantId,
                         a.TargetCell is { } c ? new PositionDto(c.X, c.Y) : null,
-                        a.AbilityId)).ToList());
+                        a.AbilityId,
+                        a.TargetCombatantIds)).ToList());
             })
             .ToList();
     }
@@ -277,8 +293,19 @@ public class ResolutionService(
                     Id = Guid.NewGuid(),
                     EncounterId = encounterId,
                     OccurredAt = now,
-                    EventType = use.WastedReason is null ? "ability_used" : "ability_refused",
+                    EventType = use.WastedReason is null or "no_targets" ? "ability_used" : "ability_refused",
                     Payload = JsonSerializer.Serialize(new { use.CombatantId, use.AbilityId, use.TargetIds, use.WastedReason }, _jsonOptions),
+                });
+            }
+            foreach (var heal in tick.Heals ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = heal.WastedReason is not null ? "heal_wasted" : heal.Revived ? "heal_revived" : "heal",
+                    Payload = JsonSerializer.Serialize(new { heal.HealerId, heal.TargetId, heal.AbilityId, heal.Amount, heal.TargetNewHp }, _jsonOptions),
                 });
             }
             foreach (var attack in tick.Attacks)

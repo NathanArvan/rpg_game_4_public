@@ -12,6 +12,7 @@ const PHASE_LABELS: Record<PlaybackPhase, string> = {
   movement: 'Movement',
   attacks: 'Attacks',
   defeats: 'Defeats',
+  revives: 'Back up',
   effects: 'Effects',
   bleedout: 'End of round',
   idle: '',

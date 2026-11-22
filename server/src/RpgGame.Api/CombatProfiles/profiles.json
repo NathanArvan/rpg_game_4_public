@@ -21,17 +21,19 @@
       "id": "bruiser", "name": "Bruiser", "side": "party",
       "description": "Tough and hard-hitting up close, but slow and easy to hit.",
       "hp": 24, "move": 4, "speed": 8, "meleeAccuracy": 2, "rangedAccuracy": -2, "dodge": 9, "damage": "d8", "ap": 4,
-      "abilities": ["power_strike"]
+      "abilities": ["power_strike", "cleave"]
     },
     {
       "id": "skirmisher", "name": "Skirmisher", "side": "party",
       "description": "Quick all-rounder that wins races for contested cells.",
-      "hp": 16, "move": 6, "speed": 14, "meleeAccuracy": 1, "rangedAccuracy": 1, "dodge": 12, "damage": "d6", "ap": 5
+      "hp": 16, "move": 6, "speed": 14, "meleeAccuracy": 1, "rangedAccuracy": 1, "dodge": 12, "damage": "d6", "ap": 5,
+      "abilities": ["mend"]
     },
     {
       "id": "scout", "name": "Scout", "side": "party",
       "description": "Fragile, far-moving and hard to pin down; best at range.",
-      "hp": 12, "move": 8, "speed": 12, "meleeAccuracy": 0, "rangedAccuracy": 2, "dodge": 13, "damage": "d4", "ap": 5
+      "hp": 12, "move": 8, "speed": 12, "meleeAccuracy": 0, "rangedAccuracy": 2, "dodge": 13, "damage": "d4", "ap": 5,
+      "abilities": ["twin_shot"]
     },
     {
       "id": "grunt", "name": "Grunt", "side": "enemy",

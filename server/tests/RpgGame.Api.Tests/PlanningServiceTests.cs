@@ -722,9 +722,9 @@ public class PlanningServiceTests
 
     // ----- Abilities (3B.3) -----
 
-    /// <summary>A Bruiser (Power Strike) at (5, 5), an ally next to it and a goblin next to it.</summary>
+    /// <summary>A Bruiser (Power Strike, Cleave) at (5, 5), an ally next to it and a goblin next to it.</summary>
     private static async Task<(PlanningService Service, Mock<IRedisGameState> Redis, string JoinCode, string Hero, string Ally, string Goblin)> SetupAbilityUser(
-        AppDbContext db)
+        AppDbContext db, string profile = "bruiser")
     {
         var sessionId = Guid.NewGuid();
         var encounterId = Guid.NewGuid();
@@ -734,7 +734,7 @@ public class PlanningServiceTests
         db.EncounterCombatants.Add(new EncounterCombatant
         {
             Id = hero, EncounterId = encounterId, UserId = "user-1", CharacterName = "Bruiser",
-            CombatantType = "player", Profile = TestProfiles.Catalog.Find("bruiser")!.Snapshot(),
+            CombatantType = "player", Profile = TestProfiles.Catalog.Find(profile)!.Snapshot(),
         });
         await db.SaveChangesAsync();
 
@@ -817,5 +817,79 @@ public class PlanningServiceTests
 
         var ex = await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", plan));
         Assert.Contains("Not enough AP: this plan costs 5 AP but only 4 AP are available.", ex.Message);
+    }
+
+    // ----- Multi-target & healing (3B.3 PR 2) -----
+
+    private static PlannedActionArray UseAbilityOn(string abilityId, params string[] targetIds) =>
+        new([new PlannedActionEntry("ability", null, null, abilityId, targetIds)]);
+
+    [Fact]
+    public async Task PlanAction_AcceptsCleaveWithNoTarget_AndRejectsOneWithATarget()
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, _, _, goblin) = await SetupAbilityUser(db);
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", UseAbility("cleave", null))).Success);
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbility("cleave", goblin)));
+        Assert.Equal("Cleave doesn't take a target.", ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanAction_TwinShot_ChecksEveryTarget()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, hero, ally, goblin) = await SetupAbilityUser(db, "scout");
+        string? stored = null;
+        redis.Setup(r => r.SetPlannedActionAsync(It.IsAny<string>(), hero, It.IsAny<string>()))
+            .Callback<string, string, string>((_, _, json) => stored = json)
+            .Returns(Task.CompletedTask);
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", UseAbilityOn("twin_shot", goblin))).Success);
+        Assert.Contains($"\"targetCombatantIds\":[\"{goblin}\"]", stored);
+
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbilityOn("twin_shot", goblin, ally)));
+        Assert.Equal("Twin Shot can only target enemies.", ex.Message);
+        ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbilityOn("twin_shot", goblin, goblin)));
+        Assert.Equal("Twin Shot can't target the same combatant twice.", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("ally", null)]
+    [InlineData("self", null)]
+    [InlineData("goblin", "Mend can only target allies.")]
+    public async Task PlanAction_Mend_TargetsAlliesAndYourself(string target, string? expected)
+    {
+        await using var db = CreateDb();
+        var (service, _, joinCode, hero, ally, goblin) = await SetupAbilityUser(db, "skirmisher");
+        var targetId = target switch { "goblin" => goblin, "ally" => ally, _ => hero };
+
+        if (expected is null)
+        {
+            Assert.True((await service.PlanActionAsync(joinCode, "user-1", UseAbility("mend", targetId))).Success);
+            return;
+        }
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbility("mend", targetId)));
+        Assert.Equal(expected, ex.Message);
+    }
+
+    [Fact]
+    public async Task PlanAction_Mend_OnADownedAlly_IsAllowed_ButNotOnADeadOne()
+    {
+        await using var db = CreateDb();
+        var (service, redis, joinCode, _, ally, _) = await SetupAbilityUser(db, "skirmisher");
+        redis.Setup(r => r.IsDefeatedAsync(It.IsAny<string>(), ally)).ReturnsAsync(true);
+        redis.Setup(r => r.GetStatusAsync(It.IsAny<string>(), ally)).ReturnsAsync(new CombatantStatusEntry("downed", 2));
+
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1", UseAbility("mend", ally))).Success);
+
+        redis.Setup(r => r.GetStatusAsync(It.IsAny<string>(), ally)).ReturnsAsync(new CombatantStatusEntry("dead", 0));
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => service.PlanActionAsync(joinCode, "user-1", UseAbility("mend", ally)));
+        Assert.Equal("Target is already defeated.", ex.Message);
     }
 }

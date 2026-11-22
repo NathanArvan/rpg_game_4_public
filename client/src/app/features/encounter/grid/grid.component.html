@@ -37,10 +37,12 @@
           [class.stable-token]="shownStatus(token.combatant).status === 'stable'"
           [class.targeted-token]="isTargeted(token.combatant)"
           [class.ability-target]="isAbilityTarget(token.combatant)"
+          [class.picked-token]="pickNumber(token.combatant) !== null"
           [title]="tokenTitle(token.combatant)"
           (click)="onTokenClick(token)">
           {{ token.combatant.characterName[0] }}
           <span class="bleed-badge" *ngIf="shownStatus(token.combatant).status === 'downed'">{{ shownStatus(token.combatant).bleedoutRoundsLeft }}</span>
+          <span class="pick-badge" *ngIf="pickNumber(token.combatant) as n">{{ n }}</span>
           <span
             *ngFor="let aura of aurasFor(token.combatant.id); trackBy: trackKey; let i = index"
             class="aura aura-{{ aura.kind }}"
@@ -92,7 +94,11 @@
         {{ lockInLabel }}
       </button>
     </div>
-    <div class="armed-hint" *ngIf="armedHint as hint">🎯 {{ hint }}</div>
+    <div class="armed-hint" *ngIf="armedHint as hint">
+      🎯 {{ hint }}
+      <button *ngIf="armedConfirmLabel as label" class="armed-confirm" type="button"
+              [disabled]="!canConfirmArmed" (click)="confirmArmed()">{{ label }}</button>
+    </div>
     <div class="stabilize-hint" *ngIf="downedAllies.length && !lockedIn">
       ✚ {{ downedAllies[0].characterName }}{{ downedAllies.length > 1 ? ' and others are' : ' is' }} bleeding out:
       queue a move next to them, then click them to stabilize (2 AP).
@@ -110,7 +116,11 @@
   <!-- GM bottom bar: enemy control + force resolve -->
   <div class="gm-bottom-bar" *ngIf="(isPlanning$ | async) && isGm">
     <app-gm-enemy-planner [joinCode]="joinCode"></app-gm-enemy-planner>
-    <div class="armed-hint" *ngIf="armedHint as hint">🎯 {{ hint }}</div>
+    <div class="armed-hint" *ngIf="armedHint as hint">
+      🎯 {{ hint }}
+      <button *ngIf="armedConfirmLabel as label" class="armed-confirm" type="button"
+              [disabled]="!canConfirmArmed" (click)="confirmArmed()">{{ label }}</button>
+    </div>
     <button class="force-btn" (click)="onForceResolve()">⚡ Force Resolve</button>
   </div>
 </div>

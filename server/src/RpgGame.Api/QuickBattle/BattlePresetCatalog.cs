@@ -82,6 +82,7 @@ public sealed class BattlePresetCatalog
             var definition = profiles.Find(c.Profile?.Trim());
             if (definition is null) Fail($"{who}: 'profile' must name a combat profile (got '{c.Profile}')");
             if (c.Hp is <= 0) Fail($"{who}: 'hp' must be at least 1");
+            if (c.StartHp is <= 0) Fail($"{who}: 'startHp' must be at least 1");
             if (c.Move is <= 0) Fail($"{who}: 'move' must be at least 1");
             if (c.Ap is < CombatProfileCatalog.MinAp or > CombatProfileCatalog.MaxApLimit)
                 Fail($"{who}: 'ap' must be between {CombatProfileCatalog.MinAp} and {CombatProfileCatalog.MaxApLimit}");
@@ -111,9 +112,12 @@ public sealed class BattlePresetCatalog
                 profile.Abilities = profiles.Abilities.Resolve(c.Abilities.Select(id => id.Trim()),
                     message => new InvalidDataException($"Battle preset {file}: {who}: 'abilities': {message}"));
 
+            if (c.StartHp > profile.MaxHp) Fail($"{who}: 'startHp' ({c.StartHp}) can't be more than max HP ({profile.MaxHp})");
+
             combatants.Add(new PresetCombatant(
                 c.Name!.Trim(), side!, profile, x, y,
-                IsAiControlled: side == Enemy && (c.Ai ?? true)));
+                IsAiControlled: side == Enemy && (c.Ai ?? true),
+                StartHp: c.StartHp));
         }
 
         if (combatants.All(c => c.Side != Party)) Fail("needs at least one party combatant");
@@ -139,6 +143,8 @@ public sealed class BattlePresetCatalog
         public string? Side { get; set; }
         public string? Profile { get; set; }
         public int? Hp { get; set; }
+        /// <summary>HP at the start of the battle (default: max HP), e.g. to start someone hurt (3B.3).</summary>
+        public int? StartHp { get; set; }
         public string? Damage { get; set; }
         public int? Speed { get; set; }
         public int? Move { get; set; }

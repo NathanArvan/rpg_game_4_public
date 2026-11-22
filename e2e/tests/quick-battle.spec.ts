@@ -138,3 +138,33 @@ test('Abilities: queue Power Strike on an adjacent goblin; it resolves and goes 
   await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.cooldown-chip'))
     .toContainText('Power Strike 2');
 });
+
+test('Abilities: Cleave both adjacent goblins and Mend the hurt Scout (3B.3)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Abilities');
+
+  // Bruiser (9,9) starts next to Goblin 1 (9,8) and Goblin 2 (10,8). Cleave finds its own targets.
+  const actionBar = page.locator('.action-bar');
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  await actionBar.locator('.ability-btn', { hasText: 'Cleave' }).click();
+  await expect(page.locator('.armed-hint')).toContainText('Cleave hits every enemy adjacent');
+  await expect(cell(page, 10, 8)).toHaveClass(/ability-range/);
+  await page.locator('.armed-confirm', { hasText: 'Use Cleave' }).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Cleave');
+
+  // The Skirmisher (10,11) mends the Scout (11,12), who starts on 5 of 12 HP. Clicking the
+  // Scout with Mend armed targets them instead of switching to planning for them.
+  await tokenAt(page, 10, 11).click();
+  await expect(actionBar).toContainText('Planning for Skirmisher');
+  await actionBar.locator('.ability-btn', { hasText: 'Mend' }).click();
+  await expect(tokenAt(page, 11, 12)).toHaveClass(/ability-target/);
+  await tokenAt(page, 11, 12).click();
+  await expect(actionBar).toContainText('Planning for Skirmisher');
+  await expect(page.locator('.planned-action-display')).toContainText('Mend on Scout');
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  // Both starting goblins get their own Cleave line (enemies who walk up in the same tick are hit too).
+  for (const goblin of ['Goblin 1', 'Goblin 2'])
+    await expect(feedEntries(page).filter({ hasText: new RegExp(`Bruiser's Cleave (hits|misses) ${goblin}\\b`) })).toHaveCount(1, { timeout: 20_000 });
+  await expect(feedEntries(page).filter({ hasText: "Skirmisher's Mend heals Scout for" })).toHaveCount(1, { timeout: 20_000 });
+});

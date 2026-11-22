@@ -107,6 +107,13 @@ public class RedisGameState : IRedisGameState
         await db.SetAddAsync($"encounter:{encounterId}:defeated", combatantId);
     }
 
+    public async Task ReviveAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        await db.SetRemoveAsync($"encounter:{encounterId}:defeated", combatantId);
+        await db.HashDeleteAsync($"encounter:{encounterId}:status", combatantId);
+    }
+
     // Stored as "downed:2", "stable:0" or "dead:0" (status:bleedout rounds left).
     public async Task<CombatantStatusEntry?> GetStatusAsync(string encounterId, string combatantId)
     {

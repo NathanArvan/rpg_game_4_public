@@ -1,7 +1,7 @@
 import { AbilityDto, PlannedActionEntry } from '../../contracts/hub-contracts.generated';
 import {
   DEFAULT_AP_COSTS, abilityUnavailableReason, apSpent, canAfford, canAffordEntry, canTargetWithAbility, describeQueue, entry,
-  moveCellsUsed, projectedPosition,
+  abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
 } from './plan-queue';
 
 const move = (x: number, y: number): PlannedActionEntry => entry('move', { targetCell: { x, y } });
@@ -95,5 +95,38 @@ describe('plan-queue', () => {
     expect(canTargetWithAbility(hero, friend, mend)).toBeTrue();
     expect(canTargetWithAbility(hero, hero, mend)).toBeTrue();
     expect(canTargetWithAbility(hero, goblin, mend)).toBeFalse();
+  });
+});
+
+describe('multi-target abilities (3B.3)', () => {
+  const twin: AbilityDto = {
+    id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: [],
+    targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false },
+  };
+  const cleave: AbilityDto = {
+    id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: [],
+    targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false },
+  };
+  const many = (abilityId: string, ...ids: string[]) => entry('ability', { abilityId, targetCombatantIds: ids });
+
+  it('mirrors the server: 1..count distinct picked targets for "combatants", none for "auto"', () => {
+    expect(targetShapeError(twin, many('twin_shot', 'a', 'b'))).toBeNull();
+    expect(targetShapeError(twin, many('twin_shot', 'a'))).toBeNull();
+    expect(targetShapeError(twin, many('twin_shot'))).toBe('Twin Shot needs between 1 and 2 targets.');
+    expect(targetShapeError(twin, many('twin_shot', 'a', 'b', 'c'))).toBe('Twin Shot can target at most 2.');
+    expect(targetShapeError(twin, many('twin_shot', 'a', 'a'))).toBe("Twin Shot can't target the same combatant twice.");
+    expect(targetShapeError(cleave, entry('ability', { abilityId: 'cleave' }))).toBeNull();
+    expect(targetShapeError(cleave, ability('cleave', 'a'))).toBe("Cleave doesn't take a target.");
+  });
+
+  it('knows which abilities take picked targets, and how many', () => {
+    expect([abilityTakesTargets(twin), maxTargets(twin)]).toEqual([true, 2]);
+    expect([abilityTakesTargets(cleave), maxTargets(cleave)]).toEqual([false, 0]);
+  });
+
+  it('describes every picked target', () => {
+    const names: Record<string, string> = { a: 'Goblin 1', b: 'Goblin 2' };
+    expect(describeQueue([many('twin_shot', 'b', 'a')], id => names[id], () => 'Twin Shot')).toBe('Twin Shot on Goblin 2, Goblin 1');
+    expect(describeQueue([entry('ability', { abilityId: 'cleave' })], id => names[id], () => 'Cleave')).toBe('Cleave');
   });
 });

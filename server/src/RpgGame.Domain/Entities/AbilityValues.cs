@@ -49,17 +49,31 @@ public class AbilityTargetValues
 
 public class AbilityEffectValues
 {
-    /// <summary>"attack" (3B.3 PR 1); more kinds in later PRs.</summary>
+    /// <summary>"attack" or "heal" (3B.3); more kinds later.</summary>
     public string Kind { get; set; } = "";
     /// <summary>Attack: "melee", "ranged" or "none" (always hits).</summary>
     public string? Roll { get; set; }
     public int AccuracyBonus { get; set; }
     public AbilityDamageValues? Damage { get; set; }
+    /// <summary>Heal: HP restored (die + bonus).</summary>
+    public AbilityAmountValues? Amount { get; set; }
+    /// <summary>Heal: brings a downed or stable target back on their feet.</summary>
+    public bool CanRevive { get; set; } = true;
 
     public AbilityEffectValues Copy() => new()
     {
-        Kind = Kind, Roll = Roll, AccuracyBonus = AccuracyBonus, Damage = Damage?.Copy(),
+        Kind = Kind, Roll = Roll, AccuracyBonus = AccuracyBonus, Damage = Damage?.Copy(), Amount = Amount?.Copy(),
+        CanRevive = CanRevive,
     };
+}
+
+public class AbilityAmountValues
+{
+    /// <summary>A die like "d6", or null for none (only the bonus).</summary>
+    public string? Die { get; set; }
+    public int Bonus { get; set; }
+
+    public AbilityAmountValues Copy() => new() { Die = Die, Bonus = Bonus };
 }
 
 public class AbilityDamageValues

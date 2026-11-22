@@ -10,8 +10,11 @@ import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model
  * from the service's state.
  */
 
-/** Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized (3B.5). */
-export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize';
+/**
+ * Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized
+ * (3B.5). Soft green: healed or back on their feet (3B.3).
+ */
+export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal';
 
 /** A combatant's status as shown (3B.5). */
 export interface StatusView {
@@ -30,9 +33,10 @@ export interface FloatCue {
   text: string;
   /**
    * damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized /
-   * bleeding (3B.5); ability: the ability's name above its user (3B.3).
+   * bleeding (3B.5); ability: the ability's name above its user (3B.3); heal: green +n, and UP for
+   * someone back on their feet (3B.3).
    */
-  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability';
+  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal';
 }
 
 /** Short words for why an attack was wasted (the server's wastedReason). */
@@ -51,7 +55,7 @@ export function wastedLabel(reason: string | null): string {
   }
 }
 
-export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'effects' | 'bleedout' | 'idle';
+export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'bleedout' | 'idle';
 
 export interface PlaybackBeat {
   /** 0-based tick this beat belongs to. */
@@ -87,6 +91,8 @@ export interface PlaybackTiming {
   idleMs: number;
   /** Hold while defeated tokens fade. */
   defeatMs: number;
+  /** Hold while revived tokens get back up (3B.3). */
+  reviveMs: number;
   /** Hold after a tick's stabilizes (3B.5). */
   effectMs: number;
   /** Hold for the end-of-round bleedout step (3B.5). */
@@ -105,6 +111,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   wastedMs: 900,
   idleMs: 400,
   defeatMs: 600,
+  reviveMs: 900,
   effectMs: 1200,
   bleedoutMs: 1500,
   auraMs: 1000,
@@ -150,9 +157,9 @@ export function positionsAfterResolution(
 }
 
 /**
- * The beats of a round, in order. Each tick plays as: movement steps → attacks → defeats →
- * effects (stabilize); after the last tick, the end-of-round bleedout step (3B.5).
- * Attacks within a tick are simultaneous (the rules net their damage together), so they share
+ * The beats of a round, in order. Each tick plays as: movement steps → attacks and heals →
+ * defeats → revives → effects (stabilize); after the last tick, the end-of-round bleedout step (3B.5).
+ * Attacks and heals within a tick are simultaneous (the rules net them together), so they share
  * one beat; the next tick's actions only start after it.
  */
 export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming = PLAYBACK_TIMING): PlaybackBeat[] {
@@ -199,9 +206,10 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
       }
     }
 
-    // Attacks: all of this tick's attacks land together.
-    pendingFeed.push(...tick.attacks.map(a => a.feedText));
-    if (tick.attacks.length > 0 || abilityFloats.length > 0) {
+    // Attacks and heals: all of this tick's land together (3B.3: heals are netted with the damage).
+    const heals = tick.heals ?? [];
+    pendingFeed.push(...tick.attacks.map(a => a.feedText), ...heals.map(h => h.feedText));
+    if (tick.attacks.length > 0 || heals.length > 0 || abilityFloats.length > 0) {
       const auras: AuraCue[] = [];
       const addAura = (combatantId: string, kind: AuraKind) => {
         if (!auras.some(a => a.combatantId === combatantId && a.kind === kind)) auras.push({ combatantId, kind });
@@ -221,7 +229,16 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
         else floats.push({ combatantId: a.targetId, text: `-${a.damage}`, kind: 'damage' });
         hp[a.targetId] = a.targetNewHp;
       }
-      const anyLanded = tick.attacks.some(a => !a.wasted);
+      for (const h of heals) {
+        if (h.wastedReason) {
+          floats.push({ combatantId: h.healerId, text: wastedLabel(h.wastedReason), kind: 'wasted' });
+          continue;
+        }
+        addAura(h.targetId, 'heal');
+        floats.push({ combatantId: h.targetId, text: `+${h.amount}`, kind: 'heal' });
+        hp[h.targetId] = h.targetNewHp;
+      }
+      const anyLanded = tick.attacks.some(a => !a.wasted) || heals.some(h => !h.wastedReason);
       beats.push({
         tick: t, phase: 'attacks', durationMs: anyLanded ? timing.attackMs : timing.wastedMs,
         auras, floats, hp, feed: takeFeed(),
@@ -238,6 +255,19 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
     }
     if (Object.keys(fell).length > 0)
       beats.push({ tick: t, phase: 'defeats', durationMs: timing.defeatMs, statuses: fell, floats: downFloats, feed: takeFeed() });
+
+    // Back on their feet (3B.3): a heal revived someone who was down.
+    const revived = heals.filter(h => h.revived && !h.wastedReason);
+    if (revived.length > 0) {
+      const statuses: Record<string, StatusView> = {};
+      for (const h of revived) statuses[h.targetId] = { status: 'standing', bleedoutRoundsLeft: 0 };
+      beats.push({
+        tick: t, phase: 'revives', durationMs: timing.reviveMs, statuses,
+        auras: revived.map(h => ({ combatantId: h.targetId, kind: 'heal' as const })),
+        floats: revived.map(h => ({ combatantId: h.targetId, text: 'UP', kind: 'heal' as const })),
+        feed: takeFeed(),
+      });
+    }
 
     // Effects: stabilizes (defends have nothing to show yet).
     const stabilizes = tick.effects.filter(e => e.effectType === 'stabilize');

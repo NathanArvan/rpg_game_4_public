@@ -42,11 +42,37 @@ public class AbilityCatalogTests : IDisposable
     }
 
     [Fact]
-    public void ShippedProfiles_GiveBruiserAndBrutePowerStrike()
+    public void ShippedProfiles_HaveTheirLoadouts()
     {
-        foreach (var id in new[] { "bruiser", "brute" })
-            Assert.Equal(["power_strike"], TestProfiles.Catalog.Find(id)!.Abilities.Select(a => a.Id));
-        Assert.Empty(TestProfiles.Catalog.Find("grunt")!.Abilities);
+        string[] Ids(string profile) => TestProfiles.Catalog.Find(profile)!.Abilities.Select(a => a.Id).ToArray();
+        Assert.Equal(["power_strike", "cleave"], Ids("bruiser"));
+        Assert.Equal(["power_strike"], Ids("brute"));
+        Assert.Equal(["mend"], Ids("skirmisher"));
+        Assert.Equal(["twin_shot"], Ids("scout"));
+        Assert.Empty(Ids("grunt"));
+    }
+
+    [Fact]
+    public void ShippedMultiTargetAndHealAbilities_MapToTheRulesEngine()
+    {
+        var catalog = AbilityCatalog.FromAppDirectory();
+        var cleave = AbilityMapping.ToRules(catalog.Find("cleave")!);
+        Assert.Equal(new Targeting(TargetKind.Auto, TargetFilter.Enemy, 1), cleave.Targeting);
+        var twin = AbilityMapping.ToRules(catalog.Find("twin_shot")!);
+        Assert.Equal(new Targeting(TargetKind.Combatants, TargetFilter.Enemy, 8, Count: 2), twin.Targeting);
+        var mend = AbilityMapping.ToRules(catalog.Find("mend")!);
+        Assert.Equal(new Targeting(TargetKind.Combatant, TargetFilter.Ally, 3, IncludeSelf: true), mend.Targeting);
+        Assert.Equal(new HealEffect(DamageDie.D6, 2, CanRevive: true), Assert.Single(mend.Effects));
+    }
+
+    [Fact]
+    public void HealWithOnlyABonus_HasNoDie()
+    {
+        var a = Assert.Single(AbilityCatalog.Load(Write("abilities.json", """
+            { "abilities": [ { "id": "salve", "name": "Salve", "ap": 1, "target": { "kind": "combatant", "filter": "ally", "range": 1 },
+              "effects": [ { "kind": "heal", "amount": { "bonus": 3 }, "canRevive": false } ] } ] }
+            """)));
+        Assert.Equal(new HealEffect(null, 3, CanRevive: false), AbilityMapping.ToRules(a).Effects.Single());
     }
 
     [Fact]
@@ -63,7 +89,14 @@ public class AbilityCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "ap": 0, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'ap'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "cooldown": -1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'cooldown'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'target'")]
-    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "auto", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self", "filter": "ally", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "cell", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatants", "filter": "enemy", "range": 4 }, "effects": [ { "kind": "attack", "roll": "ranged" } ] }""", "'count' between 1 and")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "auto", "filter": "enemy", "range": 1, "count": 0 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'count' must be at least 1")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1, "includeSelf": true }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'includeSelf'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "heal", "amount": { "bonus": 2 } } ] }""", "a heal can't target enemies")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "ally", "range": 1 }, "effects": [ { "kind": "heal" } ] }""", "a heal needs an amount")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "ally", "range": 1 }, "effects": [ { "kind": "heal", "amount": { "die": "lots" } } ] }""", "amount 'die'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "foes", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'filter'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 0 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'range'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [] }""", "'effects'")]
@@ -141,6 +174,34 @@ public class AbilityCatalogTests : IDisposable
         var bruiser = preset.Combatants.Single(c => c.Name == "Bruiser");
         Assert.Contains(preset.Combatants, c => c.Side == "enemy"
             && Math.Max(Math.Abs(c.X - bruiser.X), Math.Abs(c.Y - bruiser.Y)) == 1);
-        Assert.Equal(["power_strike"], bruiser.Profile.Abilities!.Select(a => a.Id));
+        Assert.Equal(["power_strike", "cleave"], bruiser.Profile.Abilities!.Select(a => a.Id));
+    }
+
+    [Fact]
+    public void AbilitiesPreset_SetsUpTheCleaveAndMendE2ETests()
+    {
+        var preset = BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog).Find("abilities")!;
+        static int Distance(PresetCombatant a, PresetCombatant b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+        var bruiser = preset.Combatants.Single(c => c.Name == "Bruiser");
+        Assert.True(preset.Combatants.Count(c => c.Side == "enemy" && Distance(c, bruiser) == 1) >= 2, "two goblins next to the Bruiser, for Cleave");
+
+        var skirmisher = preset.Combatants.Single(c => c.Name == "Skirmisher");
+        var scout = preset.Combatants.Single(c => c.Name == "Scout");
+        Assert.True(scout.StartHp < scout.Profile.MaxHp, "the Scout starts hurt");
+        Assert.True(Distance(scout, skirmisher) <= 3, "the hurt Scout is within Mend's range of the Skirmisher");
+        Assert.Contains(preset.Combatants, c => c.Side == "enemy" && c.Profile.Abilities!.Any(a => a.Id == "mend"));
+    }
+
+    [Fact]
+    public void PresetStartHp_MustFitMaxHp()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_dir, "presets")).FullName;
+        File.WriteAllText(Path.Combine(dir, "hurt.json"), """
+            { "id": "hurt", "name": "Hurt", "combatants": [
+                { "name": "Scout", "side": "party", "profile": "scout", "startHp": 99, "at": [0, 0] },
+                { "name": "Ogre",  "side": "enemy", "profile": "brute", "at": [0, 1] } ] }
+            """);
+        var ex = Assert.Throws<InvalidDataException>(() => new BattlePresetCatalog(dir, TestProfiles.Catalog));
+        Assert.Contains("'startHp'", ex.Message);
     }
 }

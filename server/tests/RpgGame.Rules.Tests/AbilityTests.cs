@@ -167,4 +167,100 @@ public class AbilityTests
         Assert.Null(hit.Roll);
         Assert.Equal(ActionType.Ability, hit.AttackType);
     }
+
+    // ----- Multi-target & healing (PR 2) -----
+
+    private static RoundOutcome Round(IReadOnlyList<CombatantState> combatants, string casterId, PlannedAction action, params int[] dice) =>
+        RoundResolver.Resolve(new EncounterState(20, 20, combatants),
+            new Dictionary<string, IReadOnlyList<PlannedAction>> { [casterId] = [action] }, new ScriptedDice(dice));
+
+    private static CombatantState Unit(string id, string team, int x, int y, int hp = 20, CombatantStatus status = CombatantStatus.Standing,
+        params AbilityDefinition[] abilities) =>
+        new(id, id, hp, Profile(5, abilities) with { CanBeDowned = true }, new GridPosition(x, y), status,
+            status == CombatantStatus.Downed ? 2 : 0) { Team = team };
+
+    [Fact]
+    public void AutoTargets_AreCappedAtCount_NearestFirst()
+    {
+        var sweep = new AbilityDefinition("sweep", "Sweep", 1, 0, [],
+            new Targeting(TargetKind.Auto, TargetFilter.Enemy, Range: 3, Count: 2),
+            [new AttackEffect(AttackKind.None, new DamageSpec(Bonus: 1))]);
+        var outcome = Round(
+            [Unit("A", "party", 5, 5, abilities: sweep), Unit("Far", "enemy", 8, 5), Unit("Near", "enemy", 6, 5), Unit("Mid", "enemy", 5, 7)],
+            "A", PlannedAction.Ability("sweep"), 1, 1); // two damage dice, no d20 (auto-hit)
+        Assert.Equal(["Near", "Mid"], outcome.Ticks[0].AbilityUses.Single().TargetIds);
+        Assert.Equal(["Near", "Mid"], outcome.Ticks[0].Attacks.Select(a => a.TargetId));
+    }
+
+    private static AbilityDefinition Heal(bool canRevive = true, TargetFilter filter = TargetFilter.Ally) => new(
+        "heal", "Heal", 1, 0, [], new Targeting(TargetKind.Combatant, filter, Range: 2, IncludeSelf: true),
+        [new HealEffect(null, Bonus: 5, canRevive)]);
+
+    [Fact]
+    public void Heal_OnAStableAlly_RevivesThem()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, abilities: Heal()), Unit("B", "party", 1, 0, 0, CombatantStatus.Stable)],
+            "H", PlannedAction.Ability("heal", "B")); // no die: a flat 5
+        var heal = Assert.Single(outcome.Ticks[0].Heals);
+        Assert.True(heal.Revived);
+        Assert.Equal((0, 5), (heal.TargetHpBefore, heal.TargetHpAfter));
+        Assert.Equal(CombatantStatus.Standing, outcome.Next.Combatants.Single(c => c.Id == "B").Status);
+        Assert.Equal(["B"], outcome.RevivedThisRound);
+    }
+
+    [Fact]
+    public void Heal_ThatCantRevive_IsWastedOnADownedAlly()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, abilities: Heal(canRevive: false)), Unit("B", "party", 1, 0, 0, CombatantStatus.Downed)],
+            "H", PlannedAction.Ability("heal", "B"));
+        Assert.Equal(WastedReason.TargetDefeated, Assert.Single(outcome.Ticks[0].Heals).WastedReason);
+        Assert.Equal(0, outcome.Next.Combatants.Single(c => c.Id == "B").Hp);
+    }
+
+    [Fact]
+    public void Heal_OnTheDead_IsWasted()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, abilities: Heal()), Unit("B", "party", 1, 0, 0, CombatantStatus.Dead)],
+            "H", PlannedAction.Ability("heal", "B"));
+        Assert.Equal(WastedReason.TargetDefeated, Assert.Single(outcome.Ticks[0].Heals).WastedReason);
+        Assert.Empty(outcome.RevivedThisRound);
+    }
+
+    [Fact]
+    public void Heal_OnYourself_NeedsIncludeSelf_AndIgnoresRange()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, hp: 10, abilities: Heal())], "H", PlannedAction.Ability("heal", "H"));
+        Assert.Equal(15, outcome.Next.Combatants.Single().Hp);
+    }
+
+    [Fact]
+    public void Heal_OnAnEnemy_IsTheWrongSide()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, abilities: Heal()), Unit("E", "enemy", 1, 0, hp: 10)],
+            "H", PlannedAction.Ability("heal", "E"));
+        Assert.Equal(WastedReason.InvalidTargetType, Assert.Single(outcome.Ticks[0].Heals).WastedReason);
+        Assert.Equal(10, outcome.Next.Combatants.Single(c => c.Id == "E").Hp);
+    }
+
+    [Fact]
+    public void DownedAllyHeal_OnAStandingAlly_IsWasted()
+    {
+        var outcome = Round([Unit("H", "party", 0, 0, abilities: Heal(filter: TargetFilter.DownedAlly)), Unit("B", "party", 1, 0, hp: 10)],
+            "H", PlannedAction.Ability("heal", "B"));
+        Assert.Equal(WastedReason.TargetNotDowned, Assert.Single(outcome.Ticks[0].Heals).WastedReason);
+    }
+
+    [Theory]
+    [InlineData(TargetKind.Combatants, 2, new[] { "B", "C" }, null)]
+    [InlineData(TargetKind.Combatants, 2, new[] { "B", "C", "D" }, "Volley can target at most 2.")]
+    [InlineData(TargetKind.Combatants, 2, new[] { "B", "B" }, "Volley can't target the same combatant twice.")]
+    [InlineData(TargetKind.Auto, null, new string[0], null)]
+    [InlineData(TargetKind.Auto, null, new[] { "B" }, "Volley doesn't take a target.")]
+    public void MultiTargetShapes_AreChecked(TargetKind kind, int? count, string[] targets, string? error)
+    {
+        var volley = new AbilityDefinition("volley", "Volley", 2, 0, [],
+            new Targeting(kind, TargetFilter.Enemy, Range: 5, Count: count), [new AttackEffect(AttackKind.Ranged, DamageSpec.Weapon)]);
+        var action = new PlannedAction(ActionType.Ability, AbilityId: "volley", TargetCombatantIds: targets.Length == 0 ? null : targets);
+        Assert.Equal(error, Check(Profile(5, volley), null, action).Error);
+    }
 }

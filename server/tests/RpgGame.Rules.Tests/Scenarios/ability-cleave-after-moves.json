@@ -1,0 +1,25 @@
+{
+  "description": "Cleave finds its targets after the tick's movement: a goblin that steps in is hit, one that steps away isn't",
+  "abilities": [
+    {
+      "id": "cleave", "name": "Cleave", "ap": 3, "cooldown": 2,
+      "target": { "kind": "auto", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["cleave"] },
+    { "id": "Runner",  "side": "enemy", "at": [6, 5] },
+    { "id": "Comer",   "side": "enemy", "at": [3, 5] }
+  ],
+  "plans": {
+    "Bruiser": ["ability cleave"],
+    "Runner":  ["move 8,5"],
+    "Comer":   ["move 4,5"]
+  },
+  "dice": [11, 6],                       // Comer: hit for 6
+  "expect": {
+    "hp": { "Comer": 14, "Runner": 20 },
+    "abilityUses": [ { "tick": 1, "id": "Bruiser", "ability": "cleave", "targets": ["Comer"] } ]
+  }
+}

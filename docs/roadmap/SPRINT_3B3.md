@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.3. Hand this to Claude Code alongside `CLAUDE.md`. Design decisions (the ability model, targeting, effects, healing, cooldowns, and how future ability families fit) are in `docs/design/ABILITIES.md`; this doc says what to build, in which PR, and how to test it. For the high-level plan see `ROADMAP_STRATEGIC.md`.
 >
-> **Status:** 🔄 In progress. PR 1 (framework & cooldowns) done; PR 2 and PR 3 not started.
+> **Status:** 🔄 In progress. PR 1 (framework & cooldowns) and PR 2 (multi-target & healing) done; PR 3 not started.
 >
 > **Goal:** Combatants have a fixed loadout of abilities with AP costs, cooldowns, ranges and target rules. Four kinds work end to end: stronger attacks, multi-target attacks, healing, and movement (including move + attack). The resolver runs abilities as data-driven effects, so later families (conditions, AoE, spells, reactions, perception) add effect kinds, not new resolver structure. All of it can be tried in a new **Abilities** Quick Battle against AI enemies that use abilities too.
 
@@ -170,6 +170,17 @@ It doesn't check range or teams (that's resolution time, and the Api for teams).
 ---
 
 ## PR 2 — Multi-target & healing
+
+*Status: done. Differences from the plan below:*
+- *`auto` and the confirm step: an `auto` ability isn't queued on the button press. Arming it highlights its area (cells within range of where the queued moves end) and shows a **Use Cleave** button; that button, a click anywhere on the grid, or Enter queues it. The same flow works for the GM's monsters. `combatants` abilities show **Done (n/count)**; a second click on a picked target drops it.*
+- *`auto` only finds Standing combatants (Downed ones for a `downed_ally` filter), so a Cleave never finishes off a Downed hero by accident; finishing blows stay planned (3B.5).*
+- *A combatant healed back up mid-round stands again, but the rest of their queue stays void this round (only those standing since the start of the round act). They plan again from the next round.*
+- *`RoundOutcome.RevivedThisRound` lists those who were down at the start and stand at the end; `DefeatedThisRound` is now the net list (someone downed and healed up in the same round is in neither). The payload carries `revivedCombatantIds` (no new broadcast), and `ResolutionService` calls the new `IRedisGameState.ReviveAsync` (removes them from `defeated` and `status`). Every reader of the defeated set goes through `IsDefeatedAsync`, so nothing else needed changing.*
+- *A heal with `canRevive: false` on a Downed or Stable target is wasted (`TargetDefeated`); a `downed_ally` heal on a standing target is `TargetNotDowned`. Healing yourself (with `includeSelf`) ignores range.*
+- *`abilities.json` heal format: `{ "kind": "heal", "amount": { "die": "d6", "bonus": 2 }, "canRevive": true }` (die optional). The catalog now accepts `combatants` (needs `count` 1–6) and `auto` (optional `count`), rejects `includeSelf` with an `enemy` filter and heals that target enemies. Migration `AddHealEffects` (model snapshot only).*
+- *Feed: there's no separate "uses Cleave" line for a successful use (as in PR 1, ability attacks and heals name the ability: "Bruiser's Cleave hits …", "Mira's Mend heals Brakka for 6 (HP: 0 → 6) — back on their feet!"). An `auto` ability that found nobody: "Bruiser uses Cleave — no targets in range". A heal beaten by a finishing blow: "… comes too late".*
+- *Enemy AI: step 1 heals from where it stands (Downed first, then the lowest share of HP), then carries on with the rest of its AP; step 2 checks for 2+ enemies from where it will attack (after its walk). It reads teams from `CombatantState.Team`, falling back to `teamById`.*
+- *Content: Bruiser gets Cleave, Scout Twin Shot, Skirmisher Mend (on their profiles). The Abilities preset puts Goblins 1 and 2 next to the Bruiser, starts the Scout on 5 HP (new preset field `startHp`) next to the Skirmisher, and adds a goblin Shaman with Mend.*
 
 ### Rules
 - `TargetKind.Combatants` (up to `Count` distinct chosen ids from `TargetCombatantIds`) and `TargetKind.Auto` (found at resolution: all matching `CanTarget` within range after this tick's movement, ordered by distance then id, capped at `Count`). Each target gets its own `AttackOutcome` and its own hit roll, in target order. An `auto` ability with no targets is a wasted `AbilityUse` (`NoTargets`) and still starts its cooldown.

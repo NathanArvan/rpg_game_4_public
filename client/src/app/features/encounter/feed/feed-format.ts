@@ -6,8 +6,9 @@
  * - "Tick 1" and "End of round" → tick headings
  * - other lines: party names blue, enemy names red, "for 5 damage (HP: 8 → 3)" /
  *   "for 5 damage — defeated!" / "— goes down!" / "— finished off!" orange, "and misses" grey,
- *   bleeding out orange, stabilizes teal (3B.5), ability names purple (3B.3:
- *   "Bruiser's Power Strike hits …", "Bruiser uses Power Strike on …", "… can't use Power Strike — …")
+ *   bleeding out orange, stabilizes and heals teal (3B.5, 3B.3: "for 6 (HP: 0 → 6) — back on their feet!"),
+ *   ability names purple (3B.3: "Bruiser's Power Strike hits …", "Mira's Mend heals …",
+ *   "Bruiser uses Power Strike on …", "… can't use Power Strike — …")
  */
 
 export type FeedLineKind = 'round' | 'tick' | 'event';
@@ -33,11 +34,11 @@ export type NameSides = ReadonlyMap<string, 'party' | 'enemy'>;
 // From ResolutionFeedFormatter (server): "for {damage} damage (HP: {before} → {after})" or "… — defeated!".
 const DAMAGE = String.raw`for \d+ damage(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
 const MISS = String.raw`and misses|misses`;
-const SAVE = 'stabilizes';
+const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on their feet!)?`;
 // Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
 // or after "uses " / "can't use " and before " on " / " —" / the end.
 // (Not the basic "X's attack on …" and "X's stabilize on …" lines.)
-const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)`;
+const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {

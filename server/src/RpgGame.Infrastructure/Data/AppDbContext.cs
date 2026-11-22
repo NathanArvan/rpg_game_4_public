@@ -71,7 +71,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 p.OwnsMany(v => v.Abilities, a =>
                 {
                     a.OwnsOne(x => x.Target);
-                    a.OwnsMany(x => x.Effects, ef => ef.OwnsOne(d => d.Damage));
+                    a.OwnsMany(x => x.Effects, ef =>
+                    {
+                        ef.OwnsOne(d => d.Damage);
+                        ef.OwnsOne(d => d.Amount);
+                    });
                 });
             });
         });

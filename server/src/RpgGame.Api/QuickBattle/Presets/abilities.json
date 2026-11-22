@@ -1,19 +1,24 @@
 {
-  // 3B.3 abilities. The Bruiser has Power Strike (from its profile) and starts next to a goblin,
-  // so it can use it in round 1. The Scout gets Firebolt (range 8) through the "abilities"
-  // override. The Ogre (a Brute) has Power Strike too and the AI uses it when it's ready.
-  // Used by the abilities E2E test: keep a goblin adjacent to the Bruiser at the start.
+  // 3B.3 abilities. Party: the Bruiser has Power Strike and Cleave (from its profile) and starts
+  // next to two goblins standing together, so it can Cleave both in round 1. The Skirmisher has
+  // Mend and starts next to the Scout, who begins hurt (startHp). The Scout has Twin Shot and gets
+  // Firebolt through the "abilities" override.
+  // Enemies: the Ogre (a Brute) has Power Strike and the AI uses it when it's ready; the Shaman (a
+  // Grunt given Mend) heals hurt allies.
+  // Used by the abilities E2E tests: keep Goblins 1 and 2 adjacent to the Bruiser, and the hurt
+  // Scout within Mend's range of the Skirmisher, at the start.
   "id": "abilities",
   "name": "Abilities",
-  "description": "Try Power Strike and Firebolt against goblins and an ogre that strikes back.",
+  "description": "Try Power Strike, Cleave, Twin Shot, Mend and Firebolt against goblins, a healing shaman and an ogre that strikes back.",
   "order": 5,
   "combatants": [
     { "name": "Bruiser",    "side": "party", "profile": "bruiser",    "at": [9, 9] },
-    { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [7, 11] },
-    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 12], "abilities": ["firebolt"] },
+    { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [10, 11] },
+    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 12], "startHp": 5, "abilities": ["twin_shot", "firebolt"] },
     { "name": "Goblin 1",   "side": "enemy", "profile": "grunt",      "at": [9, 8] },
-    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [6, 6] },
-    { "name": "Goblin 3",   "side": "enemy", "profile": "grunt",      "at": [12, 6] },
+    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [10, 8] },
+    { "name": "Goblin 3",   "side": "enemy", "profile": "grunt",      "at": [14, 6] },
+    { "name": "Shaman",     "side": "enemy", "profile": "grunt",      "at": [12, 5], "abilities": ["mend"] },
     { "name": "Ogre",       "side": "enemy", "profile": "brute",      "at": [9, 4] }
   ]
 }

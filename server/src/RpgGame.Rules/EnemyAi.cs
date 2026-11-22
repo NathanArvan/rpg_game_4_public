@@ -1,15 +1,19 @@
 namespace RpgGame.Rules;
 
 /// <summary>
-/// The simplest enemy AI (3B.0, AP queues since 3B.2). Each AI combatant spends its AP on the
-/// nearest living enemy: melee it as often as it can afford if it is in reach; otherwise walk
-/// toward it (one move, up to the whole movement budget) and melee it with the AP left if the walk
-/// ends in reach. With nothing to do, it defends.
+/// The simplest enemy AI (3B.0, AP queues since 3B.2, abilities since 3B.3). Each AI combatant
+/// first heals an ally in trouble if it has a ready heal (ABILITIES.md A13 step 1), then spends the
+/// rest of its AP on the nearest living enemy: attack it if it is in reach; otherwise walk toward it
+/// (one move, up to the whole movement budget) and attack with the AP left if the walk ends in
+/// reach. An attack opens with a ready multi-target ability if it would hit two or more enemies
+/// (step 2), or else a ready single-target melee ability (step 4), then basic melee attacks with
+/// what's left. With nothing to do, it defends.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
-/// <para>Teams are passed in rather than read from <see cref="CombatantState"/>, so the resolver and
-/// existing scenarios don't depend on them. Any two different team strings are enemies.</para>
+/// <para>A combatant's team is its <see cref="CombatantState.Team"/>, or its entry in
+/// <c>teamById</c> when that's empty; who is an ally or an enemy is then decided by
+/// <see cref="Relations.Between"/>. Combatants with no team either way are ignored.</para>
 /// <para>AI combatants plan in order and avoid the walks already chosen by earlier ones (same cell
 /// at the same step would block both). They don't predict where players will move, and an earlier
 /// walker may still bump into a later AI combatant that ends up standing still; those cases are left
@@ -33,6 +37,13 @@ public static class EnemyAi
         ArgumentNullException.ThrowIfNull(aiCombatantIds);
         config ??= RulesConfig.Default;
 
+        // Everyone with a team filled in, so relations can be asked of Relations alone.
+        state = state with
+        {
+            Combatants = state.Combatants
+                .Select(c => c.Team.Length > 0 || !teamById.TryGetValue(c.Id, out var team) ? c : c with { Team = team })
+                .ToList(),
+        };
         var byId = state.Combatants.ToDictionary(c => c.Id);
         var aiSet = aiCombatantIds.ToHashSet();
 
@@ -53,19 +64,28 @@ public static class EnemyAi
         foreach (var id in aiCombatantIds)
         {
             if (!byId.TryGetValue(id, out var self) || self.IsDefeated) continue;
-            if (!teamById.TryGetValue(id, out var myTeam)) continue;
+            if (self.Team.Length == 0) continue;
 
-            // Not on the map (no position): it can't move or melee, so it just defends.
+            // Not on the map (no position): it can't move, melee or reach anyone, so it just defends.
             if (self.Position is not { } from)
             {
                 plans[id] = [PlannedAction.Defend()];
                 continue;
             }
 
-            var target = FindTarget(state, self, from, myTeam, teamById);
+            // Step 1: heal an ally in trouble first (it resolves in tick 1, before any walk).
+            var queue = new List<PlannedAction>();
+            int apLeft = self.Profile.MaxAp;
+            if (ChooseHeal(state, self, from, apLeft) is { } heal)
+            {
+                queue.Add(heal.Action);
+                apLeft -= heal.Ability.ApCost;
+            }
+
+            var target = FindTarget(state, self, from);
             if (target is null)
             {
-                plans[id] = [PlannedAction.Defend()];
+                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
                 blockers.Add(from);
                 continue;
             }
@@ -73,17 +93,18 @@ public static class EnemyAi
             var targetPos = target.Position!.Value;
             if (from.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
             {
-                var attacks = new List<PlannedAction>();
-                AddAttacks(attacks, self, target, self.Profile.MaxAp, config);
-                plans[id] = attacks.Count > 0 ? attacks : [PlannedAction.Defend()];
+                AddAttacks(queue, state, self, from, target, apLeft, config);
+                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
                 blockers.Add(from);
                 continue;
             }
 
-            var path = ChooseMove(state, from, targetPos, self.Profile.MovementRange, occupied, blockers, reservedPaths);
+            var path = apLeft >= config.MoveApCost
+                ? ChooseMove(state, from, targetPos, self.Profile.MovementRange, occupied, blockers, reservedPaths)
+                : null;
             if (path is null)
             {
-                plans[id] = [PlannedAction.Defend()]; // boxed in
+                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()]; // boxed in (or out of AP)
                 blockers.Add(from);
                 continue;
             }
@@ -92,10 +113,10 @@ public static class EnemyAi
             reservedPaths.Add(path);
             occupied.Add(destination);
             blockers.Add(destination);
-            var queue = new List<PlannedAction> { PlannedAction.Move(destination.X, destination.Y) };
+            queue.Add(PlannedAction.Move(destination.X, destination.Y));
             // Strike with what's left if the walk ends in reach (the target may still step away).
             if (destination.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
-                AddAttacks(queue, self, target, self.Profile.MaxAp - config.MoveApCost, config);
+                AddAttacks(queue, state, self, destination, target, apLeft - config.MoveApCost, config);
             plans[id] = queue;
         }
 
@@ -104,11 +125,19 @@ public static class EnemyAi
 
     /// <summary>
     /// Appends the attacks on an adjacent <paramref name="target"/> that <paramref name="apLeft"/> pays
-    /// for: a melee attack ability first if one is ready and affordable (3B.3, ABILITIES.md A13 step 4),
-    /// then as many basic melee attacks as the AP left covers.
+    /// for, made from <paramref name="at"/>: a ready multi-target ability if it would hit two or more
+    /// enemies from there (ABILITIES.md A13 step 2), a ready single-target melee ability (step 4), then
+    /// as many basic melee attacks as the AP left covers.
     /// </summary>
-    private static void AddAttacks(List<PlannedAction> queue, CombatantState self, CombatantState target, int apLeft, RulesConfig config)
+    private static void AddAttacks(
+        List<PlannedAction> queue, EncounterState state, CombatantState self, GridPosition at, CombatantState target,
+        int apLeft, RulesConfig config)
     {
+        if (AutoAttackAbility(state, self, at, apLeft) is { } multi)
+        {
+            queue.Add(PlannedAction.Ability(multi.Id));
+            apLeft -= multi.ApCost;
+        }
         if (MeleeAttackAbility(self, apLeft, config) is { } ability)
         {
             queue.Add(PlannedAction.Ability(ability.Id, target.Id));
@@ -117,19 +146,75 @@ public static class EnemyAi
         AddMelees(queue, target.Id, apLeft, config);
     }
 
+    /// <summary>A ready, affordable, active ability of the loadout (not on cooldown).</summary>
+    private static bool Ready(CombatantState self, AbilityDefinition a, int apLeft) =>
+        a.Activation == AbilityActivation.Active && a.ApCost <= apLeft && self.CooldownLeft(a.Id) == 0;
+
+    /// <summary>
+    /// Step 1 (ABILITIES.md A13): a ready single-target heal on an ally (or itself, if the heal allows)
+    /// within its range from where it stands now, who is Downed or Stable (if the heal can revive) or
+    /// below half HP. Downed allies first, then the lowest share of HP, then state order.
+    /// </summary>
+    private static (AbilityDefinition Ability, PlannedAction Action)? ChooseHeal(
+        EncounterState state, CombatantState self, GridPosition from, int apLeft)
+    {
+        foreach (var ability in self.Profile.Abilities)
+        {
+            if (!Ready(self, ability, apLeft) || ability.Targeting.Kind != TargetKind.Combatant) continue;
+            if (ability.Effects.OfType<HealEffect>().FirstOrDefault() is not { } heal) continue;
+            if (ability.Effects.Any(e => e is AttackEffect)) continue;
+
+            var patient = state.Combatants
+                .Select((c, index) => (c, index))
+                .Where(x => x.c.Team.Length > 0
+                            && x.c.Status != CombatantStatus.Dead
+                            && Relations.Between(self, x.c) != Relation.Enemy
+                            && Relations.Matches(self, x.c, ability.Targeting)
+                            && x.c.Position is { } p && from.ChebyshevDistanceTo(p) <= ability.Targeting.Range
+                            && NeedsHealing(x.c, ability.Targeting, heal))
+                .OrderBy(x => x.c.Status == CombatantStatus.Downed ? 0 : 1)
+                .ThenBy(x => (double)x.c.Hp / Math.Max(1, x.c.MaxHp))
+                .ThenBy(x => x.index)
+                .Select(x => x.c)
+                .FirstOrDefault();
+            if (patient is not null)
+                return (ability, PlannedAction.Ability(ability.Id, patient.Id));
+        }
+        return null;
+    }
+
+    private static bool NeedsHealing(CombatantState c, Targeting targeting, HealEffect heal) => c.Status switch
+    {
+        CombatantStatus.Downed => heal.CanRevive || targeting.Filter == TargetFilter.DownedAlly,
+        CombatantStatus.Stable => heal.CanRevive && targeting.Filter != TargetFilter.DownedAlly,
+        CombatantStatus.Standing => targeting.Filter != TargetFilter.DownedAlly && c.Hp * 2 < c.MaxHp,
+        _ => false,
+    };
+
+    /// <summary>
+    /// Step 2 (ABILITIES.md A13): a ready <see cref="TargetKind.Auto"/> attack ability on enemies that
+    /// would catch at least two standing enemies within its range of <paramref name="at"/>.
+    /// </summary>
+    private static AbilityDefinition? AutoAttackAbility(EncounterState state, CombatantState self, GridPosition at, int apLeft) =>
+        self.Profile.Abilities.FirstOrDefault(a =>
+            Ready(self, a, apLeft)
+            && a.Targeting is { Kind: TargetKind.Auto, Filter: TargetFilter.Enemy }
+            && a.Effects.Count > 0
+            && a.Effects.All(e => e is AttackEffect)
+            && state.Combatants.Count(c => IsLivingEnemy(self, c)
+                                           && at.ChebyshevDistanceTo(c.Position!.Value) <= a.Targeting.Range) >= 2);
+
     /// <summary>
     /// The first loadout ability that is a single-target melee attack on an enemy, ready (no
     /// cooldown) and affordable. Abilities count as stronger than a basic swing.
     /// </summary>
     private static AbilityDefinition? MeleeAttackAbility(CombatantState self, int apLeft, RulesConfig config) =>
         self.Profile.Abilities.FirstOrDefault(a =>
-            a.Activation == AbilityActivation.Active
+            Ready(self, a, apLeft)
             && a.Targeting is { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy }
             && a.Targeting.Range >= config.MeleeReach
             && a.Effects.Count > 0
-            && a.Effects.All(e => e is AttackEffect { Roll: AttackKind.Melee })
-            && a.ApCost <= apLeft
-            && self.CooldownLeft(a.Id) == 0);
+            && a.Effects.All(e => e is AttackEffect { Roll: AttackKind.Melee }));
 
     /// <summary>Appends as many melee attacks on <paramref name="targetId"/> as <paramref name="apLeft"/> pays for.</summary>
     private static void AddMelees(List<PlannedAction> queue, string targetId, int apLeft, RulesConfig config)
@@ -140,22 +225,21 @@ public static class EnemyAi
     }
 
     /// <summary>Nearest living enemy on the map; ties go to the lowest HP, then to state order.</summary>
-    private static CombatantState? FindTarget(
-        EncounterState state, CombatantState self, GridPosition from, string myTeam, IReadOnlyDictionary<string, string> teamById)
+    private static CombatantState? FindTarget(EncounterState state, CombatantState self, GridPosition from)
     {
         return state.Combatants
             .Select((c, index) => (c, index))
-            .Where(x => !x.c.IsDefeated
-                        && x.c.Id != self.Id
-                        && x.c.Position.HasValue
-                        && teamById.TryGetValue(x.c.Id, out var team)
-                        && team != myTeam)
+            .Where(x => IsLivingEnemy(self, x.c))
             .OrderBy(x => from.ChebyshevDistanceTo(x.c.Position!.Value))
             .ThenBy(x => x.c.Hp)
             .ThenBy(x => x.index)
             .Select(x => x.c)
             .FirstOrDefault();
     }
+
+    /// <summary>A standing enemy on the map with a known team (the AI never goes after someone already down).</summary>
+    private static bool IsLivingEnemy(CombatantState self, CombatantState c) =>
+        !c.IsDefeated && c.Position.HasValue && c.Team.Length > 0 && Relations.Between(self, c) == Relation.Enemy;
 
     /// <summary>
     /// Picks where to walk: the free cell within the walker's movement range that is closest to the target

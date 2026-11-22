@@ -1,12 +1,17 @@
 namespace RpgGame.Api.Contracts.Hub;
 
+/// <param name="RevivedCombatantIds">
+/// Combatants who were down when the round started and are standing again, healed back up (3B.3).
+/// They plan and lock in from the next round.
+/// </param>
 public record ResolutionPayload(
     IReadOnlyList<TickResult> Ticks,
     int NewRoundNumber,
     IReadOnlyList<string> DefeatedCombatantIds,
     IReadOnlyList<PlanningCombatantDto> UpdatedCombatants,
     IReadOnlyList<CombatantQueueDto> Queues,
-    IReadOnlyList<BleedoutResultDto> EndOfRound);
+    IReadOnlyList<BleedoutResultDto> EndOfRound,
+    IReadOnlyList<string>? RevivedCombatantIds = null);
 
 /// <summary>
 /// End of round for a combatant who was already downed when it started (3B.5): one bleedout
@@ -30,20 +35,43 @@ public record CombatantQueueDto(
     IReadOnlyList<QueuedActionDto> Actions);
 
 /// <param name="AbilityId">For "ability": which ability (3B.3).</param>
+/// <param name="TargetCombatantIds">For an ability with several chosen targets.</param>
 public record QueuedActionDto(
     string Type,
     int ApCost,
     string? TargetCombatantId,
     PositionDto? TargetCell,
-    string? AbilityId = null);
+    string? AbilityId = null,
+    IReadOnlyList<string>? TargetCombatantIds = null);
 
 /// <param name="AbilityUses">Abilities used this tick, one per activation, in plan order (3B.3).</param>
+/// <param name="Heals">Heals this tick, resolved with the attacks and netted with their damage (3B.3).</param>
 public record TickResult(
     int TickIndex,
     IReadOnlyList<MovementResult> Movements,
     IReadOnlyList<AttackResult> Attacks,
     IReadOnlyList<EffectResult> Effects,
-    IReadOnlyList<AbilityUseResult>? AbilityUses = null);
+    IReadOnlyList<AbilityUseResult>? AbilityUses = null,
+    IReadOnlyList<HealResult>? Heals = null);
+
+/// <summary>One heal on one target (3B.3).</summary>
+/// <param name="Amount">HP rolled, before netting and the max-HP cap; 0 when wasted.</param>
+/// <param name="TargetNewHp">Target HP after the tick's damage and healing.</param>
+/// <param name="Revived">The target was down and is standing again.</param>
+/// <param name="TargetStatus">"standing", "downed", "stable" or "dead" after the tick.</param>
+/// <param name="WastedReason">Why it did nothing ("out_of_range", "target_defeated", …), or null.</param>
+public record HealResult(
+    string HealerId,
+    string HealerName,
+    string TargetId,
+    string TargetName,
+    string AbilityId,
+    int Amount,
+    int TargetNewHp,
+    bool Revived,
+    string TargetStatus,
+    string? WastedReason,
+    string FeedText);
 
 public record MovementResult(
     string CombatantId,

@@ -169,7 +169,7 @@ public partial class ScenarioTests
         ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
         ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
         ActionType.Stabilize => $"\"stabilize {a.TargetCombatantId}\"",
-        ActionType.Ability => $"\"ability {a.AbilityId}{(a.TargetCombatantId is null ? "" : " " + a.TargetCombatantId)}\"",
+        ActionType.Ability => $"\"ability {a.AbilityId}{(a.TargetCombatantIds is { } ids ? " " + string.Join(",", ids) : a.TargetCombatantId is null ? "" : " " + a.TargetCombatantId)}\"",
         _ => "\"defend\"",
     };
 
@@ -182,7 +182,7 @@ public partial class ScenarioTests
     [GeneratedRegex(@"^\s*stabilize\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex StabilizeRegex();
 
-    /// <summary>"ability ID" or "ability ID TARGET" (3B.3).</summary>
+    /// <summary>"ability ID", "ability ID TARGET" or "ability ID T1,T2" (several chosen targets) (3B.3).</summary>
     [GeneratedRegex(@"^\s*ability\s+(\S+)(?:\s+(\S+))?\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex AbilityRegex();
 
@@ -197,11 +197,16 @@ public partial class ScenarioTests
         if (StabilizeRegex().Match(text) is { Success: true } st)
             return PlannedAction.Stabilize(st.Groups[1].Value);
         if (AbilityRegex().Match(text) is { Success: true } ab)
-            return PlannedAction.Ability(ab.Groups[1].Value, ab.Groups[2].Success ? ab.Groups[2].Value : null);
+        {
+            var target = ab.Groups[2].Success ? ab.Groups[2].Value : null;
+            return target is not null && target.Contains(',')
+                ? new PlannedAction(ActionType.Ability, AbilityId: ab.Groups[1].Value, TargetCombatantIds: target.Split(','))
+                : PlannedAction.Ability(ab.Groups[1].Value, target);
+        }
         if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
             return PlannedAction.Defend();
         throw new FormatException(
-            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET]\" or \"defend\".");
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET[,TARGET…]]\" or \"defend\".");
     }
 
     /// <summary>An inline ability definition, in the same shape as the server's abilities.json (3B.3).</summary>
@@ -222,6 +227,10 @@ public partial class ScenarioTests
                     e.Damage?.Bonus ?? 0,
                     e.Damage?.Multiplier ?? 1),
                 e.AccuracyBonus ?? 0),
+            "heal" => new HealEffect(
+                e.Amount?.Die is null ? null : DamageDie.Parse(e.Amount.Die),
+                e.Amount?.Bonus ?? 0,
+                e.CanRevive ?? true),
             _ => throw new InvalidDataException($"{where}: unknown effect kind '{e.Kind}'"),
         }).ToList();
         return new AbilityDefinition(a.Id, a.Name ?? a.Id, a.Ap ?? 2, a.Cooldown ?? 0, a.Tags ?? [], targeting, effects);
@@ -303,12 +312,31 @@ public partial class ScenarioTests
                 o.Ticks.SelectMany(t => t.AbilityUses.Select(u => Key(t.Index + 1,
                     $"{u.CombatantId}:{u.AbilityId}" + (u.Wasted ? $"({Snake(u.WastedReason)})" : "")))), failures);
 
+        foreach (var want in (e.AbilityUses ?? []).Where(u => u.Targets is not null))
+        {
+            var use = o.Ticks.ElementAtOrDefault(want.Tick - 1)?.AbilityUses
+                .FirstOrDefault(u => u.CombatantId == want.Id && u.AbilityId == want.Ability);
+            if (use is not null && !use.TargetIds.SequenceEqual(want.Targets!))
+                failures.Add($"targets of {want.Id}'s {want.Ability} in tick {want.Tick}: expected [{string.Join(", ", want.Targets!)}], got [{string.Join(", ", use.TargetIds)}]");
+        }
+
+        if (e.Heals is { } heals)
+            CompareSets("heals", heals.Select(h => Key(h.Tick, HealKey(h.Id, h.Target, h.Amount, h.Revived, h.Wasted))),
+                o.Ticks.SelectMany(t => t.Heals.Select(h => Key(t.Index + 1,
+                    HealKey(h.HealerId, h.TargetId, h.Amount, h.Revived, h.Wasted ? Snake(h.WastedReason) : null)))), failures);
+
+        if (e.Revived is { } revived)
+            CompareSets("revived (back up at end of round)", revived, o.RevivedThisRound, failures);
+
         if (e.Wasted is { } wasted)
             CompareSets("wasted attacks", wasted.Select(Key),
                 o.Ticks.SelectMany(t => t.Attacks.Where(a => a.Wasted).Select(a => Key(t.Index + 1, a.AttackerId))), failures);
 
         return failures;
     }
+
+    private static string HealKey(string healer, string target, int amount, bool revived, string? wasted) =>
+        $"{healer}>{target}" + (wasted is null ? $" +{amount}" : $"({wasted})") + (revived ? " revived" : "");
 
     private static string Key(TickRefDto r) => Key(r.Tick, r.Id ?? r.Attacker ?? "?");
     private static string Snake(WastedReason reason) =>
@@ -364,6 +392,10 @@ public partial class ScenarioTests
         public string? Roll { get; set; }
         public int? AccuracyBonus { get; set; }
         public DamageDto? Damage { get; set; }
+        /// <summary>Heal: die + bonus.</summary>
+        public DamageDto? Amount { get; set; }
+        /// <summary>Heal: brings a Downed or Stable target back up (default true).</summary>
+        public bool? CanRevive { get; set; }
     }
 
     private sealed class DamageDto
@@ -426,6 +458,23 @@ public partial class ScenarioTests
         public Dictionary<string, Dictionary<string, int>>? Cooldowns { get; set; }
         /// <summary>The exact set of ability activations (3B.3).</summary>
         public List<AbilityUseDto>? AbilityUses { get; set; }
+        /// <summary>The exact set of heals (3B.3).</summary>
+        public List<HealDto>? Heals { get; set; }
+        /// <summary>The exact set of combatants who were down at the start and are standing at the end.</summary>
+        public List<string>? Revived { get; set; }
+    }
+
+    private sealed class HealDto
+    {
+        public int Tick { get; set; }
+        /// <summary>The healer.</summary>
+        public string Id { get; set; } = "";
+        public string Target { get; set; } = "";
+        /// <summary>HP rolled (die + bonus), before the MaxHp cap. Ignored for a wasted heal.</summary>
+        public int Amount { get; set; }
+        public bool Revived { get; set; }
+        /// <summary>Why it was wasted ("out_of_range", "target_defeated", …), if it was.</summary>
+        public string? Wasted { get; set; }
     }
 
     private sealed class AbilityUseDto
@@ -435,6 +484,8 @@ public partial class ScenarioTests
         public string Ability { get; set; } = "";
         /// <summary>Why the activation itself was refused ("on_cooldown", "not_in_loadout"), if it was.</summary>
         public string? Wasted { get; set; }
+        /// <summary>If given, the use's targets in order (for an auto ability, the ones it found).</summary>
+        public List<string>? Targets { get; set; }
     }
 
     private sealed class TickRefDto

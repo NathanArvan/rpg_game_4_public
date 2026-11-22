@@ -65,7 +65,7 @@ public class QuickBattleService(
             placed.ToDictionary(x => x.Combatant.Id.ToString(), x => new Position(x.Preset.X, x.Preset.Y)),
             new List<string>());
 
-        var starts = placed.Select(x => new CombatantStart(x.Combatant, x.Preset.Profile.MaxHp)).ToList();
+        var starts = placed.Select(x => new CombatantStart(x.Combatant, x.Preset.StartHp ?? x.Preset.Profile.MaxHp)).ToList();
         var encounterResult = await EncounterLaunch.PublishAsync(
             redisState, session.Id, encounter, starts, map, planningTimerEnabled: false);
 

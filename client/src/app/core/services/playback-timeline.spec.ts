@@ -1,4 +1,4 @@
-import { AttackResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import { PLAYBACK_TIMING, buildTimeline, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
 const move = (id: string, path: [number, number][], wasBlocked = false): MovementResult => ({
@@ -12,10 +12,10 @@ const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, 
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], ...parts });
+  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], ...parts });
 
 const payload = (...ticks: TickResult[]): ResolutionPayload =>
-  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [] });
+  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [] });
 
 describe('playback timeline', () => {
   describe('positions', () => {
@@ -180,5 +180,40 @@ describe('playback timeline', () => {
     const beats = buildTimeline(payload(tick(0, { abilityUses: [use] })));
     expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'on cooldown', kind: 'wasted' }]);
     expect(beats[0].feed).toContain("hero can't use Power Strike — still on cooldown");
+  });
+});
+
+describe('playback timeline: heals (3B.3)', () => {
+  const heal = (healerId: string, targetId: string, extra: Partial<HealResult> = {}): HealResult => ({
+    healerId, healerName: healerId, targetId, targetName: targetId, abilityId: 'mend', amount: 6, targetNewHp: 6,
+    revived: false, targetStatus: 'standing', wastedReason: null, feedText: `${healerId} heals ${targetId}`, ...extra,
+  });
+
+  it('plays heals in the attacks beat: a green aura, +n and the netted HP', () => {
+    const beats = buildTimeline(payload(tick(0, { heals: [heal('mira', 'hero', { targetNewHp: 9 })] })));
+    const attacks = beats.find(b => b.phase === 'attacks')!;
+    expect(attacks.auras).toContain({ combatantId: 'hero', kind: 'heal' });
+    expect(attacks.floats).toContain({ combatantId: 'hero', text: '+6', kind: 'heal' });
+    expect(attacks.hp).toEqual({ hero: 9 });
+    expect(attacks.durationMs).toBe(PLAYBACK_TIMING.attackMs);
+    expect(attacks.feed).toContain('mira heals hero');
+    expect(beats.some(b => b.phase === 'revives')).toBeFalse();
+  });
+
+  it('gets a revived combatant back up in its own beat, after the attacks', () => {
+    const beats = buildTimeline(payload(tick(0, { heals: [heal('mira', 'hero', { revived: true })] })));
+    const phases = beats.map(b => b.phase);
+    expect(phases.indexOf('revives')).toBeGreaterThan(phases.indexOf('attacks'));
+    const revive = beats.find(b => b.phase === 'revives')!;
+    expect(revive.statuses).toEqual({ hero: { status: 'standing', bleedoutRoundsLeft: 0 } });
+    expect(revive.floats).toEqual([{ combatantId: 'hero', text: 'UP', kind: 'heal' }]);
+  });
+
+  it('labels a wasted heal above the healer, and changes no HP', () => {
+    const beats = buildTimeline(payload(tick(0, { heals: [heal('mira', 'hero', { amount: 0, wastedReason: 'out_of_range' })] })));
+    const attacks = beats.find(b => b.phase === 'attacks')!;
+    expect(attacks.floats).toEqual([{ combatantId: 'mira', text: 'out of range', kind: 'wasted' }]);
+    expect(attacks.hp).toEqual({});
+    expect(attacks.durationMs).toBe(PLAYBACK_TIMING.wastedMs);
   });
 });

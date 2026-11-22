@@ -1,0 +1,26 @@
+{
+  "description": "Mend on a Downed ally brings them back to Standing with the healed HP and stops the bleedout (it would have killed them this round)",
+  "abilities": [
+    {
+      "id": "mend", "name": "Mend", "ap": 2, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "heal", "amount": { "die": "d6", "bonus": 2 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero", "side": "party", "hp": 0, "maxHp": 20, "downs": true, "status": "downed", "bleedout": 1, "at": [5, 5] },
+    { "id": "Mira", "side": "party", "at": [5, 4], "abilities": ["mend"] }
+  ],
+  "plans": {
+    "Mira": ["ability mend Hero"]
+  },
+  "dice": [3],                           // d6 = 3, +2 = 5
+  "expect": {
+    "hp": { "Hero": 5 },
+    "status": { "Hero": "standing" },
+    "bleedout": { "Hero": 0 },
+    "defeated": [],
+    "revived": ["Hero"],
+    "heals": [ { "tick": 1, "id": "Mira", "target": "Hero", "amount": 5, "revived": true } ]
+  }
+}

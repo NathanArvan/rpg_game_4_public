@@ -49,7 +49,7 @@ public class CombatProfileCatalogTests : IDisposable
                 bruiser.RangedAccuracy, bruiser.Dodge, DamageDie.Parse(bruiser.BaseDamage), bruiser.MaxAp),
             rules with { Abilities = [] });
         // The loadout (3B.3) is copied in full and reaches the rules engine.
-        Assert.Equal(["power_strike"], rules.Abilities.Select(a => a.Id));
+        Assert.Equal(["power_strike", "cleave"], rules.Abilities.Select(a => a.Id));
         Assert.NotSame(snapshot, bruiser.Snapshot());
         Assert.NotSame(snapshot.Abilities![0], bruiser.Snapshot().Abilities![0]);
     }
