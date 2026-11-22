@@ -2,7 +2,7 @@
 
 > **Purpose:** Planned improvements to the test suite, so it keeps up with the detail abilities are adding and with the next slices (3B.4 conditions, 3B.6 reactions, 3M maps, 3C hidden information). Hand an item to Claude Code alongside `CLAUDE.md`. Each item says what's wrong today, what to build, when it should land relative to the roadmap, and how to know it's done.
 >
-> **Status (2026-11-22):** items 1–6 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders; shared client/server plan-validation cases; seeded dice for E2E). Item 7 is open.
+> **Status (2026-11-22):** all seven items are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders; shared client/server plan-validation cases; seeded dice for E2E; a `game-hub.service` spec).
 
 ---
 
@@ -13,7 +13,7 @@
 | Rules: unit tests + JSON scenarios | ~196 tests, 50 scenarios | ~1 s | Exact dice, readable failures, scenarios without C# | (fixed by items 1–2: several rounds, repeated ability blocks, new checks needing C#) |
 | Api services (xUnit + Moq + EF InMemory) | ~222 tests | ~8 s | Characterization tests pin feed text, roll order and write order | Redis and the hub are mocked (covered by the integration layer) |
 | Api integration (Testcontainers Postgres + Redis, `WebApplicationFactory` + `HubConnection`) | 37 tests | ~5 s + ~20 s container start | Real Redis keys and formats, whole rounds over the wire with exact rolls, wire JSON vs the client's TS contracts | One user per test so far (no per-player assertions yet) |
-| Client unit tests (Karma) | ~183 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`); contract fixtures come from shared builders | `game-hub.service` has no spec |
+| Client unit tests (Karma) | ~271 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`), `game-hub.service` (broadcast timing); contract fixtures come from shared builders | |
 | E2E (Playwright) | 9 tests | ~1.5 min local, ~3.5 min CI | Proves the stack works together; exact outcomes with seeded dice | Tied to preset layouts, awkward to run locally |
 
 Item 3 closed most of the gap between the mocked service tests and E2E (real Redis code, the hub, JSON on the wire). Items 6 and 7 close the rest.
@@ -69,19 +69,22 @@ A new plan rule is a row (or a few) in the table, plus the rule on each side.
 - **Cold-start race (found on the way).** Quick Battle's `EncounterStarted` arrives before `StartQuickBattle` returns the join code. A fast first click could plan with an empty join code (or, on Restart, the previous battle's), and the server rejected it. The lobby now shows combat only once the join code is known, and starting a battle clears the old session first.
 - **Test.** `e2e/tests/seeded-dice.spec.ts` plays the Abilities preset's Cleave + Mend round and asserts exact feed lines and HP (Goblin 2 10 → 5, Ogre 28 → 21, Scout 5 → 10, Bruiser 13/24). It passed every run, including the first one after an API restart.
 
----
+### 7. `game-hub.service` spec ✅
 
-## Open
-
-### 7. `game-hub.service` spec
-
-**Problem.** The service that wires SignalR events into NGXS has no spec. Its most delicate part is the list of events held back during playback (`PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `CombatantDefeated`, `EncounterEnded`, `MonsterAdded`). The 3B.3 sprint doc names it as a risk: a new broadcast that isn't held shows up before its playback finishes.
-
-**Build.** A spec with a fake `HubConnection` (capture the `on(...)` handlers): each event dispatches the right action; held events wait while `ResolutionPlaybackService.playing()` is true and replay in order afterwards; `ResolutionCompleted` goes to playback.
-
-**When.** Before 3B.6 (reactions may add broadcasts) and before 3C.
-
-**Done when.** Adding a broadcast without deciding whether it's held fails a spec.
+- **Timing table.** `game-hub.service.ts` now declares when each broadcast takes effect in `BROADCAST_TIMING`, a `Record` over every `HubEvents.Events` name:
+  - `now`: presence, `EncounterStarted`, `ActionRejected`;
+  - `after_playback`: `PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `CombatantDefeated`, `EncounterEnded`, `MonsterAdded`;
+  - `starts_playback`: `ResolutionCompleted`.
+  
+  Every handler goes through one `on(event, apply)` that follows the table.
+- **Seam.** The connection comes from a `HUB_CONNECTION_FACTORY` injection token, so the spec can give the service a fake one.
+- **`game-hub.service.spec.ts`:**
+  - pins the timing table;
+  - checks a handler is registered for every broadcast;
+  - checks each broadcast dispatches the right actions;
+  - checks that, during a real `ResolutionPlaybackService` playback (`fakeAsync`), held broadcasts wait and replay in arrival order, a second resolution queues behind the first, and presence and rejections apply at once;
+  - checks every hub method invokes the right server method with the right arguments.
+- **Checked:** adding a broadcast to the generated contracts without deciding its timing fails to compile (service and spec). Listing it without a handler fails the spec.
 
 ---
 
@@ -90,9 +93,8 @@ A new plan rule is a row (or a few) in the table, plus the rule on each side.
 - **Coverage percentage targets.** None of the gaps above would show up as low coverage; they're about real infrastructure and cross-boundary agreement.
 - **More E2E tests by default.** Prefer the integration tests (item 3) for exact outcomes; when it has to be E2E, seeded dice (item 6) make them exact; keep E2E as the smoke test of each slice.
 
-## Suggested order
+## Still to do
 
 | When | Items |
 |---|---|
-| Before 3B.6 | 7 (hub service spec) |
 | Before 3C | per-player assertions on the item 3 hub harness |
