@@ -2,21 +2,18 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy solution and project files first (layer-cache friendly restore)
-COPY RpgGame.sln global.json ./
+# Copy the API's project files first (layer-cache friendly restore). Only the API and the
+# projects it references are restored and copied: test projects aren't part of the image.
+COPY global.json ./
 COPY src/RpgGame.Api/RpgGame.Api.csproj             src/RpgGame.Api/
 COPY src/RpgGame.Domain/RpgGame.Domain.csproj        src/RpgGame.Domain/
 COPY src/RpgGame.Infrastructure/RpgGame.Infrastructure.csproj src/RpgGame.Infrastructure/
 COPY src/RpgGame.Rules/RpgGame.Rules.csproj          src/RpgGame.Rules/
-COPY tests/RpgGame.Api.Tests/RpgGame.Api.Tests.csproj tests/RpgGame.Api.Tests/
-COPY tests/RpgGame.Rules.Tests/RpgGame.Rules.Tests.csproj tests/RpgGame.Rules.Tests/
-COPY tests/RpgGame.Api.IntegrationTests/RpgGame.Api.IntegrationTests.csproj tests/RpgGame.Api.IntegrationTests/
 
-RUN dotnet restore
+RUN dotnet restore src/RpgGame.Api/RpgGame.Api.csproj
 
 # Copy source and publish
 COPY src/ src/
-COPY tests/ tests/
 RUN dotnet publish src/RpgGame.Api/RpgGame.Api.csproj \
     -c Release -o /app/publish
 
