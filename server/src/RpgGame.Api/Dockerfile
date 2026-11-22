@@ -10,6 +10,7 @@ COPY src/RpgGame.Infrastructure/RpgGame.Infrastructure.csproj src/RpgGame.Infras
 COPY src/RpgGame.Rules/RpgGame.Rules.csproj          src/RpgGame.Rules/
 COPY tests/RpgGame.Api.Tests/RpgGame.Api.Tests.csproj tests/RpgGame.Api.Tests/
 COPY tests/RpgGame.Rules.Tests/RpgGame.Rules.Tests.csproj tests/RpgGame.Rules.Tests/
+COPY tests/RpgGame.Api.IntegrationTests/RpgGame.Api.IntegrationTests.csproj tests/RpgGame.Api.IntegrationTests/
 
 RUN dotnet restore
 
