@@ -1,22 +1,16 @@
 import { MovementResult } from '../../contracts/hub-contracts.generated';
+import { makeMove } from '../../testing/builders';
 import { movementFeedText } from './playback-timeline';
 
 describe('movementFeedText', () => {
-  const base: MovementResult = {
-    combatantId: 'a',
-    combatantName: 'Goblin',
-    path: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
-    finalPosition: { x: 1, y: 0 },
-    wasBlocked: false,
-    blockedByCombatantId: null, abilityId: null,
-  };
+  const base: MovementResult = makeMove({ combatantId: 'a', combatantName: 'Goblin', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] });
 
   it('describes a normal move', () => {
     expect(movementFeedText(base)).toBe('Goblin moves to (1, 0)');
   });
 
   it('marks a blocked move', () => {
-    expect(movementFeedText({ ...base, path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'b', abilityId: null }))
+    expect(movementFeedText({ ...base, path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'b' }))
       .toBe('Goblin moves to (0, 0) (blocked)');
   });
 

@@ -9,35 +9,33 @@ import { FeedState } from '../../../state/feed/feed.state';
 import { ClearEncounter, PlanningPhaseStarted } from '../../../state/encounter/encounter.actions';
 import { MapInitialized } from '../../../state/map/map.actions';
 import { AttackResult, PlanningCombatantDto, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
+import { makeAttack, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeTick } from '../../../testing/builders';
 
 describe('RoundTimelineComponent', () => {
   let fixture: ComponentFixture<RoundTimelineComponent>;
   let playback: ResolutionPlaybackService;
   let store: Store;
 
-  const row = (id: string): PlanningCombatantDto =>
-    ({ id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false, combatantType: 'player', isAiControlled: false,
-       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {} });
+  const row = (id: string): PlanningCombatantDto => makePlanningCombatant({ id });
 
-  const hit = (attackerId: string, targetId: string, d20: number): AttackResult => ({
-    attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit: true, damage: 2,
-    targetNewHp: 8, targetDefeated: false, wasted: false, feedText: `${attackerId} hits ${targetId}`,
-    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
+  const hit = (attackerId: string, targetId: string, d20: number): AttackResult => makeAttack({
+    attackerId, targetId, hit: true, damage: 2, targetNewHp: 8, feedText: `${attackerId} hits ${targetId}`,
+    roll: { d20, accuracy: 1, targetDodge: 10 },
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.
-  const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null, abilityId: null, targetCombatantIds: null });
-  const resolution: ResolutionPayload = {
-    newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [], revivedCombatantIds: [],
+  const melee = (target: string) => makeQueuedAction({ type: 'melee_attack', apCost: 2, targetCombatantId: target });
+  const resolution: ResolutionPayload = makePayload({
+    newRoundNumber: 3,
     queues: [
-      { combatantId: 'goblin', combatantName: 'goblin', maxAp: 4, actions: [melee('hero'), melee('hero')] },
-      { combatantId: 'hero', combatantName: 'hero', maxAp: 4, actions: [melee('goblin'), melee('goblin')] },
+      makeQueue({ combatantId: 'goblin', actions: [melee('hero'), melee('hero')] }),
+      makeQueue({ combatantId: 'hero', actions: [melee('goblin'), melee('goblin')] }),
     ],
     ticks: [
-      { tickIndex: 0, movements: [], attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)], effects: [], abilityUses: [], heals: [] },
-      { tickIndex: 1, movements: [], attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)], effects: [], abilityUses: [], heals: [] },
+      makeTick({ tickIndex: 0, attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)] }),
+      makeTick({ tickIndex: 1, attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)] }),
     ],
-  };
+  });
 
   const el = () => fixture.nativeElement as HTMLElement;
   const text = (selector: string) => Array.from(el().querySelectorAll(selector)).map(e => e.textContent!.trim());

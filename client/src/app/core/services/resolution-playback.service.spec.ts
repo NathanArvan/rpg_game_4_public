@@ -8,37 +8,29 @@ import { FeedState } from '../../state/feed/feed.state';
 import { ClearEncounter, PlanningPhaseStarted } from '../../state/encounter/encounter.actions';
 import { MapInitialized } from '../../state/map/map.actions';
 import { PlanningCombatantDto, ResolutionPayload } from '../../contracts/hub-contracts.generated';
+import { makeAttack, makeMove, makePayload, makePlanningCombatant, makeTick } from '../../testing/builders';
 
 describe('ResolutionPlaybackService', () => {
   let playback: ResolutionPlaybackService;
   let store: Store;
 
-  const row = (id: string, currentHp = 10): PlanningCombatantDto =>
-    ({ id, userId: 'me', characterName: id, currentHp, maxHp: 10, isDefeated: false, combatantType: 'player', isAiControlled: false,
-       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {} });
+  const row = (id: string, currentHp = 10): PlanningCombatantDto => makePlanningCombatant({ id, currentHp });
 
   // Hero walks one cell and then strikes; the Goblin stands still and strikes back (and dies in tick 2).
-  const resolution: ResolutionPayload = {
-    newRoundNumber: 2,
+  const resolution: ResolutionPayload = makePayload({
     defeatedCombatantIds: ['goblin'],
-    updatedCombatants: [],
-    endOfRound: [], revivedCombatantIds: [],
-    queues: [],
     ticks: [
-      {
+      makeTick({
         tickIndex: 0,
-        movements: [{ combatantId: 'hero', combatantName: 'hero', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null }],
-        attacks: [{ attackerId: 'goblin', attackerName: 'goblin', targetId: 'hero', targetName: 'hero', attackType: 'melee_attack', hit: true, damage: 3, targetNewHp: 7, targetDefeated: false, wasted: false, feedText: 'goblin hits hero', roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0 }],
-        effects: [], abilityUses: [], heals: [],
-      },
-      {
+        movements: [makeMove({ combatantId: 'hero', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] })],
+        attacks: [makeAttack({ attackerId: 'goblin', targetId: 'hero', hit: true, damage: 3, targetNewHp: 7, feedText: 'goblin hits hero' })],
+      }),
+      makeTick({
         tickIndex: 1,
-        movements: [],
-        attacks: [{ attackerId: 'hero', attackerName: 'hero', targetId: 'goblin', targetName: 'goblin', attackType: 'melee_attack', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, wasted: false, feedText: 'hero kills goblin', roll: null, wastedReason: null, targetStatus: 'dead', finishingBlow: false, abilityId: null, moveBonus: 0 }],
-        effects: [], abilityUses: [], heals: [],
-      },
+        attacks: [makeAttack({ attackerId: 'hero', targetId: 'goblin', hit: true, damage: 10, targetNewHp: 0, targetDefeated: true, targetStatus: 'dead', feedText: 'hero kills goblin' })],
+      }),
     ],
-  };
+  });
 
   const T = PLAYBACK_TIMING;
   const heroOf = () => store.selectSnapshot(EncounterState.combatants).find(c => c.id === 'hero')!;

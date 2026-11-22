@@ -4,6 +4,7 @@ import {
   abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
   abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue,
 } from './plan-queue';
+import { makeAbility } from '../../testing/builders';
 
 const move = (x: number, y: number): PlannedActionEntry => entry('move', { targetCell: { x, y } });
 const melee = (id: string): PlannedActionEntry => entry('melee_attack', { targetCombatantId: id });
@@ -11,10 +12,7 @@ const defend: PlannedActionEntry = entry('defend');
 const ability = (abilityId: string, target: string): PlannedActionEntry =>
   entry('ability', { abilityId, targetCombatantId: target });
 
-const powerStrike: AbilityDto = {
-  id: 'power_strike', name: 'Power Strike', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-  targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-};
+const powerStrike: AbilityDto = makeAbility({ id: 'power_strike', name: 'Power Strike', apCost: 3, cooldown: 2, tags: ['melee'] });
 const jab: AbilityDto = { ...powerStrike, id: 'jab', name: 'Jab', apCost: 1, cooldown: 0 };
 
 describe('plan-queue', () => {
@@ -100,14 +98,9 @@ describe('plan-queue', () => {
 });
 
 describe('multi-target abilities (3B.3)', () => {
-  const twin: AbilityDto = {
-    id: 'twin_shot', name: 'Twin Shot', description: '', apCost: 3, cooldown: 1, tags: [],
-    targeting: { kind: 'combatants', filter: 'enemy', range: 8, count: 2, includeSelf: false }, move: null,
-  };
-  const cleave: AbilityDto = {
-    id: 'cleave', name: 'Cleave', description: '', apCost: 3, cooldown: 2, tags: [],
-    targeting: { kind: 'auto', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-  };
+  const twin: AbilityDto = makeAbility({ id: 'twin_shot', name: 'Twin Shot', apCost: 3, cooldown: 1,
+    targeting: { kind: 'combatants', range: 8, count: 2 } });
+  const cleave: AbilityDto = makeAbility({ id: 'cleave', name: 'Cleave', apCost: 3, cooldown: 2, targeting: { kind: 'auto' } });
   const many = (abilityId: string, ...ids: string[]) => entry('ability', { abilityId, targetCombatantIds: ids });
 
   it('mirrors the server: 1..count distinct picked targets for "combatants", none for "auto"', () => {
@@ -131,16 +124,10 @@ describe('multi-target abilities (3B.3)', () => {
     expect(describeQueue([entry('ability', { abilityId: 'cleave' })], id => names[id], () => 'Cleave')).toBe('Cleave');
   });
   describe('movement abilities (3B.3)', () => {
-    const dash: AbilityDto = {
-      id: 'dash', name: 'Dash', description: '', apCost: 1, cooldown: 2, tags: ['movement'],
-      targeting: { kind: 'self', filter: 'ally', range: 0, count: null, includeSelf: false },
-      move: { to: 'cell', maxCells: 3, usesMovementBudget: false },
-    };
-    const charge: AbilityDto = {
-      id: 'charge', name: 'Charge', description: '', apCost: 3, cooldown: 2, tags: ['melee'],
-      targeting: { kind: 'combatant', filter: 'enemy', range: 6, count: null, includeSelf: false },
-      move: { to: 'target', maxCells: 6, usesMovementBudget: true },
-    };
+    const dash: AbilityDto = makeAbility({ id: 'dash', name: 'Dash', apCost: 1, cooldown: 2, tags: ['movement'],
+      targeting: { kind: 'self', filter: 'ally', range: 0 }, move: { to: 'cell', maxCells: 3, usesMovementBudget: false } });
+    const charge: AbilityDto = makeAbility({ id: 'charge', name: 'Charge', apCost: 3, cooldown: 2, tags: ['melee'],
+      targeting: { range: 6 }, move: { to: 'target', maxCells: 6, usesMovementBudget: true } });
     const dashTo = (x: number, y: number) => entry('ability', { abilityId: 'dash', targetCell: { x, y } });
 
     it('moves the planner with Dash without using the movement budget', () => {

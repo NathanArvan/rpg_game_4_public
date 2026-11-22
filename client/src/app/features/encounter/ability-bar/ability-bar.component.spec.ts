@@ -4,24 +4,20 @@ import { AbilityBarComponent } from './ability-bar.component';
 import { AbilityDto } from '../../../contracts/hub-contracts.generated';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { entry } from '../../../state/encounter/plan-queue';
+import { makeAbility, makeCombatant } from '../../../testing/builders';
 
 describe('AbilityBarComponent', () => {
   let component: AbilityBarComponent;
   let fixture: ComponentFixture<AbilityBarComponent>;
 
-  const powerStrike: AbilityDto = {
+  const powerStrike: AbilityDto = makeAbility({
     id: 'power_strike', name: 'Power Strike', description: 'A heavy blow.', apCost: 3, cooldown: 2, tags: ['melee'],
-    targeting: { kind: 'combatant', filter: 'enemy', range: 1, count: null, includeSelf: false }, move: null,
-  };
-  const firebolt: AbilityDto = {
-    ...powerStrike, id: 'firebolt', name: 'Firebolt', cooldown: 1,
-    targeting: { ...powerStrike.targeting, range: 8 }, move: null,
-  };
-  const hero = (cooldowns: Record<string, number> = {}): Combatant => ({
-    id: 'h', userId: 'me', characterId: '', characterName: 'Hero', currentHp: 10, maxHp: 10, isDefeated: false,
-    status: 'standing', bleedoutRoundsLeft: 0, combatantType: 'player', isAiControlled: false, profileName: '',
-    movementRange: 6, maxAp: 4, abilities: [powerStrike, firebolt], cooldowns,
   });
+  const firebolt: AbilityDto = makeAbility({
+    id: 'firebolt', name: 'Firebolt', description: 'A heavy blow.', apCost: 3, cooldown: 1, tags: ['melee'], targeting: { range: 8 },
+  });
+  const hero = (cooldowns: Record<string, number> = {}): Combatant =>
+    makeCombatant({ id: 'h', characterName: 'Hero', abilities: [powerStrike, firebolt], cooldowns });
 
   const buttons = () => Array.from(fixture.nativeElement.querySelectorAll('.ability-btn')) as HTMLButtonElement[];
 

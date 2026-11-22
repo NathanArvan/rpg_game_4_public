@@ -2,7 +2,7 @@
 
 > **Purpose:** Planned improvements to the test suite, so it keeps up with the detail abilities are adding and with the next slices (3B.4 conditions, 3B.6 reactions, 3M maps, 3C hidden information). Hand an item to Claude Code alongside `CLAUDE.md`. Each item says what's wrong today, what to build, when it should land relative to the roadmap, and how to know it's done.
 >
-> **Status (2026-11-22):** items 1–3 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests). Items 4–7 are open.
+> **Status (2026-11-22):** items 1–4 are done (multi-round scenarios, shared ability library and the event log; real-Redis and hub integration tests; client test-data builders). Items 5–7 are open.
 
 ---
 
@@ -13,7 +13,7 @@
 | Rules: unit tests + JSON scenarios | ~196 tests, 50 scenarios | ~1 s | Exact dice, readable failures, scenarios without C# | (fixed by items 1–2: several rounds, repeated ability blocks, new checks needing C#) |
 | Api services (xUnit + Moq + EF InMemory) | ~222 tests | ~8 s | Characterization tests pin feed text, roll order and write order | Redis and the hub are mocked (covered by the integration layer) |
 | Api integration (Testcontainers Postgres + Redis, `WebApplicationFactory` + `HubConnection`) | 37 tests | ~5 s + ~20 s container start | Real Redis keys and formats, whole rounds over the wire with exact rolls, wire JSON vs the client's TS contracts | One user per test so far (no per-player assertions yet) |
-| Client unit tests (Karma) | ~164 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`) | `game-hub.service` has no spec; hand-written fixtures break when a contract grows |
+| Client unit tests (Karma) | ~183 specs | ~40 s with compile | Pure modules (`plan-queue`, `playback-timeline`, `round-lanes`, `feed-format`); contract fixtures come from shared builders | `game-hub.service` has no spec |
 | E2E (Playwright) | 7 tests | ~1.3 min local, ~3.5 min CI | Proves the stack works together | Random dice, tied to preset layouts, awkward to run locally |
 
 Item 3 closed most of the gap between the mocked service tests and E2E (real Redis code, the hub, JSON on the wire). Items 6 and 7 close the rest.
@@ -42,19 +42,13 @@ A scenario can list `"rounds"`, each with its own `plans`, `dice` and `expect`; 
 
 For 3C, add a second `HubClient` in the same session and assert what each one receives.
 
+### 4. Client test-data builders ✅
+
+`client/src/app/testing/builders.ts`: `makePayload`, `makeTick`, `makeMove`, `makeAttack`, `makeHeal`, `makeEffect`, `makeAbilityUse`, `makeBleedout`, `makeQueue`, `makeQueuedAction`, `makePlanningCombatant`, `makeCombatantDto`, `makeCombatant` (the NGXS model), `makeAbility` / `makeTargeting`. Each returns a complete object with neutral defaults (names default to ids) and takes `Partial<T>` overrides. Every spec that built resolution payloads, combatants or abilities by hand now uses them (spec-local helpers such as `attack(a, b, hit)` stay, built on the shared builders), and so does the `/preview` sandbox's mock data. Checked by adding a required field to `AttackResult` and `PlanningCombatantDto`: the only compile errors were in `builders.ts`, for both the spec and app builds.
+
 ---
 
 ## Open
-
-### 4. Client test-data builders
-
-**Problem.** Specs build `ResolutionPayload`, `TickResult`, `AttackResult` and `CombatantQueueDto` as hand-written object literals. 3B.3 PR 2 added two fields and broke 7 files, fixed with a regex. Every slice that grows the contract (conditions, push, reactions, per-player payloads) will do it again.
-
-**Build.** One `client/src/app/testing/builders.ts` with `makePayload`, `makeTick`, `makeAttack`, `makeHeal`, `makeQueue`, `makeCombatant`, `makeAbility` (defaults + `Partial<T>` overrides). Move the copies in `playback-timeline.spec`, `round-lanes.spec`, `round-timeline.component.spec`, `resolution-playback.service.spec`, `grid.component.spec` and `encounter.state.spec` onto it. The preview component's mock data can use it too.
-
-**When.** The next PR that changes a hub contract (3B.3 PR 3 adds `MovementOutcome.AbilityId`). Small; can ride along.
-
-**Done when.** Adding a required field to a resolution contract means editing one builder.
 
 ### 5. Shared plan-validation cases (client ⇄ server)
 
@@ -97,6 +91,6 @@ For 3C, add a second `HubClient` in the same session and assert what each one re
 
 | When | Items |
 |---|---|
-| With 3B.3 PR 3 | 4 (builders), 5 (shared plan cases) |
+| Next | 5 (shared plan cases) |
 | Before 3B.6 | 7 (hub service spec) |
 | Before 3C | 6 (seeded dice); per-player assertions on the item 3 hub harness |

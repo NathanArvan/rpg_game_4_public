@@ -1,28 +1,29 @@
-import { AttackResult, CombatantQueueDto, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, CombatantQueueDto, HealResult, MovementResult, QueuedActionDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
+import {
+  makeAbilityUse, makeAttack, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeTick,
+} from '../../../testing/builders';
 import { buildLanes } from './round-lanes';
 
-const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): CombatantQueueDto => ({
-  combatantId: id, combatantName: id, maxAp,
-  actions: actions.map(([type, apCost, target]) => ({
+const q = (id: string, maxAp: number, ...actions: [string, number, string?][]): CombatantQueueDto => makeQueue({
+  combatantId: id, maxAp,
+  actions: actions.map(([type, apCost, target]) => makeQueuedAction({
     type, apCost,
     targetCombatantId: type.endsWith('attack') || type === 'stabilize' ? target ?? null : null,
     targetCell: type === 'move' ? { x: 1, y: 0 } : null,
-    abilityId: null,
-    targetCombatantIds: null,
   })),
 });
 
-const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => ({
-  attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
-  hit: true, damage: 4, targetNewHp: 6, targetDefeated: false, wasted: false, feedText: '',
-  roll: { d20: 13, accuracy: 3, targetDodge: 12 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0, ...extra,
+/** A queue of one ability. */
+const abilityQueue = (id: string, maxAp: number, apCost: number, abilityId: string, extra: Partial<QueuedActionDto> = {}): CombatantQueueDto =>
+  makeQueue({ combatantId: id, maxAp, actions: [makeQueuedAction({ type: 'ability', apCost, abilityId, ...extra })] });
+
+const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => makeAttack({
+  attackerId, targetId, hit: true, damage: 4, targetNewHp: 6, roll: { d20: 13, accuracy: 3, targetDodge: 12 }, ...extra,
 });
 
-const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], ...parts });
+const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult => makeTick({ tickIndex, ...parts });
 
-const payload = (queues: CombatantQueueDto[], ...ticks: TickResult[]): ResolutionPayload =>
-  ({ queues, ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [], revivedCombatantIds: [] });
+const payload = (queues: CombatantQueueDto[], ...ticks: TickResult[]): ResolutionPayload => makePayload({ queues, ticks });
 
 describe('buildLanes', () => {
   it('puts action i of every queue in column i: both first attacks, then both second attacks', () => {
@@ -48,7 +49,7 @@ describe('buildLanes', () => {
     const lanes = buildLanes(payload(
       [q('A', 4, ['move', 1], ['melee_attack', 2, 'B']), q('B', 4, ['melee_attack', 2, 'A'], ['melee_attack', 2, 'A'])],
       tick(0, {
-        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], finalPosition: { x: 1, y: 0 }, wasBlocked: false, blockedByCombatantId: null, abilityId: null }],
+        movements: [makeMove({ combatantId: 'A', path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] })],
         attacks: [attack('B', 'A')],
       }),
       tick(1, { attacks: [attack('A', 'B'), attack('B', 'A')] }),
@@ -63,9 +64,9 @@ describe('buildLanes', () => {
     const lanes = buildLanes(payload(
       [q('A', 4, ['move', 1]), q('B', 4, ['melee_attack', 2, 'C']), q('C', 4, ['defend', 1])],
       tick(0, {
-        movements: [{ combatantId: 'A', combatantName: 'A', path: [{ x: 0, y: 0 }], finalPosition: { x: 0, y: 0 }, wasBlocked: true, blockedByCombatantId: 'C', abilityId: null }],
+        movements: [makeMove({ combatantId: 'A', path: [{ x: 0, y: 0 }], wasBlocked: true, blockedByCombatantId: 'C' })],
         attacks: [attack('B', 'C', { wasted: true, hit: false, roll: null, wastedReason: 'out_of_melee_reach' })],
-        effects: [{ combatantId: 'C', effectType: 'defend', description: '', targetCombatantId: null, wastedReason: null }],
+        effects: [makeEffect({ combatantId: 'C', effectType: 'defend' })],
       }),
     ));
 
@@ -96,14 +97,13 @@ describe('buildLanes', () => {
 
   it('shows stabilizes, saved or wasted (3B.5)', () => {
     // A and B have no queue (downed combatants can't plan): their names come from the end-of-round rows.
-    const row = (id: string) => ({ id, userId: '', characterName: id, currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
-      isAiControlled: false, profileId: '', profileName: '', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 1, abilities: [], cooldowns: {} });
+    const row = (id: string) => makePlanningCombatant({ id, currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 1 });
     const lanes = buildLanes({
       ...payload(
         [q('K', 4, ['stabilize', 2, 'A']), q('M', 4, ['stabilize', 2, 'B'])],
         tick(0, { effects: [
-          { combatantId: 'K', effectType: 'stabilize', description: '', targetCombatantId: 'A', wastedReason: null },
-          { combatantId: 'M', effectType: 'stabilize', description: '', targetCombatantId: 'B', wastedReason: 'target_not_downed' },
+          makeEffect({ combatantId: 'K', effectType: 'stabilize', targetCombatantId: 'A' }),
+          makeEffect({ combatantId: 'M', effectType: 'stabilize', targetCombatantId: 'B', wastedReason: 'target_not_downed' }),
         ] }),
       ),
       updatedCombatants: [row('A'), row('B')],
@@ -115,11 +115,8 @@ describe('buildLanes', () => {
   });
 
   it('names ability slots and reports their attacks (3B.3)', () => {
-    const queue: CombatantQueueDto = { combatantId: 'B', combatantName: 'B', maxAp: 4, actions: [
-      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'power_strike', targetCombatantIds: null },
-    ] };
-    const use = { combatantId: 'B', combatantName: 'B', abilityId: 'power_strike', abilityName: 'Power Strike',
-      targetIds: ['G'], wastedReason: null, feedText: '' };
+    const queue = abilityQueue('B', 4, 3, 'power_strike', { targetCombatantId: 'G' });
+    const use = makeAbilityUse({ combatantId: 'B', abilityId: 'power_strike', abilityName: 'Power Strike', targetIds: ['G'] });
     const [lane] = buildLanes(payload([queue],
       tick(0, { attacks: [attack('B', 'G', { abilityId: 'power_strike', damage: 9 })], abilityUses: [use] })));
     const s0 = lane.slots[0];
@@ -130,21 +127,16 @@ describe('buildLanes', () => {
 
 describe('buildLanes: multi-target & heals (3B.3)', () => {
   const use = (abilityId: string, abilityName: string, wastedReason: string | null = null) =>
-    ({ combatantId: 'M', combatantName: 'M', abilityId, abilityName, targetIds: [], wastedReason, feedText: '' });
+    makeAbilityUse({ combatantId: 'M', abilityId, abilityName, wastedReason });
 
   it('reports a heal and names every picked target', () => {
-    const queue: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
-      { type: 'ability', apCost: 2, targetCombatantId: 'H', targetCell: null, abilityId: 'mend', targetCombatantIds: null },
-    ] };
-    const heal: HealResult = { healerId: 'M', healerName: 'M', targetId: 'H', targetName: 'H', abilityId: 'mend', amount: 6,
-      targetNewHp: 6, revived: true, targetStatus: 'standing', wastedReason: null, feedText: '' };
+    const queue = abilityQueue('M', 4, 2, 'mend', { targetCombatantId: 'H' });
+    const heal: HealResult = makeHeal({ healerId: 'M', targetId: 'H', amount: 6, targetNewHp: 6, revived: true });
     const [lane] = buildLanes(payload([queue], tick(0, { abilityUses: [use('mend', 'Mend')], heals: [heal] })));
     expect([lane.slots[0].outcome, lane.slots[0].label]).toEqual(['healed', 'Mend on H (2 AP)']);
     expect(lane.slots[0].detail).toBe('Mend: M → H: healed 6 (H now 6 HP, back on their feet).');
 
-    const twin: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
-      { type: 'ability', apCost: 3, targetCombatantId: null, targetCell: null, abilityId: 'twin_shot', targetCombatantIds: ['A', 'B'] },
-    ] };
+    const twin = abilityQueue('M', 4, 3, 'twin_shot', { targetCombatantIds: ['A', 'B'] });
     const [lane2] = buildLanes(payload([twin], tick(0, { abilityUses: [use('twin_shot', 'Twin Shot')], attacks: [
       attack('M', 'A', { abilityId: 'twin_shot' }), attack('M', 'B', { abilityId: 'twin_shot', hit: false }),
     ] })));
@@ -152,27 +144,19 @@ describe('buildLanes: multi-target & heals (3B.3)', () => {
   });
 
   it('says so when an auto ability found nobody', () => {
-    const queue: CombatantQueueDto = { combatantId: 'M', combatantName: 'M', maxAp: 4, actions: [
-      { type: 'ability', apCost: 3, targetCombatantId: null, targetCell: null, abilityId: 'cleave', targetCombatantIds: null },
-    ] };
+    const queue = abilityQueue('M', 4, 3, 'cleave');
     const [lane] = buildLanes(payload([queue], tick(0, { abilityUses: [use('cleave', 'Cleave', 'no_targets')] })));
     expect([lane.slots[0].outcome, lane.slots[0].detail]).toEqual(['wasted', "M uses Cleave, but there's nobody in reach."]);
   });
 });
 
 describe('buildLanes: movement abilities (3B.3)', () => {
-  const run = (abilityId: string, path: [number, number][], extra: Partial<MovementResult> = {}): MovementResult => ({
-    combatantId: 'K', combatantName: 'K', path: path.map(([x, y]) => ({ x, y })),
-    finalPosition: { x: path[path.length - 1][0], y: path[path.length - 1][1] }, wasBlocked: false, blockedByCombatantId: null,
-    abilityId, ...extra,
-  });
-  const use = (abilityId: string, abilityName: string) =>
-    ({ combatantId: 'K', combatantName: 'K', abilityId, abilityName, targetIds: [], wastedReason: null, feedText: '' });
+  const run = (abilityId: string, path: [number, number][], extra: Partial<MovementResult> = {}): MovementResult =>
+    makeMove({ combatantId: 'K', path: path.map(([x, y]) => ({ x, y })), abilityId, ...extra });
+  const use = (abilityId: string, abilityName: string) => makeAbilityUse({ combatantId: 'K', abilityId, abilityName });
 
   it('labels a Dash with its cell and reports the move', () => {
-    const queue: CombatantQueueDto = { combatantId: 'K', combatantName: 'K', maxAp: 5, actions: [
-      { type: 'ability', apCost: 1, targetCombatantId: null, targetCell: { x: 3, y: 0 }, abilityId: 'dash', targetCombatantIds: null },
-    ] };
+    const queue = abilityQueue('K', 5, 1, 'dash', { targetCell: { x: 3, y: 0 } });
     const [lane] = buildLanes(payload([queue],
       tick(0, { movements: [run('dash', [[0, 0], [1, 0], [2, 0], [3, 0]])], abilityUses: [use('dash', 'Dash')] })));
     const s0 = lane.slots[0];
@@ -181,12 +165,10 @@ describe('buildLanes: movement abilities (3B.3)', () => {
   });
 
   it('reports a Charge run before its strike, with the move bonus', () => {
-    const queue: CombatantQueueDto = { combatantId: 'K', combatantName: 'K', maxAp: 5, actions: [
-      { type: 'ability', apCost: 3, targetCombatantId: 'G', targetCell: null, abilityId: 'charge', targetCombatantIds: null },
-    ] };
+    const queue = abilityQueue('K', 5, 3, 'charge', { targetCombatantId: 'G' });
     const [lane] = buildLanes(payload([queue], tick(0, {
       movements: [run('charge', [[5, 9], [5, 8], [5, 7], [5, 6]])],
-      attacks: [{ ...attack('K', 'G', { abilityId: 'charge', damage: 7, moveBonus: 3 }), targetNewHp: 13 }],
+      attacks: [attack('K', 'G', { abilityId: 'charge', damage: 7, moveBonus: 3, targetNewHp: 13 })],
       abilityUses: [use('charge', 'Charge')],
     })));
     expect(lane.slots[0].detail).toBe(

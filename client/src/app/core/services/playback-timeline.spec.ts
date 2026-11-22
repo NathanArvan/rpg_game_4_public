@@ -1,21 +1,18 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import {
+  makeAbilityUse, makeAttack, makeBleedout, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeTick,
+} from '../../testing/builders';
 import { PLAYBACK_TIMING, buildTimeline, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
-const move = (id: string, path: [number, number][], wasBlocked = false): MovementResult => ({
-  combatantId: id, combatantName: id, path: path.map(([x, y]) => ({ x, y })),
-  finalPosition: { x: path[path.length - 1][0], y: path[path.length - 1][1] }, wasBlocked, blockedByCombatantId: null, abilityId: null,
-});
+const move = (id: string, path: [number, number][], wasBlocked = false): MovementResult =>
+  makeMove({ combatantId: id, path: path.map(([x, y]) => ({ x, y })), wasBlocked });
 
-const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult => ({
-  attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit, damage,
-  targetNewHp, targetDefeated: false, wasted: false, feedText: `${attackerId} → ${targetId}`, roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0, ...extra,
-});
+const attack = (attackerId: string, targetId: string, hit: boolean, damage = 0, targetNewHp = 10, extra: Partial<AttackResult> = {}): AttackResult =>
+  makeAttack({ attackerId, targetId, hit, damage, targetNewHp, feedText: `${attackerId} → ${targetId}`, ...extra });
 
-const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult =>
-  ({ tickIndex, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], ...parts });
+const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult => makeTick({ tickIndex, ...parts });
 
-const payload = (...ticks: TickResult[]): ResolutionPayload =>
-  ({ ticks, newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [] });
+const payload = (...ticks: TickResult[]): ResolutionPayload => makePayload({ ticks });
 
 describe('playback timeline', () => {
   describe('positions', () => {
@@ -102,8 +99,7 @@ describe('playback timeline', () => {
   });
 
   describe('bleedout (3B.5)', () => {
-    const downedRow = { id: 'hero', userId: 'me', characterName: 'hero', currentHp: 0, maxHp: 10, isDefeated: true, combatantType: 'player',
-      isAiControlled: false, profileId: 'p', profileName: 'P', movementRange: 6, maxAp: 4, status: 'downed', bleedoutRoundsLeft: 2, abilities: [], cooldowns: {} };
+    const downedRow = makePlanningCombatant({ id: 'hero', currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2 });
 
     it('shows a hero going down: damage, then DOWN with the rounds left', () => {
       const beats = buildTimeline({
@@ -118,16 +114,16 @@ describe('playback timeline', () => {
 
     it('labels a finishing blow instead of showing 0 damage', () => {
       const [beat] = buildTimeline(payload(tick(0, {
-        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true, abilityId: null, moveBonus: 0 })],
+        attacks: [attack('ogre', 'hero', true, 0, 0, { targetDefeated: true, targetStatus: 'dead', finishingBlow: true })],
       })));
       expect(beat.floats).toEqual([{ combatantId: 'hero', text: 'finished', kind: 'damage' }]);
     });
 
     it('plays stabilizes after the tick\'s attacks, with a teal aura on the saved ally', () => {
       const beats = buildTimeline(payload(tick(0, { effects: [
-        { combatantId: 'knight', effectType: 'stabilize', description: 'knight stabilizes hero', targetCombatantId: 'hero', wastedReason: null },
-        { combatantId: 'medic', effectType: 'stabilize', description: "medic's stabilize on x fails", targetCombatantId: 'x', wastedReason: 'out_of_melee_reach' },
-        { combatantId: 'scout', effectType: 'defend', description: 'scout holds position', targetCombatantId: null, wastedReason: null },
+        makeEffect({ combatantId: 'knight', effectType: 'stabilize', description: 'knight stabilizes hero', targetCombatantId: 'hero' }),
+        makeEffect({ combatantId: 'medic', effectType: 'stabilize', description: "medic's stabilize on x fails", targetCombatantId: 'x', wastedReason: 'out_of_melee_reach' }),
+        makeEffect({ combatantId: 'scout', effectType: 'defend', description: 'scout holds position' }),
       ] })));
       const effects = beats.find(b => b.phase === 'effects')!;
       expect(effects.statuses).toEqual({ hero: { status: 'stable', bleedoutRoundsLeft: 0 } });
@@ -143,8 +139,8 @@ describe('playback timeline', () => {
       const beats = buildTimeline({
         ...payload(tick(0)),
         endOfRound: [
-          { combatantId: 'a', combatantName: 'a', roundsLeft: 1, died: false, feedText: 'a is bleeding out — 1 round left' },
-          { combatantId: 'b', combatantName: 'b', roundsLeft: 0, died: true, feedText: 'b bleeds out' },
+          makeBleedout({ combatantId: 'a', roundsLeft: 1, feedText: 'a is bleeding out — 1 round left' }),
+          makeBleedout({ combatantId: 'b', roundsLeft: 0, died: true, feedText: 'b bleeds out' }),
         ],
       });
       const last = beats[beats.length - 1];
@@ -159,8 +155,8 @@ describe('playback timeline', () => {
   });
 
   it('floats the ability name over its user as its attack lands (3B.3)', () => {
-    const use = { combatantId: 'hero', combatantName: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
-      targetIds: ['ogre'], wastedReason: null, feedText: 'hero uses Power Strike on ogre' };
+    const use = makeAbilityUse({ combatantId: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
+      targetIds: ['ogre'], feedText: 'hero uses Power Strike on ogre' });
     const beats = buildTimeline(payload(tick(0, {
       attacks: [attack('hero', 'ogre', true, 9, 11, { abilityId: 'power_strike', feedText: "hero's Power Strike hits ogre" })],
       abilityUses: [use],
@@ -175,8 +171,8 @@ describe('playback timeline', () => {
   });
 
   it('shows a refused ability (on cooldown) with its own feed line and label (3B.3)', () => {
-    const use = { combatantId: 'hero', combatantName: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
-      targetIds: ['ogre'], wastedReason: 'on_cooldown', feedText: "hero can't use Power Strike — still on cooldown" };
+    const use = makeAbilityUse({ combatantId: 'hero', abilityId: 'power_strike', abilityName: 'Power Strike',
+      targetIds: ['ogre'], wastedReason: 'on_cooldown', feedText: "hero can't use Power Strike — still on cooldown" });
     const beats = buildTimeline(payload(tick(0, { abilityUses: [use] })));
     expect(beats[0].floats).toEqual([{ combatantId: 'hero', text: 'on cooldown', kind: 'wasted' }]);
     expect(beats[0].feed).toContain("hero can't use Power Strike — still on cooldown");
@@ -185,7 +181,7 @@ describe('playback timeline', () => {
 
 describe('playback timeline: movement abilities (3B.3)', () => {
   const use = (abilityId: string, abilityName: string, targetIds: string[] = []) =>
-    ({ combatantId: 'hero', combatantName: 'hero', abilityId, abilityName, targetIds, wastedReason: null, feedText: '' });
+    makeAbilityUse({ combatantId: 'hero', abilityId, abilityName, targetIds });
 
   it('shows a Charge as the run starts, names it in the move line, then lands the strike', () => {
     const run = { ...move('hero', [[5, 9], [5, 8], [5, 7], [5, 6]]), abilityId: 'charge' };
@@ -209,10 +205,8 @@ describe('playback timeline: movement abilities (3B.3)', () => {
 });
 
 describe('playback timeline: heals (3B.3)', () => {
-  const heal = (healerId: string, targetId: string, extra: Partial<HealResult> = {}): HealResult => ({
-    healerId, healerName: healerId, targetId, targetName: targetId, abilityId: 'mend', amount: 6, targetNewHp: 6,
-    revived: false, targetStatus: 'standing', wastedReason: null, feedText: `${healerId} heals ${targetId}`, ...extra,
-  });
+  const heal = (healerId: string, targetId: string, extra: Partial<HealResult> = {}): HealResult =>
+    makeHeal({ healerId, targetId, amount: 6, targetNewHp: 6, feedText: `${healerId} heals ${targetId}`, ...extra });
 
   it('plays heals in the attacks beat: a green aura, +n and the netted HP', () => {
     const beats = buildTimeline(payload(tick(0, { heals: [heal('mira', 'hero', { targetNewHp: 9 })] })));
