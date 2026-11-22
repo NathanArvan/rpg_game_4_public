@@ -10,6 +10,7 @@
 > - `MAGIC_SYSTEM.md` — ley points, resonance, environmental magic pipeline, implementation sequencing across slices
 > - `DEFEAT_AND_INCAPACITATION.md` — bleedout model (3B.5)
 > - `ELEVATION.md` — height levels, slopes, cliffs, high ground (3M.4; draft, not yet locked)
+> - `ABILITIES.md` — ability model, targeting, effects by phase, healing, cooldowns, how future ability families fit (3B.3; locked)
 
 Status: ✅ Done · 🔄 In Progress · ⬜ Not Started
 
@@ -49,7 +50,7 @@ Delivers: During the planning phase, the GM plans actions for all enemy combatan
 
 *Scope note (November 2026):* Character stats and progression are **deferred** (see [Deferred: Character Stats & Progression](#deferred-character-stats--progression)). Phase 3B and 3C build against **combat profiles**: hand-authored bundles of derived combat values (HP, movement, accuracy, dodge, damage, AP, vision, …). The rules engine only ever consumes derived values, so whatever later produces them (six core stats, equipment, abilities, or a mix) is a mapping layer in the Api and doesn't touch `RoundResolver`. Building items, abilities, and conditions first should make it clearer what stats, if any, need to do.
 
-*Execution order:* 3B.0 → 3B.1 → 3B.2 → 3B.5 → 3B.3 → 3B.4, then Phase 3M (maps & terrain), then 3C (3B.2 was pulled ahead of 3B.5 in November 2026; 3M was inserted before 3C in November 2026). Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
+*Execution order:* 3B.0 → 3B.1 → 3B.2 → 3B.5 → 3B.3 → 3B.4 → 3B.6, then Phase 3M (maps & terrain), then 3C (3B.2 was pulled ahead of 3B.5 in November 2026; 3M was inserted before 3C in November 2026; 3B.6 was split out of 3B.3 in November 2026). Slice numbers are kept stable for cross-references. 3B.0 comes first so every later slice can be tried by hand in a one-person battle; 3B.5 moves up because the defeat model is part of what makes that battle meaningful.
 
 ### ✅ Slice 3B.0 — Manual Testing Spike
 
@@ -87,13 +88,21 @@ Delivers: Each round, characters have an AP budget (`MaxAp` from their combat pr
 
 ### ⬜ Slice 3B.3 — Abilities & Cooldowns
 
-Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Environmental magic (ley points and resonance) also lands in this slice — abilities need resonance to be meaningful. See `MAGIC_SYSTEM.md` for the full design. The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
+*Status: design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
+
+Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Abilities carry resonance tags and the pipeline gets its `resonanceBonus` / `leyBonus` slots (always 0 here); the map side of environmental magic (ley points, resonance profile) is 3M.5 (moved out of 3B.3 in November 2026: it's map content, and 3M.2 introduces map files). The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
 *Map note:* abilities ship before walls (3M.2), so ability range checks are distance-only at first. Keep the range check in one place in `RoundResolver` so 3M.2 can add line of sight there, and 3M.4 the high-ground range bonus.
 
 ### ⬜ Slice 3B.4 — Conditions & Status Effects
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
+
+### ⬜ Slice 3B.6 — Prepared Reactions & Opportunity Attacks
+
+*Split out of 3B.3 in November 2026 (`ABILITIES.md` A9). Runs after 3B.4.*
+
+Delivers: The reactive action framework from `TICK_RESOLUTION.md` Decisions 4–5. **Passive reactions:** opportunity attacks when an adjacent enemy moves away, and **Disengage** (a move that doesn't provoke them). **Prepared reactions:** an ability with `activation: "prepared"` takes a queue slot and AP and puts the combatant in a watching state for the rest of the round; it fires when its trigger is met (enemy enters/leaves melee range, enemy attacks me or an ally, enemy uses a tagged ability, ally HP drops below a threshold), with interrupt / simultaneous / response timing. Counterspell, overwatch, parry and intercept become possible. `EnemyAi` gets a minimal use (e.g. it doesn't walk out of melee range carelessly). Decisions to settle in its sprint doc: AP refund for unused prepared actions, duplicate triggers, same-tick readiness, whether Disengage avoids prepared movement reactions (current leans in `TICK_RESOLUTION.md` → Open Questions).
 
 ### ✅ Slice 3B.5 — Defeat & Incapacitation
 
@@ -110,7 +119,7 @@ Delivers: What happens at 0 HP. Replaces D&D death saves. Design decision needed
 
 *Why before 3C (decided November 2026):* per-player vision (3C.1) needs line of sight, and line of sight needs walls and elevation. Building vision on an empty grid first would mean building it twice. Hidden enemies (3C.3) also need something to hide behind. Later slices build on this phase too: 3D.2 (cover, high ground), 3D.4 (breakable walls, doors), 4.1 (AoE blocked by walls).
 
-*Execution order:* 3M.1 → 3M.2 → 3M.3 → 3M.4. 3M.1 is client-heavy and doesn't depend on the others; 3M.2 is the core (pathfinding); 3M.3 and 3M.4 extend the pathfinder and line of sight from 3M.2.
+*Execution order:* 3M.1 → 3M.2 → 3M.5 → 3M.3 → 3M.4 (3M.5, ley points & resonance, was moved here from 3B.3 in November 2026). 3M.1 is client-heavy and doesn't depend on the others; 3M.2 is the core (pathfinding); 3M.3 and 3M.4 extend the pathfinder and line of sight from 3M.2.
 
 *Biggest structural change:* movement today is a straight Chebyshev line everywhere (`RoundResolver.ComputeChebyshevPath`, `PlanValidator`'s distance sum, `EnemyAi.ChooseMove`, and the client's `plan-queue.ts` and move highlight). 3M.2 replaces all four with real pathfinding over a cost map. `MovementRange` stops meaning "cells per round" and becomes "movement points per round" (one point per step on open ground, so nothing changes on a flat, empty map).
 
@@ -138,6 +147,14 @@ Not in scope: walls between cells (edges), doors, destructible walls (3D.4), a v
 Delivers: Each floor cell has a terrain type with a **movement cost** (e.g. open 1, difficult 2, shallow water 2) and flags (blocks movement / blocks sight). Some terrain blocks movement but not sight (chasm, deep water). The pathfinder and movement budget use costs; the client shows them (fill or pattern, plus a legend). Terrain types are a small fixed list in `RulesConfig` or a catalog file, not a database table.
 
 Not in scope: damaging hazard cells and terrain that changes during the fight (3D.4), terrain-based resonance (stays with `MAGIC_SYSTEM.md`'s zone overrides, 3D.4).
+
+### ⬜ Slice 3M.5 — Ley Points & Resonance
+
+*Moved out of 3B.3 in November 2026 (`ABILITIES.md` A12). Runs right after 3M.2, before 3M.3; numbered 3M.5 to keep slice numbers stable.*
+
+Delivers: the map side of environmental magic (`MAGIC_SYSTEM.md`). Map files gain a resonance profile and static ley points. The resolver recomputes who is Channeling after each Movement phase and fills the `resonanceBonus` / `leyBonus` slots for abilities with matching tags (applying the `resonanceScaling` that 3B.3 already parses). Client renders ley points and shows the bonus on the ability tooltip during planning. `EnemyAi` gets a minimal use. Settle `MAGIC_SYSTEM.md` open questions 1 (do ley points boost untagged attacks?) and 2 (several matching resonances: highest or sum?) in its sprint doc.
+
+Not in scope: resonance zones, volatile ley points, dynamic resonance (3D.4).
 
 ### ⬜ Slice 3M.4 — Elevation
 
@@ -248,8 +265,8 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Next        3B.3 Abilities & Cooldowns → 3B.4 Conditions
-Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.3 Terrain Types → 3M.4 Elevation
+Next        3B.3 Abilities & Cooldowns → 3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
+Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
 Later       3D.1–3D.4 Adaptive Encounters (incl. doors), remaining Phase 4, Phase 5 hardening
@@ -291,7 +308,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.2** (done) — `MaxAp` added to the `EncounterCombatant.Profile` JSONB snapshot (null on older rows, read as the default 4). Migration `AddMaxAp` only updates the model snapshot.
 
-**3B.3** — New table: `ability_definitions` (id, name, description, ap_cost, cooldown_rounds, range, target_type, effect JSONB, tags[]). Loadouts: either a `character_abilities` (character_id, ability_definition_id) join table or abilities listed on the combat profile preset — pick in the sprint doc. No acquisition rules. Drop or repurpose `spell_definitions` and `character_known_spells`.
+**3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migration `AddAbilityLoadouts` only updates the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
 **3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
 
@@ -333,7 +350,9 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.2** (done) — Nothing new in Redis. Planned actions are multi-entry `PlannedActionArray`s; AP is checked when a plan is submitted and resets every round, so no `currentAp` is stored, and entries carry no `apCost` (the server computes costs).
 
-**3B.3** — Add `abilityCooldowns` JSONB to `character:live` (`{ abilityId: roundsRemaining }`). Add ley point and resonance data to `encounter:map:{encounterId}`: `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
+**3B.3** — Add `abilityCooldowns` JSON to `character:live` (`{ abilityId: roundsRemaining }`).
+
+**3M.5** — Add ley point and resonance data to `encounter:map:{encounterId}` (copied from the map file): `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 
 **3B.4** — Extend `character:live` conditions array: `{ conditionId, name, roundsRemaining, sourceId, effects }`.
 
@@ -388,7 +407,7 @@ Defined in `TICK_RESOLUTION.md`. The schema evolves across slices but is always 
 
 As shipped in 3B.2: the queue costs 1 + 2 = 3 AP, which must fit the combatant's `MaxAp`. Costs come from `RulesConfig` and are sent to clients in `PlanningPhaseStarted.apCosts`; entries don't carry them, and there's no `totalApSpent` / `maxAp` on the wire plan.
 
-**3B.3+ (prepared reactions):**
+**3B.6+ (prepared reactions):**
 ```json
 {
   "actions": [
@@ -420,7 +439,7 @@ End of round: tick conditions, process environment, decrement cooldowns, reset A
 
 ### Ability Effect Schema (3B.3)
 
-Defined in `MAGIC_SYSTEM.md`. Stored in `ability_definitions.effect` JSONB:
+The 3B.3 format (targeting + an ordered list of effects, each resolved in its own phase) is in `ABILITIES.md` and `SPRINT_3B3.md`. The resonance fields below come from `MAGIC_SYSTEM.md`; 3B.3 parses `resonanceScaling` and 3M.5 applies it:
 
 ```json
 {
@@ -552,6 +571,9 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Maps before vision | Phase 3M (maps & terrain) runs between 3B and 3C | This roadmap (Nov 2026) | Vision needs line of sight, which needs walls and elevation; avoids building 3C.1 twice |
 | Wall model | Walls occupy whole cells (not cell edges) | This roadmap (Nov 2026) | Simplest for pathfinding, line of sight and authoring; buildings work fine with cell walls |
 | Doors | Doorways are gaps in v1; open / closed / locked doors later as interactive objects | This roadmap (Nov 2026) | Gaps cost nothing beyond walls; real doors need dynamic map state (3D.4) |
+| Healing a Downed ally | Brings them back to Standing with the healed HP; a finishing blow in the same tick wins | `ABILITIES.md` A8 (Nov 2026) | Makes healers a real role; Stabilize stays the cheap option anyone has |
+| Prepared reactions | Own slice (3B.6) after 3B.4, with opportunity attacks and Disengage | `ABILITIES.md` A9 (Nov 2026) | A separate framework (watching state, triggers, interrupts); keeps 3B.3 focused |
+| Environmental magic timing | Ability-side hooks in 3B.3; map side (ley points, resonance) in 3M.5 after 3M.2 | `ABILITIES.md` A12 (Nov 2026) | Ley points and resonance are map content and should land once, in the map file format |
 | High ground | Affects combat, not just movement | This roadmap (Nov 2026); details in `ELEVATION.md` | Makes elevation a tactical objective, like ley points |
 
 ### Open Design Decisions
@@ -560,10 +582,11 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 |---|---|---|---|
 | Info sharing model | 3C.2 | Auto-share within fixed range / Manual callout (costs AP) / Full share | Not decided; no Influence stat to lean on, which favors callout |
 | Core stats | After 3C | Six-stat model / fewer stats / no stats (profiles from abilities + gear) | Not decided — see Deferred: Character Stats & Progression |
+| Non-hostile rival teams (e.g. two parties racing for an objective) | When needed (after 3B.3) | `Neutral` relation + per-encounter team relations / none | Deferred; `ABILITIES.md` A3 keeps every hostility check inside `Relation(a, b)` so it can be added there |
 | Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
-| Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Not decided |
-| Unused prepared actions refund AP? | 3B.3 | Full / partial / none | No refund |
-| Multiple prepared reactions on same trigger? | 3B.3 | All fire / only first | All fire (wasted duplicates) |
+| Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Listed on profile preset, snapshotted per combatant (`ABILITIES.md` A2) |
+| Unused prepared actions refund AP? | 3B.6 | Full / partial / none | No refund |
+| Multiple prepared reactions on same trigger? | 3B.6 | All fire / only first | All fire (wasted duplicates) |
 | Ranged attacks in melee penalty? | 3B+ | Penalty / no penalty | Penalty (disadvantage) |
 | Player-drawn movement paths? | 3B+ | Server-computed shortest / player-drawn | Server-computed; player-drawn is a UI enhancement (more useful once walls and terrain costs make routes differ) |
 | How client and server agree on paths | 3M.2 | TypeScript port of the pathfinder tested against shared JSON fixtures / server returns each planned move's path | TS port with shared fixtures (keeps the instant move preview) |
