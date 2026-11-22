@@ -1,4 +1,4 @@
-import { Injectable, NgZone } from '@angular/core';
+import { Inject, Injectable, InjectionToken, NgZone, inject } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { Store } from '@ngxs/store';
 import { PlayerPresenceChanged } from '../../state/session/session.actions';
@@ -34,93 +34,102 @@ import {
   ResolutionPayload,
 } from '../../contracts/hub-contracts.generated';
 
+/** A server → client event name (`HubEvents.Events`). */
+export type HubEventName = keyof typeof HubEvents.Events;
+
+/**
+ * When each broadcast takes effect relative to a resolution playing back:
+ *  - `now`: applied as it arrives, even mid-playback (presence, a new encounter, a rejected plan);
+ *  - `after_playback`: held until the current playback (and anything queued before it) ends, so the
+ *    screen doesn't jump to the next round, a defeat or the result mid-animation;
+ *  - `starts_playback`: handed to ResolutionPlaybackService, which queues it behind a running playback.
+ * Every broadcast must be listed (the type requires it): a new one needs a decision here, and the
+ * spec pins the whole table.
+ */
+export const BROADCAST_TIMING: Readonly<Record<HubEventName, 'now' | 'after_playback' | 'starts_playback'>> = {
+  PlayerPresenceChanged: 'now',
+  EncounterStarted: 'now',
+  ActionRejected: 'now',
+  ResolutionCompleted: 'starts_playback',
+  PlanningPhaseStarted: 'after_playback',
+  PlayerLockedIn: 'after_playback',
+  AllLockedIn: 'after_playback',
+  CombatantDefeated: 'after_playback',
+  EncounterEnded: 'after_playback',
+  MonsterAdded: 'after_playback',
+};
+
+/** Builds the SignalR connection. A token so specs can hand the service a fake connection. */
+export const HUB_CONNECTION_FACTORY = new InjectionToken<() => HubConnection>('HUB_CONNECTION_FACTORY', {
+  providedIn: 'root',
+  factory: () => {
+    const auth = inject(AuthService);
+    return () => new HubConnectionBuilder()
+      .withUrl('/hubs/game', { accessTokenFactory: () => auth.getToken() })
+      .withAutomaticReconnect()
+      .build();
+  },
+});
+
 @Injectable({ providedIn: 'root' })
 export class GameHubService {
   private connection: HubConnection;
 
   constructor(
     private store: Store,
-    private auth: AuthService,
     private ngZone: NgZone,
-    private playback: ResolutionPlaybackService
+    private playback: ResolutionPlaybackService,
+    @Inject(HUB_CONNECTION_FACTORY) createConnection: () => HubConnection,
   ) {
-    this.connection = new HubConnectionBuilder()
-      .withUrl('/hubs/game', { accessTokenFactory: () => this.auth.getToken() })
-      .withAutomaticReconnect()
-      .build();
+    this.connection = createConnection();
 
-    this.connection.on(HubEvents.Events.PlayerPresenceChanged, (payload: PlayerPresenceChangedPayload) => {
-      console.log('[hub] PlayerPresenceChanged received:', payload);
-      this.ngZone.run(() => this.store.dispatch(new PlayerPresenceChanged(payload)));
+    this.on('PlayerPresenceChanged', (payload: PlayerPresenceChangedPayload) =>
+      this.store.dispatch(new PlayerPresenceChanged(payload)));
+
+    this.on('EncounterStarted', (payload: EncounterStartedPayload) => {
+      this.store.dispatch(new EncounterStarted(payload.encounterId, payload.combatants));
+      this.store.dispatch(new AddFeedBatch([BATTLE_START_LINE]));
+      if (payload.map) {
+        this.store.dispatch(new MapInitialized(
+          payload.encounterId,
+          payload.map.gridWidth,
+          payload.map.gridHeight,
+          payload.map.positions
+        ));
+      }
     });
 
-    this.connection.on(HubEvents.Events.EncounterStarted, (payload: EncounterStartedPayload) => {
-      console.log('[hub] EncounterStarted received:', payload);
-      this.ngZone.run(() => {
-        this.store.dispatch(new EncounterStarted(payload.encounterId, payload.combatants));
-        this.store.dispatch(new AddFeedBatch([BATTLE_START_LINE]));
-        if (payload.map) {
-          this.store.dispatch(new MapInitialized(
-            payload.encounterId,
-            payload.map.gridWidth,
-            payload.map.gridHeight,
-            payload.map.positions
-          ));
-        }
-      });
-    });
-
-    this.connection.on(HubEvents.Events.PlanningPhaseStarted, (payload: PlanningPhaseStartedPayload) => {
-      console.log('[hub] PlanningPhaseStarted received:', payload);
-      this.whenPlaybackDone(() => this.store.dispatch(new PlanningPhaseStarted(
+    this.on('PlanningPhaseStarted', (payload: PlanningPhaseStartedPayload) =>
+      this.store.dispatch(new PlanningPhaseStarted(
         payload.roundNumber,
         payload.planningTimerDurationSeconds,
         payload.combatants,
         payload.apCosts
       )));
+
+    this.on('PlayerLockedIn', (payload: PlayerLockedInPayload) =>
+      this.store.dispatch(new PlayerLockedIn(payload.characterName)));
+
+    this.on('AllLockedIn', (_payload: AllLockedInPayload) => this.store.dispatch(new AllLockedIn()));
+
+    // Updates the store (HP, positions) and plays the round back tick by tick, feed included.
+    this.on('ResolutionCompleted', (payload: ResolutionPayload) => this.playback.receiveResolution(payload));
+
+    // Surface it in the feed so a rejected plan (e.g. over the AP budget) isn't silent.
+    this.on('ActionRejected', (payload: ActionRejectedPayload) =>
+      this.store.dispatch(new AddFeedBatch([`⚠ ${payload.reason}`])));
+
+    this.on('CombatantDefeated', (payload: CombatantDefeatedPayload) =>
+      this.store.dispatch(new CombatantDefeated(payload.combatantId)));
+
+    this.on('EncounterEnded', (payload: EncounterEndedPayload) => {
+      this.store.dispatch(new EncounterEnded(payload.winningSide, payload.finalRoundNumber));
+      this.store.dispatch(new AddFeedBatch([`— Encounter over after round ${payload.finalRoundNumber}: ${
+        payload.winningSide === 'party' ? 'the party wins' : payload.winningSide === 'enemy' ? 'the enemies win' : 'draw'
+      } —`]));
     });
 
-    this.connection.on(HubEvents.Events.PlayerLockedIn, (payload: PlayerLockedInPayload) => {
-      console.log('[hub] PlayerLockedIn received:', payload);
-      this.whenPlaybackDone(() => this.store.dispatch(new PlayerLockedIn(payload.characterName)));
-    });
-
-    this.connection.on(HubEvents.Events.AllLockedIn, (_payload: AllLockedInPayload) => {
-      console.log('[hub] AllLockedIn received');
-      this.whenPlaybackDone(() => this.store.dispatch(new AllLockedIn()));
-    });
-
-    this.connection.on(HubEvents.Events.ResolutionCompleted, (payload: ResolutionPayload) => {
-      console.log('[hub] ResolutionCompleted received:', payload);
-      // Updates the store (HP, positions) and plays the round back tick by tick, feed included.
-      this.ngZone.run(() => this.playback.receiveResolution(payload));
-    });
-
-    this.connection.on(HubEvents.Events.ActionRejected, (payload: ActionRejectedPayload) => {
-      console.warn('[hub] ActionRejected:', payload);
-      // Surface it in the feed so a rejected plan (e.g. over the AP budget) isn't silent.
-      this.ngZone.run(() => this.store.dispatch(new AddFeedBatch([`⚠ ${payload.reason}`])));
-    });
-
-    this.connection.on(HubEvents.Events.CombatantDefeated, (payload: CombatantDefeatedPayload) => {
-      console.log('[hub] CombatantDefeated received:', payload);
-      this.whenPlaybackDone(() => this.store.dispatch(new CombatantDefeated(payload.combatantId)));
-    });
-
-    this.connection.on(HubEvents.Events.EncounterEnded, (payload: EncounterEndedPayload) => {
-      console.log('[hub] EncounterEnded received:', payload);
-      this.whenPlaybackDone(() => {
-        this.store.dispatch(new EncounterEnded(payload.winningSide, payload.finalRoundNumber));
-        this.store.dispatch(new AddFeedBatch([`— Encounter over after round ${payload.finalRoundNumber}: ${
-          payload.winningSide === 'party' ? 'the party wins' : payload.winningSide === 'enemy' ? 'the enemies win' : 'draw'
-        } —`]));
-      });
-    });
-
-    this.connection.on(HubEvents.Events.MonsterAdded, (payload: MonsterAddedPayload) => {
-      console.log('[hub] MonsterAdded received:', payload);
-      this.whenPlaybackDone(() => this.store.dispatch(new MonsterAdded(payload)));
-    });
+    this.on('MonsterAdded', (payload: MonsterAddedPayload) => this.store.dispatch(new MonsterAdded(payload)));
 
     this.connection.onclose((err) => console.error('[hub] connection closed:', err));
     this.connection.onreconnecting((err) => console.warn('[hub] reconnecting:', err));
@@ -128,11 +137,17 @@ export class GameHubService {
   }
 
   /**
-   * Encounter events that arrive while a resolution is playing back wait until it ends, so the
-   * screen doesn't jump to the next round (or the result) mid-animation.
+   * Registers the handler for one broadcast, applied inside Angular's zone at the time its entry in
+   * {@link BROADCAST_TIMING} says: at once, or once the current playback has finished.
    */
-  private whenPlaybackDone(apply: () => void): void {
-    this.ngZone.run(() => this.playback.afterPlayback(apply));
+  private on<T>(event: HubEventName, apply: (payload: T) => void): void {
+    this.connection.on(HubEvents.Events[event], (payload: T) => {
+      console.log(`[hub] ${event} received:`, payload);
+      this.ngZone.run(() => {
+        if (BROADCAST_TIMING[event] === 'after_playback') this.playback.afterPlayback(() => apply(payload));
+        else apply(payload);
+      });
+    });
   }
 
   isConnected(): boolean {

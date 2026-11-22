@@ -21,7 +21,7 @@ Phase 3A (simultaneous planning → tick-based resolution → GM enemy planning)
 - `docs/DEVELOPMENT_WORKFLOW.md` — Local dev guidance; which services to run in containers vs on the host.
 - `docs/smoke-test.md` — Automated E2E (Playwright) + manual two-browser smoke test for the current planning/resolution loop.
 - `docs/CODE_QUALITY.md` — Historical refactoring checklist (all items done; kept for context).
-- `docs/TESTING_ROADMAP.md` — Test-suite improvements: done (multi-round scenarios, event log, real-Redis and hub integration tests, client test-data builders, shared client/server plan-validation cases) and planned (seeded dice for E2E, a `game-hub.service` spec) and when each should land.
+- `docs/TESTING_ROADMAP.md` — Test-suite improvements, all done: multi-round scenarios, event log, real-Redis and hub integration tests, client test-data builders, shared client/server plan-validation cases, seeded dice for E2E, a `game-hub.service` spec.
 
 ### Roadmap
 - `docs/roadmap/ROADMAP_STRATEGIC.md` — High-level plan: what to build, in what order, data contracts per slice.
@@ -209,7 +209,7 @@ Five state slices, all registered in `app.config.ts`. Redux DevTools + Logger pl
 - **AuthService** — register, login, getToken, getUserId (parses JWT), isLoggedIn, logout
 - **CampaignService** — createCampaign, startSession
 - **CharacterService** — getMyCharacters, createCharacter, updateCharacter, deleteCharacter
-- **GameHubService** — SignalR connection; invokes all hub methods; dispatches NGXS actions on received events. Hands `ResolutionCompleted` to `ResolutionPlaybackService`, and holds the encounter events that arrive mid-playback (`PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `CombatantDefeated`, `EncounterEnded`, `MonsterAdded`) until playback ends
+- **GameHubService** — SignalR connection; invokes all hub methods; dispatches NGXS actions on received events. Hands `ResolutionCompleted` to `ResolutionPlaybackService`, and holds the encounter events that arrive mid-playback (`PlanningPhaseStarted`, `PlayerLockedIn`, `AllLockedIn`, `CombatantDefeated`, `EncounterEnded`, `MonsterAdded`) until playback ends. Which broadcasts wait is declared in `BROADCAST_TIMING` (a `Record` over every hub event, so a new broadcast won't compile until it's listed; `game-hub.service.spec.ts` pins the table and the holding behaviour). The connection comes from the `HUB_CONNECTION_FACTORY` token (specs pass a fake)
 - **ResolutionPlaybackService** — plays a round's resolution back on every screen. Commits the final state to the store at once (it stays the source of truth), then plays the beats from `playback-timeline.ts` and exposes what's been shown so far as signals: token positions, revealed HP (`hpOf`), defeats (`isDefeated`), auras and floating text; feed lines are added beat by beat. Resets on `ClearEncounter` / `EncounterStarted`
 - **playback-timeline.ts** (`core/services/`) — pure builder: `buildTimeline(payload)` turns the ticks into timed beats (per tick: one beat per movement cell → one attacks beat with auras (grey miss / green hit / red was hit / soft green healed), `-n` / `+n` / MISS text and HP → a defeats beat (going down shows DOWN) → a revives beat (healed back up shows UP) → an effects beat for stabilizes; a short idle beat for quiet ticks; after the last tick, an end-of-round beat for the bleedout countdown). Durations are in `PLAYBACK_TIMING`. New animations = a new cue on `PlaybackBeat`, filled here and rendered from the service
 - **DevService** — randomUser(), randomCharacter() helpers for testing
