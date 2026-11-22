@@ -1,3 +1,4 @@
+using RpgGame.Api.Abilities;
 using RpgGame.Domain.Entities;
 using RpgGame.Rules;
 using System.Text.Json;
@@ -6,6 +7,7 @@ namespace RpgGame.Api.CombatProfiles;
 
 /// <summary>A hand-authored combat profile preset from <c>CombatProfiles/profiles.json</c>.</summary>
 /// <param name="Side">"party", "enemy" or "any"; only used to order pick lists.</param>
+/// <param name="AbilityIds">The loadout, as ability ids from <c>Abilities/abilities.json</c> (3B.3).</param>
 public sealed record CombatProfileDefinition(
     string Id,
     string Name,
@@ -18,8 +20,12 @@ public sealed record CombatProfileDefinition(
     int RangedAccuracy,
     int Dodge,
     string BaseDamage,
-    int MaxAp = CombatProfile.DefaultMaxAp)
+    int MaxAp = CombatProfile.DefaultMaxAp,
+    IReadOnlyList<string>? AbilityIds = null)
 {
+    /// <summary>The loadout's full definitions, filled in by <see cref="CombatProfileCatalog"/> from <see cref="AbilityIds"/>.</summary>
+    public IReadOnlyList<AbilityValues> Abilities { get; init; } = [];
+
     /// <summary>A fresh copy of these values to store on a combatant.</summary>
     public CombatProfileValues Snapshot() => new()
     {
@@ -33,6 +39,7 @@ public sealed record CombatProfileDefinition(
         Dodge = Dodge,
         BaseDamage = BaseDamage,
         MaxAp = MaxAp,
+        Abilities = Abilities.Select(a => a.Copy()).ToList(),
     };
 }
 
@@ -59,8 +66,17 @@ public sealed class CombatProfileCatalog
 
     private readonly Dictionary<string, CombatProfileDefinition> _byId;
 
-    public CombatProfileCatalog(IReadOnlyList<CombatProfileDefinition> profiles)
+    /// <param name="abilities">Where the profiles' ability ids are looked up (3B.3). Null: no abilities exist.</param>
+    public CombatProfileCatalog(IReadOnlyList<CombatProfileDefinition> profiles, AbilityCatalog? abilities = null)
     {
+        Abilities = abilities ?? AbilityCatalog.Empty;
+        // Resolve each loadout once; every snapshot copies these definitions.
+        profiles = profiles.Select(p => p with
+        {
+            Abilities = Abilities.Resolve(p.AbilityIds ?? [],
+                message => new InvalidDataException($"Combat profiles: {p.Id}: {message}")),
+        }).ToList();
+
         _byId = new Dictionary<string, CombatProfileDefinition>(StringComparer.Ordinal);
         foreach (var p in profiles)
             if (!_byId.TryAdd(p.Id, p))
@@ -71,10 +87,14 @@ public sealed class CombatProfileCatalog
         All = profiles;
     }
 
-    public static CombatProfileCatalog FromFile(string path) => new(Load(path));
+    public static CombatProfileCatalog FromFile(string path, AbilityCatalog? abilities = null) => new(Load(path), abilities);
 
+    /// <summary>The shipped profiles, with their abilities from <c>Abilities/abilities.json</c>.</summary>
     public static CombatProfileCatalog FromAppDirectory() =>
-        FromFile(Path.Combine(AppContext.BaseDirectory, "CombatProfiles", "profiles.json"));
+        FromFile(Path.Combine(AppContext.BaseDirectory, "CombatProfiles", "profiles.json"), AbilityCatalog.FromAppDirectory());
+
+    /// <summary>The ability catalog loadouts come from (battle presets use it for their overrides).</summary>
+    public AbilityCatalog Abilities { get; }
 
     /// <summary>Profiles in file order.</summary>
     public IReadOnlyList<CombatProfileDefinition> All { get; }
@@ -127,7 +147,8 @@ public sealed class CombatProfileCatalog
             p.Id!.Trim(), p.Name!.Trim(), p.Description?.Trim() ?? "", side,
             p.Hp!.Value, p.Move!.Value, p.Speed!.Value,
             p.MeleeAccuracy ?? 0, p.RangedAccuracy ?? 0, p.Dodge!.Value, p.Damage!.Trim(),
-            p.Ap ?? CombatProfile.DefaultMaxAp);
+            p.Ap ?? CombatProfile.DefaultMaxAp,
+            p.Abilities?.Select(id => id.Trim()).ToList() ?? []);
     }
 
     private sealed class FileDto
@@ -149,6 +170,7 @@ public sealed class CombatProfileCatalog
         public int? Dodge { get; set; }
         public string? Damage { get; set; }
         public int? Ap { get; set; }
+        public List<string>? Abilities { get; set; }
     }
 }
 
@@ -160,7 +182,11 @@ internal static class CombatProfileMapping
     public static CombatProfile ToRules(CombatProfileValues? v, string combatantType = "monster") => (v is null
         ? CombatProfile.Default
         : new CombatProfile(v.MaxHp, v.MovementRange, v.Speed, v.MeleeAccuracy, v.RangedAccuracy, v.Dodge,
-            DamageDie.Parse(v.BaseDamage), MaxAp(v))) with { CanBeDowned = CanBeDowned(v, combatantType) };
+            DamageDie.Parse(v.BaseDamage), MaxAp(v))) with
+        {
+            CanBeDowned = CanBeDowned(v, combatantType),
+            Abilities = v?.Abilities?.Select(AbilityMapping.ToRules).ToList() ?? [],
+        };
 
     /// <summary>
     /// Goes Downed at 0 HP instead of dying (3B.5): party combatants do and monsters don't, unless

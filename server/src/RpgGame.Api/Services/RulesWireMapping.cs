@@ -1,3 +1,4 @@
+using RpgGame.Api.Contracts.Hub;
 using RpgGame.Rules;
 
 namespace RpgGame.Api.Services;
@@ -12,8 +13,28 @@ internal static class RulesWireMapping
         "ranged_attack" => ActionType.RangedAttack,
         "defend" => ActionType.Defend,
         "stabilize" => ActionType.Stabilize,
+        "ability" => ActionType.Ability,
         _ => null,
     };
+
+    /// <summary>A wire queue entry as a rules action, or null for an unknown type.</summary>
+    public static PlannedAction? ToPlannedAction(PlannedActionEntry entry) =>
+        ParseActionType(entry.Type) is { } type
+            ? new PlannedAction(
+                type,
+                entry.TargetCell is { } cell ? new GridPosition(cell.X, cell.Y) : null,
+                entry.TargetCombatantId,
+                type == ActionType.Ability ? entry.AbilityId : null,
+                type == ActionType.Ability && entry.TargetCombatantIds is { Count: > 0 } ids ? ids : null)
+            : null;
+
+    /// <summary>A rules action as a wire queue entry (the reverse of <see cref="ToPlannedAction"/>).</summary>
+    public static PlannedActionEntry ToEntry(PlannedAction action) => new(
+        ToWire(action.Type),
+        action.TargetCell is { } cell ? new PositionDto(cell.X, cell.Y) : null,
+        action.TargetCombatantId,
+        action.AbilityId,
+        action.TargetCombatantIds);
 
     public static string ToWire(ActionType type) => type switch
     {
@@ -22,6 +43,7 @@ internal static class RulesWireMapping
         ActionType.RangedAttack => "ranged_attack",
         ActionType.Defend => "defend",
         ActionType.Stabilize => "stabilize",
+        ActionType.Ability => "ability",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
@@ -44,11 +66,14 @@ internal static class RulesWireMapping
         _ => null,
     };
 
-    /// <summary>AP cost of every action type, keyed by its wire string, for the planning payload.</summary>
+    /// <summary>
+    /// AP cost of every basic action type, keyed by its wire string, for the planning payload.
+    /// Abilities carry their own cost (3B.3), so "ability" isn't listed.
+    /// </summary>
     public static Dictionary<string, int> ApCosts(RulesConfig? config = null)
     {
         config ??= RulesConfig.Default;
-        return Enum.GetValues<ActionType>().ToDictionary(ToWire, config.ApCost);
+        return RulesConfig.BasicActionTypes.ToDictionary(ToWire, config.ApCost);
     }
 
     /// <summary>Why an attack was wasted, as a wire string; null when it wasn't.</summary>
@@ -59,6 +84,11 @@ internal static class RulesWireMapping
         WastedReason.OutOfMeleeReach => "out_of_melee_reach",
         WastedReason.InvalidTarget => "invalid_target",
         WastedReason.TargetNotDowned => "target_not_downed",
+        WastedReason.OutOfRange => "out_of_range",
+        WastedReason.OnCooldown => "on_cooldown",
+        WastedReason.NotInLoadout => "not_in_loadout",
+        WastedReason.InvalidTargetType => "invalid_target_type",
+        WastedReason.NoTargets => "no_targets",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 

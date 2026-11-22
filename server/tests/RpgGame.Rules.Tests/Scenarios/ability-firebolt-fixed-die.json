@@ -1,0 +1,20 @@
+{
+  "description": "Firebolt rolls its own die (d8 + 1), not the caster's d4, and reaches 8 cells",
+  "abilities": [
+    {
+      "id": "firebolt", "name": "Firebolt", "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Mage",   "side": "party", "damage": "d4", "at": [0, 0], "abilities": ["firebolt"] },
+    { "id": "Goblin", "side": "enemy", "at": [8, 3] }
+  ],
+  "plans": { "Mage": ["ability firebolt Goblin"] },
+  "dice": [10, 7],                       // exactly the dodge: hit. d8 = 7, +1 = 8
+  "expect": {
+    "hp": { "Goblin": 12 },
+    "cooldowns": { "Mage": { "firebolt": 1 } }
+  }
+}

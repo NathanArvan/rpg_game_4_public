@@ -79,6 +79,16 @@ export class EncounterEnded {
   constructor(public winningSide: string, public finalRoundNumber: number) {}
 }
 
+/** The next grid click uses this ability (3B.3). */
+export class ArmAbility {
+  static readonly type = '[Encounter] Arm Ability';
+  constructor(public abilityId: string) {}
+}
+
+export class DisarmAbility {
+  static readonly type = '[Encounter] Disarm Ability';
+}
+
 export class ClearEncounter {
   static readonly type = '[Encounter] Clear';
 }

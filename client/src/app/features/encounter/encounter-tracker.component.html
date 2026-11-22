@@ -24,6 +24,8 @@
         <td>
           <strong [class.strikethrough]="statusOf(c).status === 'dead'">{{ c.characterName }}</strong>
           <span *ngIf="c.profileName" class="profile-name" [title]="'Moves ' + c.movementRange + ' · ' + c.maxAp + ' AP'">{{ c.profileName }}</span>
+          <span *ngFor="let cd of cooldownsOf(c)" class="cooldown-chip"
+                [title]="cd.name + ': ready in ' + cd.left + (cd.left === 1 ? ' round' : ' rounds')">⏳ {{ cd.name }} {{ cd.left }}</span>
         </td>
         <td>
           <span *ngIf="statusOf(c).status !== 'dead'">{{ hpOf(c) }}/{{ c.maxHp }}</span>

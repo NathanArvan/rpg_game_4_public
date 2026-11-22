@@ -10,6 +10,8 @@ public record PlanningPhaseStartedPayload(
 /// <param name="IsDefeated">Out of the fight: downed, stable or dead.</param>
 /// <param name="Status">"standing", "downed", "stable" or "dead" (3B.5).</param>
 /// <param name="BleedoutRoundsLeft">While downed: rounds left before bleeding out.</param>
+/// <param name="Abilities">The combatant's ability loadout (3B.3).</param>
+/// <param name="Cooldowns">Abilities on cooldown at the start of this planning phase: id → rounds left (3B.3).</param>
 public record PlanningCombatantDto(
     string Id,
     string UserId,
@@ -24,4 +26,6 @@ public record PlanningCombatantDto(
     int MovementRange = 6,
     int MaxAp = 4,
     string Status = "standing",
-    int BleedoutRoundsLeft = 0);
+    int BleedoutRoundsLeft = 0,
+    IReadOnlyList<AbilityDto>? Abilities = null,
+    Dictionary<string, int>? Cooldowns = null);

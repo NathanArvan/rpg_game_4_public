@@ -1,0 +1,25 @@
+{
+  "description": "Power Strike: the caster's weapon die +4, and the ability goes on cooldown for 2 rounds",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["power_strike"] },
+    { "id": "Goblin",  "side": "enemy", "at": [1, 0] }
+  ],
+  "plans": {
+    "Bruiser": ["ability power_strike Goblin"],
+    "Goblin":  ["defend"]
+  },
+  "dice": [14, 5],                       // hit; d8 = 5, +4 = 9
+  "expect": {
+    "hp": { "Goblin": 11 },
+    "hits": [ { "tick": 1, "attacker": "Bruiser" } ],
+    "abilityUses": [ { "tick": 1, "id": "Bruiser", "ability": "power_strike" } ],
+    "cooldowns": { "Bruiser": { "power_strike": 2 } }
+  }
+}

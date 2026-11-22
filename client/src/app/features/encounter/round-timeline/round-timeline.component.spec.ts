@@ -17,16 +17,16 @@ describe('RoundTimelineComponent', () => {
 
   const row = (id: string): PlanningCombatantDto =>
     ({ id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false, combatantType: 'player', isAiControlled: false,
-       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0 });
+       profileId: 'test', profileName: 'Test', movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {} });
 
   const hit = (attackerId: string, targetId: string, d20: number): AttackResult => ({
     attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack', hit: true, damage: 2,
     targetNewHp: 8, targetDefeated: false, wasted: false, feedText: `${attackerId} hits ${targetId}`,
-    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false,
+    roll: { d20, accuracy: 1, targetDodge: 10 }, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null,
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.
-  const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null });
+  const melee = (target: string) => ({ type: 'melee_attack', apCost: 2, targetCombatantId: target, targetCell: null, abilityId: null });
   const resolution: ResolutionPayload = {
     newRoundNumber: 3, defeatedCombatantIds: [], updatedCombatants: [], endOfRound: [],
     queues: [
@@ -34,8 +34,8 @@ describe('RoundTimelineComponent', () => {
       { combatantId: 'hero', combatantName: 'hero', maxAp: 4, actions: [melee('goblin'), melee('goblin')] },
     ],
     ticks: [
-      { tickIndex: 0, movements: [], attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)], effects: [] },
-      { tickIndex: 1, movements: [], attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)], effects: [] },
+      { tickIndex: 0, movements: [], attacks: [hit('hero', 'goblin', 11), hit('goblin', 'hero', 12)], effects: [], abilityUses: [] },
+      { tickIndex: 1, movements: [], attacks: [hit('hero', 'goblin', 13), hit('goblin', 'hero', 14)], effects: [], abilityUses: [] },
     ],
   };
 

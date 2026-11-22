@@ -413,6 +413,32 @@
         },
         "additionalProperties": false
       },
+      "CombatProfileAbilityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "apCost": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cooldown": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "CombatProfileDto": {
         "type": "object",
         "properties": {
@@ -463,6 +489,13 @@
           "maxAp": {
             "type": "integer",
             "format": "int32"
+          },
+          "abilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CombatProfileAbilityDto"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false

@@ -1,4 +1,4 @@
-import { PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
+import { AbilityDto, PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
 
 /** Where a combatant stands in the fight (3B.5). Anyone not standing is out of the fight. */
 export type CombatantStatus = 'standing' | 'downed' | 'stable' | 'dead';
@@ -30,6 +30,10 @@ export interface Combatant {
   movementRange: number;
   /** Action points per round, from the combat profile (3B.2). */
   maxAp: number;
+  /** Ability loadout (3B.3). */
+  abilities: AbilityDto[];
+  /** Abilities on cooldown: ability id → rounds left before it can be planned again (3B.3). */
+  cooldowns: Record<string, number>;
 }
 
 /** Movement range for a combatant whose server DTO doesn't carry one (the 3A default). */
@@ -67,5 +71,10 @@ export interface EncounterStateModel {
   enemyPlannedActions: Record<string, PlannedActionEntry[]>;
   /** AP cost per action type ("move", "melee_attack", …), from the server's planning payload. */
   apCosts: Record<string, number>;
+  /**
+   * The ability the next grid click uses (3B.3), for the character being planned for (or the
+   * monster the GM is planning). Null: clicks queue moves and basic attacks.
+   */
+  armedAbilityId: string | null;
   outcome: EncounterOutcome | null;
 }

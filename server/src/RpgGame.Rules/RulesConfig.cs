@@ -40,6 +40,20 @@ public sealed record RulesConfig
         ActionType.RangedAttack => RangedApCost,
         ActionType.Defend => DefendApCost,
         ActionType.Stabilize => StabilizeApCost,
+        ActionType.Ability => throw new ArgumentException("An ability's cost comes from its definition: use ApCost(action, profile).", nameof(type)),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown action type."),
     };
+
+    /// <summary>
+    /// AP cost of one queued action: basic actions from this config, abilities from their definition
+    /// in <paramref name="profile"/>'s loadout (3B.3). An ability the profile doesn't have costs 0:
+    /// <see cref="PlanValidator"/> rejects it and the resolver wastes it, so it never buys anything.
+    /// </summary>
+    public int ApCost(PlannedAction action, CombatProfile profile) => action.Type == ActionType.Ability
+        ? profile.FindAbility(action.AbilityId)?.ApCost ?? 0
+        : ApCost(action.Type);
+
+    /// <summary>Basic action types (everything except <see cref="ActionType.Ability"/>), whose cost is fixed.</summary>
+    public static IEnumerable<ActionType> BasicActionTypes =>
+        Enum.GetValues<ActionType>().Where(t => t != ActionType.Ability);
 }

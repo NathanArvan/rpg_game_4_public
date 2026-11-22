@@ -64,6 +64,7 @@ public partial class ScenarioTests
             throw new InvalidDataException($"{file}: 'combatants' must list at least one combatant");
 
         var grid = s.Grid ?? [20, 20];
+        var abilities = (s.Abilities ?? []).ToDictionary(a => a.Id, a => ToAbility(a, file));
         var combatants = s.Combatants.Select(c =>
         {
             if (string.IsNullOrWhiteSpace(c.Id)) throw new InvalidDataException($"{file}: every combatant needs an 'id'");
@@ -78,7 +79,11 @@ public partial class ScenarioTests
                 Dodge: c.Dodge ?? d.Dodge,
                 BaseDamage: DamageDie.Parse(c.Damage ?? "d8"),
                 MaxAp: c.MaxAp ?? d.MaxAp,
-                CanBeDowned: c.Downs ?? false);
+                CanBeDowned: c.Downs ?? false)
+            {
+                Abilities = (c.Abilities ?? []).Select(id => abilities.TryGetValue(id, out var a) ? a
+                    : throw new InvalidDataException($"{file}: combatant {c.Id} lists ability '{id}', which isn't in 'abilities'")).ToList(),
+            };
             // "status" sets a starting status (3B.5); the older "defeated": true means dead.
             var status = c.Status is { } st ? ParseStatus(st, $"{file}: combatant {c.Id} 'status'")
                 : c.Defeated == true ? CombatantStatus.Dead : CombatantStatus.Standing;
@@ -89,7 +94,11 @@ public partial class ScenarioTests
                 profile,
                 c.At is { } at ? Cell(at, $"{file}: combatant {c.Id} 'at'") : null,
                 status,
-                status == CombatantStatus.Downed ? c.Bleedout ?? RulesConfig.Default.BleedoutRounds : 0);
+                status == CombatantStatus.Downed ? c.Bleedout ?? RulesConfig.Default.BleedoutRounds : 0)
+            {
+                Team = c.Side ?? "",
+                Cooldowns = c.Cooldowns ?? [],
+            };
         }).ToList();
 
         // JSON object key order is preserved: plan order is meaningful to the resolver.
@@ -160,6 +169,7 @@ public partial class ScenarioTests
         ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
         ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
         ActionType.Stabilize => $"\"stabilize {a.TargetCombatantId}\"",
+        ActionType.Ability => $"\"ability {a.AbilityId}{(a.TargetCombatantId is null ? "" : " " + a.TargetCombatantId)}\"",
         _ => "\"defend\"",
     };
 
@@ -172,6 +182,10 @@ public partial class ScenarioTests
     [GeneratedRegex(@"^\s*stabilize\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex StabilizeRegex();
 
+    /// <summary>"ability ID" or "ability ID TARGET" (3B.3).</summary>
+    [GeneratedRegex(@"^\s*ability\s+(\S+)(?:\s+(\S+))?\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex AbilityRegex();
+
     internal static PlannedAction ParseAction(string text, string where)
     {
         if (MoveRegex().Match(text) is { Success: true } m)
@@ -182,10 +196,35 @@ public partial class ScenarioTests
                 : PlannedAction.Ranged(a.Groups[2].Value);
         if (StabilizeRegex().Match(text) is { Success: true } st)
             return PlannedAction.Stabilize(st.Groups[1].Value);
+        if (AbilityRegex().Match(text) is { Success: true } ab)
+            return PlannedAction.Ability(ab.Groups[1].Value, ab.Groups[2].Success ? ab.Groups[2].Value : null);
         if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
             return PlannedAction.Defend();
         throw new FormatException(
-            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\" or \"defend\".");
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET]\" or \"defend\".");
+    }
+
+    /// <summary>An inline ability definition, in the same shape as the server's abilities.json (3B.3).</summary>
+    private static AbilityDefinition ToAbility(AbilityDto a, string file)
+    {
+        var where = $"{file}: ability {a.Id}";
+        if (a.Target is null) throw new InvalidDataException($"{where}: 'target' is required");
+        var targeting = new Targeting(
+            Enum.Parse<TargetKind>(a.Target.Kind ?? "combatant", ignoreCase: true),
+            Enum.Parse<TargetFilter>((a.Target.Filter ?? "enemy").Replace("_", ""), ignoreCase: true),
+            a.Target.Range ?? 1, a.Target.Count, a.Target.IncludeSelf ?? false);
+        var effects = (a.Effects ?? []).Select<EffectDto, AbilityEffect>(e => e.Kind switch
+        {
+            "attack" => new AttackEffect(
+                Enum.Parse<AttackKind>(e.Roll ?? "melee", ignoreCase: true),
+                new DamageSpec(
+                    e.Damage?.Die is null or "weapon" ? null : DamageDie.Parse(e.Damage.Die),
+                    e.Damage?.Bonus ?? 0,
+                    e.Damage?.Multiplier ?? 1),
+                e.AccuracyBonus ?? 0),
+            _ => throw new InvalidDataException($"{where}: unknown effect kind '{e.Kind}'"),
+        }).ToList();
+        return new AbilityDefinition(a.Id, a.Name ?? a.Id, a.Ap ?? 2, a.Cooldown ?? 0, a.Tags ?? [], targeting, effects);
     }
 
     private static CombatantStatus ParseStatus(string text, string where) =>
@@ -248,6 +287,22 @@ public partial class ScenarioTests
             CompareSets("hits", hits.Select(Key),
                 o.Ticks.SelectMany(t => t.Attacks.Where(a => a.Hit).Select(a => Key(t.Index + 1, a.AttackerId))), failures);
 
+        foreach (var (id, expected) in e.Cooldowns ?? [])
+        {
+            var actual = final.TryGetValue(id, out var c) ? c.Cooldowns : null;
+            string Show(IEnumerable<KeyValuePair<string, int>> m) =>
+                "{" + string.Join(", ", m.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}: {kv.Value}")) + "}";
+            if (actual is null)
+                failures.Add($"cooldowns of {id}: unknown combatant");
+            else if (Show(actual) != Show(expected))
+                failures.Add($"cooldowns of {id}: expected {Show(expected)}, got {Show(actual)}");
+        }
+
+        if (e.AbilityUses is { } uses)
+            CompareSets("ability uses", uses.Select(u => Key(u.Tick, $"{u.Id}:{u.Ability}" + (u.Wasted is { } w ? $"({w})" : ""))),
+                o.Ticks.SelectMany(t => t.AbilityUses.Select(u => Key(t.Index + 1,
+                    $"{u.CombatantId}:{u.AbilityId}" + (u.Wasted ? $"({Snake(u.WastedReason)})" : "")))), failures);
+
         if (e.Wasted is { } wasted)
             CompareSets("wasted attacks", wasted.Select(Key),
                 o.Ticks.SelectMany(t => t.Attacks.Where(a => a.Wasted).Select(a => Key(t.Index + 1, a.AttackerId))), failures);
@@ -256,6 +311,8 @@ public partial class ScenarioTests
     }
 
     private static string Key(TickRefDto r) => Key(r.Tick, r.Id ?? r.Attacker ?? "?");
+    private static string Snake(WastedReason reason) =>
+        Regex.Replace(reason.ToString(), "(?<!^)([A-Z])", "_$1").ToLowerInvariant();
     private static string Key(int tick, string id) => $"{id}@tick{tick}";
 
     private static void CompareSets(string what, IEnumerable<string> expected, IEnumerable<string> actual, List<string> failures)
@@ -277,6 +334,43 @@ public partial class ScenarioTests
         public int[]? Dice { get; set; }
         public ConfigDto? Config { get; set; }
         public ExpectDto? Expect { get; set; }
+        /// <summary>Ability definitions combatants can list (3B.3), same shape as abilities.json.</summary>
+        public List<AbilityDto>? Abilities { get; set; }
+    }
+
+    private sealed class AbilityDto
+    {
+        public string Id { get; set; } = "";
+        public string? Name { get; set; }
+        public int? Ap { get; set; }
+        public int? Cooldown { get; set; }
+        public List<string>? Tags { get; set; }
+        public TargetDto? Target { get; set; }
+        public List<EffectDto>? Effects { get; set; }
+    }
+
+    private sealed class TargetDto
+    {
+        public string? Kind { get; set; }
+        public string? Filter { get; set; }
+        public int? Range { get; set; }
+        public int? Count { get; set; }
+        public bool? IncludeSelf { get; set; }
+    }
+
+    private sealed class EffectDto
+    {
+        public string? Kind { get; set; }
+        public string? Roll { get; set; }
+        public int? AccuracyBonus { get; set; }
+        public DamageDto? Damage { get; set; }
+    }
+
+    private sealed class DamageDto
+    {
+        public string? Die { get; set; }
+        public int? Bonus { get; set; }
+        public int? Multiplier { get; set; }
     }
 
     private sealed class CombatantDto
@@ -301,6 +395,10 @@ public partial class ScenarioTests
         public string? Status { get; set; }
         /// <summary>Starting bleedout rounds left, when status is downed.</summary>
         public int? Bleedout { get; set; }
+        /// <summary>Ability ids from the scenario's 'abilities' block (3B.3).</summary>
+        public List<string>? Abilities { get; set; }
+        /// <summary>Abilities already on cooldown at the start of the round: id → rounds left.</summary>
+        public Dictionary<string, int>? Cooldowns { get; set; }
     }
 
     private sealed class ConfigDto
@@ -324,6 +422,19 @@ public partial class ScenarioTests
         public List<TickRefDto>? Wasted { get; set; }
         /// <summary>AI plans: one action string, or a list of them for a multi-action queue.</summary>
         public Dictionary<string, JsonElement>? Plans { get; set; }
+        /// <summary>Cooldowns at the end of the round, per combatant (exact map; {} = none) (3B.3).</summary>
+        public Dictionary<string, Dictionary<string, int>>? Cooldowns { get; set; }
+        /// <summary>The exact set of ability activations (3B.3).</summary>
+        public List<AbilityUseDto>? AbilityUses { get; set; }
+    }
+
+    private sealed class AbilityUseDto
+    {
+        public int Tick { get; set; }
+        public string Id { get; set; } = "";
+        public string Ability { get; set; } = "";
+        /// <summary>Why the activation itself was refused ("on_cooldown", "not_in_loadout"), if it was.</summary>
+        public string? Wasted { get; set; }
     }
 
     private sealed class TickRefDto

@@ -16,6 +16,7 @@ import {
   GmSetEnemyPlan,
 } from './encounter.actions';
 import { ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import { entry } from './plan-queue';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
 
 const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto => ({
@@ -31,6 +32,7 @@ const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto =
   profileName: 'Bruiser',
   movementRange: 4,
   maxAp: 4,
+  abilities: [],
   ...overrides,
 });
 
@@ -49,6 +51,8 @@ const makePlanningCombatantDto = (overrides: Partial<PlanningCombatantDto> = {})
   maxAp: 4,
   status: 'standing',
   bleedoutRoundsLeft: 0,
+  abilities: [],
+  cooldowns: {},
   ...overrides,
 });
 
@@ -108,8 +112,8 @@ describe('EncounterState', () => {
 
     it('stores GM enemy plans as queues', () => {
       const queue = [
-        { type: 'move', targetCell: { x: 1, y: 1 }, targetCombatantId: null },
-        { type: 'melee_attack', targetCell: null, targetCombatantId: 'c1' },
+        entry('move', { targetCell: { x: 1, y: 1 } }),
+        entry('melee_attack', { targetCombatantId: 'c1' }),
       ];
       store.dispatch(new GmSetEnemyPlan('m1', queue));
       expect(store.selectSnapshot(EncounterState.enemyPlannedActions)['m1']).toEqual(queue);
@@ -151,7 +155,7 @@ describe('EncounterState', () => {
     });
 
     it('clears myPlannedActions and lockedInCombatantNames', () => {
-      store.dispatch(new SetMyPlannedAction('c1', [{ type: 'defend', targetCell: null, targetCombatantId: null }]));
+      store.dispatch(new SetMyPlannedAction('c1', [entry('defend')]));
       store.dispatch(new PlayerLockedIn('Frodo'));
       store.dispatch(new PlanningPhaseStarted(2, 30, []));
 
@@ -192,8 +196,8 @@ describe('EncounterState', () => {
 
   describe('SetMyPlannedAction', () => {
     it('stores planned actions per character', () => {
-      const move = { type: 'move', targetCell: { x: 3, y: 4 }, targetCombatantId: null };
-      const defend = { type: 'defend', targetCell: null, targetCombatantId: null };
+      const move = entry('move', { targetCell: { x: 3, y: 4 } });
+      const defend = entry('defend');
       store.dispatch(new SetMyPlannedAction('c1', [move]));
       store.dispatch(new SetMyPlannedAction('c2', [defend]));
 
@@ -203,7 +207,7 @@ describe('EncounterState', () => {
 
   describe('ClearMyPlannedAction', () => {
     it("clears only that character's plan", () => {
-      const defend = { type: 'defend', targetCell: null, targetCombatantId: null };
+      const defend = entry('defend');
       store.dispatch(new SetMyPlannedAction('c1', [defend]));
       store.dispatch(new SetMyPlannedAction('c2', [defend]));
       store.dispatch(new ClearMyPlannedAction('c1'));
@@ -244,9 +248,9 @@ describe('EncounterState', () => {
           wasted: false,
           feedText: 'Sam strikes Frodo for 5 damage',
           roll: { d20: 15, accuracy: 0, targetDodge: 10 },
-          wastedReason: null, targetStatus: 'standing', finishingBlow: false,
+          wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null,
         }],
-        effects: [],
+        effects: [], abilityUses: [],
       }],
       newRoundNumber: 2,
       defeatedCombatantIds: [],

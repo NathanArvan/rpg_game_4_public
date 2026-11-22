@@ -175,7 +175,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 ?? throw new GameActionException("Map data not found.", isActionRejected: true)
             : null;
 
-        // AP budget and movement range come from the combatant's combat profile (3B.1/3B.2).
+        // AP budget, movement range and abilities come from the combatant's combat profile (3B.1–3B.3).
         var combatantGuid = GuidParser.TryParse(combatantId);
         var profile = combatantGuid is null
             ? null
@@ -184,19 +184,23 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 .Where(c => c.Id == combatantGuid.Value)
                 .Select(c => c.Profile)
                 .FirstOrDefaultAsync();
+        var rulesProfile = CombatProfileMapping.ToRules(profile);
 
-        var queue = action.Actions.Select(e => new PlannedAction(
-            RulesWireMapping.ParseActionType(e.Type)!.Value,
-            e.TargetCell is { } cell ? new GridPosition(cell.X, cell.Y) : null,
-            e.TargetCombatantId)).ToList();
+        var queue = action.Actions.Select(e => RulesWireMapping.ToPlannedAction(e)!).ToList();
         GridPosition? start = map is not null && map.Positions.TryGetValue(combatantId, out var current)
             ? new GridPosition(current.X, current.Y)
             : null;
 
-        var check = PlanValidator.Validate(start, CombatProfileMapping.ToRules(profile), queue,
-            map?.GridWidth ?? 0, map?.GridHeight ?? 0);
+        var cooldowns = queue.Any(a => a.Type == ActionType.Ability)
+            ? await redisState.GetCooldownsAsync(encounterId, combatantId) ?? []
+            : [];
+        var check = PlanValidator.Validate(start, rulesProfile, queue,
+            map?.GridWidth ?? 0, map?.GridHeight ?? 0, cooldowns: cooldowns);
         if (!check.IsValid)
             throw new GameActionException(check.Error!, isActionRejected: true);
+
+        foreach (var entry in queue.Where(a => a.Type == ActionType.Ability))
+            await ValidateAbilityTargets(entry, rulesProfile.FindAbility(entry.AbilityId)!, combatantId, activeEncounter);
 
         await redisState.SetPlannedActionAsync(encounterId, combatantId, JsonSerializer.Serialize(action, _jsonOptions));
         return check.ApSpent;
@@ -255,8 +259,55 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
             case "defend":
                 break;
 
+            case "ability":
+                // Loadout, cooldown, AP and target shape are checked with the whole queue
+                // (PlanValidator); the targets' sides and statuses in ValidateAbilityTargets.
+                if (string.IsNullOrEmpty(entry.AbilityId))
+                    throw new GameActionException("Ability action requires an ability ID.", isActionRejected: true);
+                break;
+
             default:
                 throw new GameActionException($"Unknown action type: {entry.Type}", isActionRejected: true);
+        }
+    }
+
+    /// <summary>
+    /// The chosen targets of an ability entry (3B.3): each must be in the encounter, not dead, and
+    /// on the side the ability's filter allows. Sides come from <see cref="CombatantRef.CombatantType"/>,
+    /// the same split the rules engine's teams use. Range is checked at resolution.
+    /// </summary>
+    private async Task ValidateAbilityTargets(
+        PlannedAction entry, AbilityDefinition ability, string combatantId, ActiveEncounterEntry activeEncounter)
+    {
+        var self = activeEncounter.Combatants.FirstOrDefault(c => c.Id == combatantId);
+        var targetIds = entry.TargetCombatantIds ?? (entry.TargetCombatantId is { } one ? [one] : []);
+        foreach (var targetId in targetIds)
+        {
+            var target = activeEncounter.Combatants.FirstOrDefault(c => c.Id == targetId)
+                ?? throw new GameActionException("Target combatant not found.", isActionRejected: true);
+
+            bool isSelf = targetId == combatantId;
+            bool sameSide = self is null || self.CombatantType == target.CombatantType;
+            bool allowed = ability.Targeting.Filter switch
+            {
+                TargetFilter.Enemy => !sameSide,
+                TargetFilter.Ally or TargetFilter.DownedAlly => sameSide && (!isSelf || ability.Targeting.IncludeSelf),
+                _ => !isSelf || ability.Targeting.IncludeSelf,
+            };
+            if (!allowed)
+                throw new GameActionException(ability.Targeting.Filter switch
+                {
+                    TargetFilter.Enemy when isSelf => $"You cannot target yourself with {ability.Name}.",
+                    TargetFilter.Enemy => $"{ability.Name} can only target enemies.",
+                    _ when isSelf => $"You cannot target yourself with {ability.Name}.",
+                    _ => $"{ability.Name} can only target allies.",
+                }, isActionRejected: true);
+
+            var status = await TargetStatusAsync(activeEncounter, targetId);
+            if (status == CombatantStatus.Dead)
+                throw new GameActionException("Target is already defeated.", isActionRejected: true);
+            if (ability.Targeting.Filter == TargetFilter.DownedAlly && status != CombatantStatus.Downed)
+                throw new GameActionException($"{ability.Name} can only target a downed ally.", isActionRejected: true);
         }
     }
 

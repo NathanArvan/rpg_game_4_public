@@ -42,10 +42,7 @@ public class AiPlanningService(
         var lockedIn = new List<AiLockIn>();
         foreach (var (id, queue) in plans)
         {
-            var entries = queue.Select(action => new PlannedActionEntry(
-                RulesWireMapping.ToWire(action.Type),
-                action.TargetCell is { } cell ? new PositionDto(cell.X, cell.Y) : null,
-                action.TargetCombatantId)).ToList();
+            var entries = queue.Select(RulesWireMapping.ToEntry).ToList();
             await redisState.SetPlannedActionAsync(encounterIdStr, id,
                 JsonSerializer.Serialize(new PlannedActionArray(entries), _jsonOptions));
             lockedIn.Add(new AiLockIn(id, loaded.Records[id].State.Name));

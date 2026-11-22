@@ -12,6 +12,7 @@
           [attr.data-x]="cell.x"
           [attr.data-y]="cell.y"
           [class.in-range]="isInRange(cell)"
+          [class.ability-range]="isInAbilityRange(cell)"
           [class.ghost]="isGhostTarget(cell)"
           [class.enemy-ghost]="isEnemyGhostTarget(cell)"
           (click)="onCellClick(cell)">
@@ -35,6 +36,7 @@
           [class.downed-token]="shownStatus(token.combatant).status === 'downed'"
           [class.stable-token]="shownStatus(token.combatant).status === 'stable'"
           [class.targeted-token]="isTargeted(token.combatant)"
+          [class.ability-target]="isAbilityTarget(token.combatant)"
           [title]="tokenTitle(token.combatant)"
           (click)="onTokenClick(token)">
           {{ token.combatant.characterName[0] }}
@@ -69,6 +71,13 @@
             [title]="'Moves left this round: ' + moveCellsLeft + ' cells'">
         AP {{ apUsed }}/{{ maxAp }}
       </span>
+      <app-ability-bar
+        [combatant]="selected"
+        [queue]="selectedPlan"
+        [apCosts]="apCosts"
+        [armedAbilityId]="armedAbilityId"
+        [disabled]="lockedIn"
+        (toggle)="toggleAbility($event)"></app-ability-bar>
       <button
         class="action-btn"
         [class.active]="hasDefendPlanned"
@@ -83,6 +92,7 @@
         {{ lockInLabel }}
       </button>
     </div>
+    <div class="armed-hint" *ngIf="armedHint as hint">🎯 {{ hint }}</div>
     <div class="stabilize-hint" *ngIf="downedAllies.length && !lockedIn">
       ✚ {{ downedAllies[0].characterName }}{{ downedAllies.length > 1 ? ' and others are' : ' is' }} bleeding out:
       queue a move next to them, then click them to stabilize (2 AP).
@@ -100,6 +110,7 @@
   <!-- GM bottom bar: enemy control + force resolve -->
   <div class="gm-bottom-bar" *ngIf="(isPlanning$ | async) && isGm">
     <app-gm-enemy-planner [joinCode]="joinCode"></app-gm-enemy-planner>
+    <div class="armed-hint" *ngIf="armedHint as hint">🎯 {{ hint }}</div>
     <button class="force-btn" (click)="onForceResolve()">⚡ Force Resolve</button>
   </div>
 </div>

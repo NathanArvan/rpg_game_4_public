@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.3. Hand this to Claude Code alongside `CLAUDE.md`. Design decisions (the ability model, targeting, effects, healing, cooldowns, and how future ability families fit) are in `docs/design/ABILITIES.md`; this doc says what to build, in which PR, and how to test it. For the high-level plan see `ROADMAP_STRATEGIC.md`.
 >
-> **Status:** Draft. ⬜ Not started.
+> **Status:** 🔄 In progress. PR 1 (framework & cooldowns) done; PR 2 and PR 3 not started.
 >
 > **Goal:** Combatants have a fixed loadout of abilities with AP costs, cooldowns, ranges and target rules. Four kinds work end to end: stronger attacks, multi-target attacks, healing, and movement (including move + attack). The resolver runs abilities as data-driven effects, so later families (conditions, AoE, spells, reactions, perception) add effect kinds, not new resolver structure. All of it can be tried in a new **Abilities** Quick Battle against AI enemies that use abilities too.
 
@@ -37,6 +37,14 @@ Follow the design loop for each PR: rules + scenarios first (`dotnet test server
 ---
 
 ## PR 1 — Framework & cooldowns
+
+*Status: done. Differences from the plan below:*
+- *Cooldowns live in a per-encounter Redis hash, `encounter:{encounterId}:cooldowns` (combatantId → JSON `{ abilityId: roundsLeft }`), not in `character:live`. `character:live` is keyed by character ID and outlives the encounter, so cooldowns would have carried into the next fight.*
+- *`resonanceScaling` is validated by `AbilityCatalog` but not stored on the snapshot or in Rules yet; 3M.5 adds both.*
+- *The catalog only accepts `"target": { "kind": "combatant" }` for now; PR 2 opens `combatants` / `auto`, PR 3 `self`.*
+- *`AbilityUse` carries a `StartedCooldown` flag; the client shows the "uses …" line only for a refused activation (an ability's attacks already name it: "Bruiser's Power Strike hits …").*
+- *`CombatantState`, `CombatProfile` and `AbilityDefinition` compare their collections (cooldowns, loadout, tags, effects) by content, so record equality keeps working in tests.*
+- *Fixed on the way: Quick Battle's copy of a preset profile dropped `MaxAp` and `CanBeDowned` (so since 3B.2, Quick Battle heroes had the default 4 AP). `CombatProfileValues.Copy()` now copies every field, abilities included.*
 
 ### Rules (`server/src/RpgGame.Rules/`)
 

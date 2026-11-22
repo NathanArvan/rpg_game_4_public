@@ -1,0 +1,19 @@
+{
+  // 3B.3 abilities. The Bruiser has Power Strike (from its profile) and starts next to a goblin,
+  // so it can use it in round 1. The Scout gets Firebolt (range 8) through the "abilities"
+  // override. The Ogre (a Brute) has Power Strike too and the AI uses it when it's ready.
+  // Used by the abilities E2E test: keep a goblin adjacent to the Bruiser at the start.
+  "id": "abilities",
+  "name": "Abilities",
+  "description": "Try Power Strike and Firebolt against goblins and an ogre that strikes back.",
+  "order": 5,
+  "combatants": [
+    { "name": "Bruiser",    "side": "party", "profile": "bruiser",    "at": [9, 9] },
+    { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [7, 11] },
+    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 12], "abilities": ["firebolt"] },
+    { "name": "Goblin 1",   "side": "enemy", "profile": "grunt",      "at": [9, 8] },
+    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [6, 6] },
+    { "name": "Goblin 3",   "side": "enemy", "profile": "grunt",      "at": [12, 6] },
+    { "name": "Ogre",       "side": "enemy", "profile": "brute",      "at": [9, 4] }
+  ]
+}

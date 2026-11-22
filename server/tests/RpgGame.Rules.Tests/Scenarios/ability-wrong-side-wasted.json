@@ -1,0 +1,21 @@
+{
+  "description": "An enemy-only ability aimed at an ally is wasted (planning rejects this too)",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["power_strike"] },
+    { "id": "Friend",  "side": "party", "at": [1, 0] }
+  ],
+  "plans": { "Bruiser": ["ability power_strike Friend"] },
+  "dice": [],
+  "expect": {
+    "hp": { "Friend": 20 },
+    "wasted": [ { "tick": 1, "attacker": "Bruiser" } ],
+    "cooldowns": { "Bruiser": { "power_strike": 2 } }
+  }
+}

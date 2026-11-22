@@ -45,6 +45,16 @@ export interface CharacterResponse {
   combatProfile?: string | null;
 }
 
+export interface CombatProfileAbilityDto {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  /** @format int32 */
+  apCost?: number;
+  /** @format int32 */
+  cooldown?: number;
+}
+
 export interface CombatProfileDto {
   id?: string | null;
   name?: string | null;
@@ -65,6 +75,7 @@ export interface CombatProfileDto {
   baseDamage?: string | null;
   /** @format int32 */
   maxAp?: number;
+  abilities?: CombatProfileAbilityDto[] | null;
 }
 
 export interface CreateCampaignRequest {

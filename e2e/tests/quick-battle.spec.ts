@@ -107,3 +107,34 @@ test('Rescue: a downed hero bleeds out unless an ally stabilizes them (3B.5)', a
   await expect(feedEntries(page).filter({ hasText: 'Knight stabilizes Archer' })).toHaveCount(1, { timeout: 20_000 });
   await expect(archerRow).toContainText('STABLE', { timeout: 20_000 });
 });
+
+test('Abilities: queue Power Strike on an adjacent goblin; it resolves and goes on cooldown (3B.3)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Abilities');
+
+  // Bruiser (9,9) starts next to Goblin 1 (9,8). Its profile gives it Power Strike (3 AP, cooldown 2).
+  const actionBar = page.locator('.action-bar');
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  const strike = actionBar.locator('.ability-btn', { hasText: 'Power Strike' });
+  await expect(strike).toContainText('3 AP');
+  await strike.click();
+  await expect(page.locator('.armed-hint')).toContainText('Power Strike: click an enemy');
+  await expect(tokenAt(page, 9, 8)).toHaveClass(/ability-target/);
+  await tokenAt(page, 9, 8).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Power Strike on Goblin 1');
+  await expect(actionBar.locator('.ap-budget')).toHaveText(/AP 3\/4/);
+  await expect(strike).toBeDisabled(); // once per round
+
+  // The other two heroes defend.
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expect(feedEntries(page).filter({ hasText: "Bruiser's Power Strike" })).toHaveCount(1, { timeout: 20_000 });
+
+  // Round 2: Power Strike is cooling down (2 rounds), so it can't be planned.
+  await expectPlanningRound(page, 2, 20_000);
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  const strikeNow = page.locator('.action-bar .ability-btn', { hasText: 'Power Strike' });
+  await expect(strikeNow).toContainText('⏳ 2');
+  await expect(strikeNow).toBeDisabled();
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.cooldown-chip'))
+    .toContainText('Power Strike 2');
+});

@@ -27,3 +27,15 @@ tr.selected { background: rgba(255, 213, 79, 0.25); }
 .downed-label { color: #c62828; animation: downed-pulse 1.2s ease-in-out infinite; }
 .stable-label { color: #00897b; }
 @keyframes downed-pulse { 50% { opacity: 0.55; } }
+
+/* An ability on cooldown (3B.3). */
+.cooldown-chip {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ede7f6;
+  color: #6a1b9a;
+  font-size: 0.75em;
+  white-space: nowrap;
+}

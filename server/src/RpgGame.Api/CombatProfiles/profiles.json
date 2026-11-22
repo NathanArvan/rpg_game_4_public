@@ -12,6 +12,7 @@
   //   ap              action points per round (optional, default 4). Costs: move 1, melee 2,
   //                   ranged 2, defend 1. All of a round's moves share the "move" cells
   //   side            "party" | "enemy" | "any" — only orders the pick lists
+  //   abilities       optional list of ability ids from Abilities/abilities.json (3B.3): the loadout
   //
   // Keep values on a consistent scale: if core stats are adopted later, a stats → profile
   // function will be calibrated against these.
@@ -19,7 +20,8 @@
     {
       "id": "bruiser", "name": "Bruiser", "side": "party",
       "description": "Tough and hard-hitting up close, but slow and easy to hit.",
-      "hp": 24, "move": 4, "speed": 8, "meleeAccuracy": 2, "rangedAccuracy": -2, "dodge": 9, "damage": "d8", "ap": 4
+      "hp": 24, "move": 4, "speed": 8, "meleeAccuracy": 2, "rangedAccuracy": -2, "dodge": 9, "damage": "d8", "ap": 4,
+      "abilities": ["power_strike"]
     },
     {
       "id": "skirmisher", "name": "Skirmisher", "side": "party",
@@ -39,7 +41,8 @@
     {
       "id": "brute", "name": "Brute", "side": "enemy",
       "description": "Big, slow and dangerous in melee.",
-      "hp": 28, "move": 4, "speed": 6, "meleeAccuracy": 1, "rangedAccuracy": -2, "dodge": 8, "damage": "d10", "ap": 4
+      "hp": 28, "move": 4, "speed": 6, "meleeAccuracy": 1, "rangedAccuracy": -2, "dodge": 8, "damage": "d10", "ap": 4,
+      "abilities": ["power_strike"]
     }
   ]
 }

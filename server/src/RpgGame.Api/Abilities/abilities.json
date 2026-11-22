@@ -1,0 +1,37 @@
+{
+  // Ability definitions (roadmap 3B.3, docs/design/ABILITIES.md). Combat profiles and battle presets
+  // list abilities by id; each combatant stores a copy when it joins an encounter.
+  //
+  //   id, name, description
+  //   ap          AP cost (1–10). Basic actions for comparison: move 1, melee 2, ranged 2, defend 1
+  //   cooldown    rounds the ability can't be planned after the round it was used (0 = none).
+  //               An ability with a cooldown can be queued at most once per round
+  //   tags        mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …)
+  //   target      kind:   "combatant" (one chosen target, tracked like an attack). More kinds
+  //                       ("combatants", "auto", "self") come in later 3B.3 PRs
+  //               filter: "enemy" | "ally" | "any" | "downed_ally"
+  //               range:  Chebyshev cells from the caster when it resolves (1 = adjacent)
+  //   effects     resolved in order, each in its own phase of the tick:
+  //               { "kind": "attack", "roll": "melee" | "ranged" | "none",
+  //                 "accuracyBonus": 0,
+  //                 "damage": { "die": "weapon" | "d10", "bonus": 0, "multiplier": 1 } }
+  //               "weapon" rolls the caster's own damage die. One hit roll per target
+  //   resonanceScaling   optional (MAGIC_SYSTEM.md format). Checked, but only applied from 3M.5
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike",
+      "description": "A heavy melee blow: weapon damage +4.",
+      "ap": 3, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    },
+    {
+      "id": "firebolt", "name": "Firebolt",
+      "description": "A bolt of flame at a target up to 8 cells away: d8 + 1.",
+      "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ],
+      "resonanceScaling": { "flame": { "damagePerLevel": 2, "thresholdEffects": { "2": "ember", "3": "burning" } } }
+    }
+  ]
+}

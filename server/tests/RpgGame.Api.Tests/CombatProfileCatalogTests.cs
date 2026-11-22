@@ -47,8 +47,11 @@ public class CombatProfileCatalogTests : IDisposable
         Assert.Equal(
             new CombatProfile(bruiser.MaxHp, bruiser.MovementRange, bruiser.Speed, bruiser.MeleeAccuracy,
                 bruiser.RangedAccuracy, bruiser.Dodge, DamageDie.Parse(bruiser.BaseDamage), bruiser.MaxAp),
-            rules);
+            rules with { Abilities = [] });
+        // The loadout (3B.3) is copied in full and reaches the rules engine.
+        Assert.Equal(["power_strike"], rules.Abilities.Select(a => a.Id));
         Assert.NotSame(snapshot, bruiser.Snapshot());
+        Assert.NotSame(snapshot.Abilities![0], bruiser.Snapshot().Abilities![0]);
     }
 
     [Fact]

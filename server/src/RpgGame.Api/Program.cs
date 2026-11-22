@@ -90,6 +90,8 @@ builder.Services.AddSingleton<IPlanningTimer, PlanningTimerService>();
 builder.Services.AddScoped<IRoundOrchestrator, RoundOrchestrator>();
 builder.Services.AddScoped<IAiPlanningService, AiPlanningService>();
 builder.Services.AddSingleton(_ => RpgGame.Api.CombatProfiles.CombatProfileCatalog.FromAppDirectory());
+// Abilities (3B.3) are loaded with the profiles, which resolve their loadouts against them.
+builder.Services.AddSingleton(sp => sp.GetRequiredService<RpgGame.Api.CombatProfiles.CombatProfileCatalog>().Abilities);
 builder.Services.AddSingleton(sp => RpgGame.Api.QuickBattle.BattlePresetCatalog.FromAppDirectory(
     sp.GetRequiredService<RpgGame.Api.CombatProfiles.CombatProfileCatalog>()));
 builder.Services.AddScoped<IQuickBattleService, QuickBattleService>();

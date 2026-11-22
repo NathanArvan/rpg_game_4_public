@@ -86,9 +86,9 @@ Not in scope: the six core stats, point-buy, character creation rework, progress
 
 Delivers: Each round, characters have an AP budget (`MaxAp` from their combat profile) to spend on actions during planning. Moving, attacking, and using abilities all cost AP. Multiple actions can be planned per round. AP resets each round. The tick loop's queue length constraint lifts — this is where the multi-action architecture pays off.
 
-### ⬜ Slice 3B.3 — Abilities & Cooldowns
+### 🔄 Slice 3B.3 — Abilities & Cooldowns
 
-*Status: design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
+*Status: in progress. PR 1 (framework & cooldowns: ability catalog, loadouts on profiles, Power Strike and Firebolt, cooldowns, ability bar, AI uses Power Strike) is done. Design locked in `ABILITIES.md`, sprint plan in `SPRINT_3B3.md` (three PRs: framework & cooldowns → multi-target & healing → movement abilities). Decided November 2026: a heal can bring a Downed ally back to Standing (A8); prepared reactions are their own slice, 3B.6 (A9); the map side of environmental magic (ley points, resonance) moves to 3M.5, after 3M.2 (A12). Abilities live in a JSON catalog with loadouts on profiles, snapshotted per combatant, instead of an `ability_definitions` table. Teams move into the rules engine behind one `Relation` function; non-hostile rival teams are deferred.*
 
 Delivers: Characters have abilities (discrete mechanical packages) instead of class features. Abilities have AP costs, cooldown timers, range, target types, and effect definitions. Each combatant (player or monster) has a fixed **loadout** of abilities — how characters *acquire* abilities (trees, points, milestones) is progression and is deferred. Abilities carry resonance tags and the pipeline gets its `resonanceBonus` / `leyBonus` slots (always 0 here); the map side of environmental magic (ley points, resonance profile) is 3M.5 (moved out of 3B.3 in November 2026: it's map content, and 3M.2 introduces map files). The damage pipeline's `statModifier` slot is 0 or a profile value until the stats decision.
 
@@ -265,7 +265,8 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Next        3B.3 Abilities & Cooldowns → 3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
+Now         3B.3 Abilities & Cooldowns (PR 1 of 3 done)
+Next        3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
 Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -350,7 +351,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.2** (done) — Nothing new in Redis. Planned actions are multi-entry `PlannedActionArray`s; AP is checked when a plan is submitted and resets every round, so no `currentAp` is stored, and entries carry no `apCost` (the server computes costs).
 
-**3B.3** — Add `abilityCooldowns` JSON to `character:live` (`{ abilityId: roundsRemaining }`).
+**3B.3** — New hash `encounter:{encounterId}:cooldowns`: combatantId → JSON `{ abilityId: roundsRemaining }` (per encounter rather than in `character:live`, which outlives the encounter).
 
 **3M.5** — Add ley point and resonance data to `encounter:map:{encounterId}` (copied from the map file): `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 

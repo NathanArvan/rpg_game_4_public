@@ -74,7 +74,7 @@ public static class EnemyAi
             if (from.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
             {
                 var attacks = new List<PlannedAction>();
-                AddMelees(attacks, target.Id, self.Profile.MaxAp, config);
+                AddAttacks(attacks, self, target, self.Profile.MaxAp, config);
                 plans[id] = attacks.Count > 0 ? attacks : [PlannedAction.Defend()];
                 blockers.Add(from);
                 continue;
@@ -95,12 +95,41 @@ public static class EnemyAi
             var queue = new List<PlannedAction> { PlannedAction.Move(destination.X, destination.Y) };
             // Strike with what's left if the walk ends in reach (the target may still step away).
             if (destination.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
-                AddMelees(queue, target.Id, self.Profile.MaxAp - config.MoveApCost, config);
+                AddAttacks(queue, self, target, self.Profile.MaxAp - config.MoveApCost, config);
             plans[id] = queue;
         }
 
         return plans;
     }
+
+    /// <summary>
+    /// Appends the attacks on an adjacent <paramref name="target"/> that <paramref name="apLeft"/> pays
+    /// for: a melee attack ability first if one is ready and affordable (3B.3, ABILITIES.md A13 step 4),
+    /// then as many basic melee attacks as the AP left covers.
+    /// </summary>
+    private static void AddAttacks(List<PlannedAction> queue, CombatantState self, CombatantState target, int apLeft, RulesConfig config)
+    {
+        if (MeleeAttackAbility(self, apLeft, config) is { } ability)
+        {
+            queue.Add(PlannedAction.Ability(ability.Id, target.Id));
+            apLeft -= ability.ApCost;
+        }
+        AddMelees(queue, target.Id, apLeft, config);
+    }
+
+    /// <summary>
+    /// The first loadout ability that is a single-target melee attack on an enemy, ready (no
+    /// cooldown) and affordable. Abilities count as stronger than a basic swing.
+    /// </summary>
+    private static AbilityDefinition? MeleeAttackAbility(CombatantState self, int apLeft, RulesConfig config) =>
+        self.Profile.Abilities.FirstOrDefault(a =>
+            a.Activation == AbilityActivation.Active
+            && a.Targeting is { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy }
+            && a.Targeting.Range >= config.MeleeReach
+            && a.Effects.Count > 0
+            && a.Effects.All(e => e is AttackEffect { Roll: AttackKind.Melee })
+            && a.ApCost <= apLeft
+            && self.CooldownLeft(a.Id) == 0);
 
     /// <summary>Appends as many melee attacks on <paramref name="targetId"/> as <paramref name="apLeft"/> pays for.</summary>
     private static void AddMelees(List<PlannedAction> queue, string targetId, int apLeft, RulesConfig config)

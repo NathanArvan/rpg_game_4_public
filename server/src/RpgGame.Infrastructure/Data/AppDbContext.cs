@@ -64,7 +64,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(c => c.EncounterId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<AppUser>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Character>().WithMany().HasForeignKey(c => c.CharacterId).OnDelete(DeleteBehavior.Restrict);
-            e.OwnsOne(c => c.Profile, p => p.ToJson());
+            e.OwnsOne(c => c.Profile, p =>
+            {
+                p.ToJson();
+                // Ability loadout snapshot (3B.3), nested in the same JSON column.
+                p.OwnsMany(v => v.Abilities, a =>
+                {
+                    a.OwnsOne(x => x.Target);
+                    a.OwnsMany(x => x.Effects, ef => ef.OwnsOne(d => d.Damage));
+                });
+            });
         });
 
         builder.Entity<GameEvent>(e =>

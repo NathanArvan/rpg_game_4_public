@@ -1,0 +1,20 @@
+{
+  "description": "The AI opens with a ready melee attack ability instead of basic swings (4 AP: Power Strike, 1 AP left over)",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "at": [5, 6], "abilities": ["power_strike"] }
+  ],
+  "plans": { "Brute": ["ai"] },
+  "dice": [12, 6],                       // hit; 6 + 4 = 10
+  "expect": {
+    "plans": { "Brute": "ability power_strike Hero" },
+    "hp": { "Hero": 10 }
+  }
+}

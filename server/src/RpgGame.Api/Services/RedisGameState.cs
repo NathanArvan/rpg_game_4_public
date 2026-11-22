@@ -123,6 +123,28 @@ public class RedisGameState : IRedisGameState
         await db.HashSetAsync($"encounter:{encounterId}:status", combatantId, $"{status.Status}:{status.BleedoutRoundsLeft}");
     }
 
+    // Ability cooldowns (3B.3): encounter:{id}:cooldowns, combatantId → JSON { abilityId: roundsLeft }.
+    // Per encounter rather than in character:live (keyed by character ID, which outlives the
+    // encounter), so cooldowns never leak into the next fight.
+    public async Task<Dictionary<string, int>> GetCooldownsAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        var value = await db.HashGetAsync($"encounter:{encounterId}:cooldowns", combatantId);
+        return value.IsNullOrEmpty
+            ? []
+            : JsonSerializer.Deserialize<Dictionary<string, int>>(value.ToString(), _jsonOptions) ?? [];
+    }
+
+    public async Task SetCooldownsAsync(string encounterId, string combatantId, IReadOnlyDictionary<string, int> cooldowns)
+    {
+        var db = _redis.GetDatabase();
+        var key = $"encounter:{encounterId}:cooldowns";
+        if (cooldowns.Count == 0)
+            await db.HashDeleteAsync(key, combatantId);
+        else
+            await db.HashSetAsync(key, combatantId, JsonSerializer.Serialize(cooldowns, _jsonOptions));
+    }
+
     // --- Planning phase ---
 
     public async Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson)

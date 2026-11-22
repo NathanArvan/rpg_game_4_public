@@ -1,0 +1,23 @@
+{
+  "description": "An ability attack and a basic attack land in the same netted batch: both combatants die",
+  "abilities": [
+    {
+      "id": "power_strike", "name": "Power Strike", "ap": 3, "cooldown": 2,
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 4 } } ]
+    }
+  ],
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 5, "at": [0, 0], "abilities": ["power_strike"] },
+    { "id": "Goblin", "side": "enemy", "hp": 6, "at": [1, 0] }
+  ],
+  "plans": {
+    "Hero":   ["ability power_strike Goblin"],
+    "Goblin": ["melee Hero"]
+  },
+  "dice": [12, 2, 13, 5],                // Hero: hit, 2 + 4 = 6. Goblin: hit, 5
+  "expect": {
+    "hp": { "Hero": 0, "Goblin": 0 },
+    "defeated": ["Hero", "Goblin"]
+  }
+}

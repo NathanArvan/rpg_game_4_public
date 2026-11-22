@@ -74,6 +74,6 @@ public class PlanValidatorTests
     public void AffordableCount_StopsAtTheFirstActionThatDoesNotFit(int maxAp, int expected)
     {
         PlannedAction[] queue = [PlannedAction.Melee("B"), PlannedAction.Melee("B"), PlannedAction.Defend()];
-        Assert.Equal(expected, PlanValidator.AffordableCount(queue, maxAp));
+        Assert.Equal(expected, PlanValidator.AffordableCount(queue, Profile() with { MaxAp = maxAp }));
     }
 }

@@ -75,6 +75,24 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
+    public async Task Start_StoresTheWholeProfile_IncludingApDownsAndAbilities()
+    {
+        // Regression: the stored copy used to drop MaxAp and CanBeDowned (and would have dropped abilities).
+        await Service().StartAsync("user-1", "abilities");
+
+        var combatants = await _db.EncounterCombatants.ToListAsync();
+        var skirmisher = combatants.Single(c => c.CharacterName == "Skirmisher").Profile!;
+        Assert.Equal(5, skirmisher.MaxAp);
+        var bruiser = combatants.Single(c => c.CharacterName == "Bruiser").Profile!;
+        Assert.Equal(["power_strike"], bruiser.Abilities!.Select(a => a.Id));
+        Assert.Equal(["firebolt"], combatants.Single(c => c.CharacterName == "Scout").Profile!.Abilities!.Select(a => a.Id));
+
+        await Service().StartAsync("user-2", "rescue");
+        var archer = (await _db.EncounterCombatants.ToListAsync()).Single(c => c.CharacterName == "Archer").Profile!;
+        Assert.Equal(1, archer.Dodge);
+    }
+
+    [Fact]
     public async Task Start_SeedsMapHpAndAnActiveEncounterWithTheTimerOff()
     {
         var r = await Service().StartAsync("user-1", "skirmish");

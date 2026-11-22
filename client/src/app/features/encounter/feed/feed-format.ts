@@ -6,7 +6,8 @@
  * - "Tick 1" and "End of round" → tick headings
  * - other lines: party names blue, enemy names red, "for 5 damage (HP: 8 → 3)" /
  *   "for 5 damage — defeated!" / "— goes down!" / "— finished off!" orange, "and misses" grey,
- *   bleeding out orange, stabilizes teal (3B.5)
+ *   bleeding out orange, stabilizes teal (3B.5), ability names purple (3B.3:
+ *   "Bruiser's Power Strike hits …", "Bruiser uses Power Strike on …", "… can't use Power Strike — …")
  */
 
 export type FeedLineKind = 'round' | 'tick' | 'event';
@@ -14,7 +15,7 @@ export type FeedLineKind = 'round' | 'tick' | 'event';
 /** First line of every encounter's log (added when EncounterStarted arrives). */
 export const BATTLE_START_LINE = '— Battle Start —';
 
-export type SegmentStyle = 'party' | 'enemy' | 'damage' | 'miss' | 'save';
+export type SegmentStyle = 'party' | 'enemy' | 'damage' | 'miss' | 'save' | 'ability';
 
 export interface FeedSegment {
   text: string;
@@ -31,8 +32,12 @@ export type NameSides = ReadonlyMap<string, 'party' | 'enemy'>;
 
 // From ResolutionFeedFormatter (server): "for {damage} damage (HP: {before} → {after})" or "… — defeated!".
 const DAMAGE = String.raw`for \d+ damage(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
-const MISS = 'and misses';
+const MISS = String.raw`and misses|misses`;
 const SAVE = 'stabilizes';
+// Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
+// or after "uses " / "can't use " and before " on " / " —" / the end.
+// (Not the basic "X's attack on …" and "X's stabilize on …" lines.)
+const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {
@@ -47,7 +52,7 @@ function highlight(text: string, sides: NameSides): FeedSegment[] {
   // more letters or digits ("Goblin 1" is not part of "Goblin 12").
   const names = [...sides.keys()].filter(n => n.length > 0).sort((a, b) => b.length - a.length);
   const nameAlternatives = names.map(n => `${escapeRegExp(n)}(?![\\p{L}\\p{N}])`);
-  const pattern = new RegExp([DAMAGE, MISS, SAVE, ...nameAlternatives].map(p => `(${p})`).join('|'), 'gu');
+  const pattern = new RegExp([DAMAGE, MISS, SAVE, ABILITY, ...nameAlternatives].map(p => `(${p})`).join('|'), 'gu');
 
   const segments: FeedSegment[] = [];
   let last = 0;
@@ -65,6 +70,7 @@ function styleOf(match: RegExpMatchArray, sides: NameSides): SegmentStyle {
   if (match[1] !== undefined) return 'damage';
   if (match[2] !== undefined) return 'miss';
   if (match[3] !== undefined) return 'save';
+  if (match[4] !== undefined) return 'ability';
   return sides.get(match[0]) ?? 'party';
 }
 
