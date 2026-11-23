@@ -141,6 +141,15 @@ public sealed record MoveEffect(
     bool UsesMovementBudget = true,
     MovePath Path = MovePath.Walk) : AbilityEffect;
 
+/// <summary>
+/// Puts a condition on each target, resolved in the Effects phase in plan order, then target order
+/// (SPRINT_3B4 C2). The condition's definition is copied in when the ability is loaded, so the resolver
+/// never needs a catalog.
+/// </summary>
+/// <param name="Duration">Full rounds it lasts after the current one (C5): 0 = until the end of this round.</param>
+/// <param name="RequiresHit">Only targets that the same activation's attack hit get it.</param>
+public sealed record ApplyConditionEffect(ConditionDefinition Condition, int Duration, bool RequiresHit) : AbilityEffect;
+
 /// <param name="Cooldown">Rounds the ability can't be planned after the round it was used (0 = none).</param>
 /// <param name="Tags">Mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …).</param>
 /// <param name="Charges">Uses per encounter. Reserved; not implemented yet.</param>
@@ -166,6 +175,9 @@ public sealed record AbilityDefinition(
 
     /// <summary>The ability's move effect, or null if it doesn't move the caster.</summary>
     public MoveEffect? Move => Effects.OfType<MoveEffect>().FirstOrDefault();
+
+    /// <summary>The conditions this ability applies (3B.4).</summary>
+    public IEnumerable<ApplyConditionEffect> ConditionEffects => Effects.OfType<ApplyConditionEffect>();
 
     /// <summary>Whether a planned use needs a <see cref="PlannedAction.TargetCell"/> (a move to a cell).</summary>
     public bool NeedsCell => Move is { To: MoveTo.Cell };

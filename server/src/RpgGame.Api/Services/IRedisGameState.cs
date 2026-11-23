@@ -1,4 +1,5 @@
 using RpgGame.Api.Models;
+using RpgGame.Domain.Entities;
 
 namespace RpgGame.Api.Services;
 
@@ -26,6 +27,10 @@ public interface IRedisGameState
     Task<Dictionary<string, int>> GetCooldownsAsync(string encounterId, string combatantId);
     /// <summary>Replaces one combatant's cooldowns; an empty map removes the entry.</summary>
     Task SetCooldownsAsync(string encounterId, string combatantId, IReadOnlyDictionary<string, int> cooldowns);
+    /// <summary>Conditions on one combatant (3B.4), in the order they were applied. Empty when none.</summary>
+    Task<List<ActiveConditionValues>> GetConditionsAsync(string encounterId, string combatantId);
+    /// <summary>Replaces one combatant's conditions; an empty list removes the entry.</summary>
+    Task SetConditionsAsync(string encounterId, string combatantId, IReadOnlyList<ActiveConditionValues> conditions);
 
     // Planning phase
     Task SetPlannedActionAsync(string encounterId, string combatantId, string actionJson);

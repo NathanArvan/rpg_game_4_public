@@ -323,7 +323,8 @@ public partial class ResolutionServiceTests
 
         var attack = Assert.Single(result.Ticks[0].Attacks);
         var profile = CombatProfile.Default;
-        Assert.Equal(new AttackRollDto(20, profile.MeleeAccuracy, profile.Dodge), attack.Roll);
+        // The target defends, so it's Guarded (+3 Dodge, 3B.4) and the roll says so.
+        Assert.Equal(new AttackRollDto(20, profile.MeleeAccuracy, profile.Dodge + 3, 0, 3), attack.Roll);
         Assert.Null(attack.WastedReason);
 
         // Plan order, each action with its AP cost.

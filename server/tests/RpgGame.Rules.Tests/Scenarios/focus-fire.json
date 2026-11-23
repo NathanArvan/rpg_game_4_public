@@ -17,7 +17,7 @@
   "dice": [
     12, 4,   // tick 1: A ranged C → 4   (C 14 → 10)
     15, 7,   // tick 1: C melee B  → 7   (B 20 → 13) — B is adjacent after moving
-    10, 2,   // tick 2: A ranged C → 2
+    13, 2,   // tick 2: A ranged C → 2 (C defends in tick 2, so it's Guarded: Dodge 13, 3B.4)
     18, 8    // tick 2: B melee C  → 8   (C 10 → 0, defeated)
   ],
   "expect": {

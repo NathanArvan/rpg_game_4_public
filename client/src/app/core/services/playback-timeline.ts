@@ -1,4 +1,6 @@
-import { MovementResult, PositionDto, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
+import {
+  ActiveConditionDto, ConditionDto, ConditionResult, MovementResult, PositionDto, ResolutionPayload, TickResult,
+} from '../../contracts/hub-contracts.generated';
 import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model';
 
 /**
@@ -12,9 +14,10 @@ import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model
 
 /**
  * Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized
- * (3B.5). Soft green: healed or back on their feet (3B.3).
+ * (3B.5). Soft green: healed or back on their feet (3B.3). Blue / purple: got a beneficial / harmful
+ * condition (3B.4).
  */
-export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal';
+export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal' | 'buff' | 'debuff';
 
 /** A combatant's status as shown (3B.5). */
 export interface StatusView {
@@ -34,9 +37,9 @@ export interface FloatCue {
   /**
    * damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized /
    * bleeding (3B.5); ability: the ability's name above its user (3B.3); heal: green +n, and UP for
-   * someone back on their feet (3B.3).
+   * someone back on their feet (3B.3); buff / debuff: a condition's name as it lands (3B.4).
    */
-  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal';
+  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff';
 }
 
 /** Short words for why an attack was wasted (the server's wastedReason). */
@@ -51,11 +54,12 @@ export function wastedLabel(reason: string | null): string {
     case 'not_in_loadout': return 'no such ability';
     case 'invalid_target_type': return 'wrong target';
     case 'no_targets': return 'no targets';
+    case 'missed': return 'missed';
     default: return 'wasted';
   }
 }
 
-export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'bleedout' | 'idle';
+export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'bleedout' | 'expiries' | 'idle';
 
 export interface PlaybackBeat {
   /** 0-based tick this beat belongs to. */
@@ -73,6 +77,8 @@ export interface PlaybackBeat {
   hp?: Record<string, number>;
   /** Statuses that change at this beat (going down, dying, stabilized, bleeding out) (3B.5). */
   statuses?: Record<string, StatusView>;
+  /** Combatants whose conditions change at this beat, with their whole list as shown from now on (3B.4). */
+  conditions?: Record<string, ActiveConditionDto[]>;
   /** Feed lines added at this beat. */
   feed?: string[];
 }
@@ -97,6 +103,8 @@ export interface PlaybackTiming {
   effectMs: number;
   /** Hold for the end-of-round bleedout step (3B.5). */
   bleedoutMs: number;
+  /** Hold for the end-of-round step where conditions run out (3B.4). */
+  expiryMs: number;
   /** How long an aura glows. */
   auraMs: number;
   /** How long floating damage / MISS text lingers (it may outlast its beat). */
@@ -114,6 +122,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   reviveMs: 900,
   effectMs: 1200,
   bleedoutMs: 1500,
+  expiryMs: 900,
   auraMs: 1000,
   floatMs: 2500,
 };
@@ -164,13 +173,63 @@ export function positionsAfterResolution(
 }
 
 /**
+ * Follows everyone's conditions through a round (3B.4), so chips can change as playback reaches each
+ * event: starts from the conditions before the round, adds or refreshes them as they land, clears
+ * them when someone falls, and ends on the server's lists after the round.
+ */
+class ConditionTracker {
+  private readonly lists = new Map<string, ActiveConditionDto[]>();
+  private readonly definitions = new Map<string, ConditionDto>();
+
+  constructor(before: Record<string, ActiveConditionDto[]>, payload: ResolutionPayload) {
+    for (const [id, list] of Object.entries(before)) this.lists.set(id, list);
+    const learn = (c: ConditionDto) => { if (!this.definitions.has(c.id)) this.definitions.set(c.id, c); };
+    for (const list of Object.values(before)) list.forEach(a => learn(a.condition));
+    for (const u of payload.updatedCombatants ?? []) {
+      (u.conditions ?? []).forEach(a => learn(a.condition));
+      for (const ability of u.abilities ?? []) (ability.appliesConditions ?? []).forEach(a => learn(a.condition));
+    }
+  }
+
+  /** Applies a condition result; returns the target's new list, or null if nothing changed. */
+  apply(r: ConditionResult): ActiveConditionDto[] | null {
+    if (r.result !== 'applied' && r.result !== 'refreshed') return null;
+    const condition = this.definitions.get(r.conditionId) ?? {
+      id: r.conditionId, name: r.conditionName, description: '', harmful: r.harmful, tags: [],
+      modifiers: { accuracy: 0, dodge: 0, attackKind: 'any', damageDealt: 0, damageTaken: null, movement: 0, ap: 0, periodic: null, blocks: [] },
+    };
+    const entry: ActiveConditionDto = { condition, roundsLeft: r.roundsLeft, sourceId: r.sourceId };
+    const list = [...(this.lists.get(r.targetId) ?? [])];
+    const i = list.findIndex(a => a.condition.id === r.conditionId);
+    if (i >= 0) list[i] = entry; else list.push(entry);
+    this.lists.set(r.targetId, list);
+    return list;
+  }
+
+  /** Someone fell: their conditions are gone (3B.4). Returns true if they had any. */
+  clear(combatantId: string): boolean {
+    const had = (this.lists.get(combatantId) ?? []).length > 0;
+    this.lists.set(combatantId, []);
+    return had;
+  }
+}
+
+/**
  * The beats of a round, in order. Each tick plays as: movement steps → attacks and heals →
- * defeats → revives → effects (stabilize); after the last tick, the end-of-round bleedout step (3B.5).
+ * defeats → revives → effects (stabilize, conditions); after the last tick, the end-of-round bleedout
+ * step (3B.5) and conditions running out (3B.4). Defend's Guarded shows with the tick's first beat.
  * Attacks and heals within a tick are simultaneous (the rules net them together), so they share
  * one beat; the next tick's actions only start after it.
+ *
+ * @param conditionsBefore everyone's conditions as the round started, so chips can follow playback (3B.4).
  */
-export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming = PLAYBACK_TIMING): PlaybackBeat[] {
+export function buildTimeline(
+  payload: ResolutionPayload,
+  timing: PlaybackTiming = PLAYBACK_TIMING,
+  conditionsBefore: Record<string, ActiveConditionDto[]> = {},
+): PlaybackBeat[] {
   const beats: PlaybackBeat[] = [];
+  const tracker = new ConditionTracker(conditionsBefore, payload);
   const severalTicks = payload.ticks.length > 1;
   // Bleedout rounds for anyone downed this round come from the server's end-of-round rows.
   const finalBleedout = new Map((payload.updatedCombatants ?? []).map(c => [c.id, c.bleedoutRoundsLeft ?? 0]));
@@ -187,6 +246,16 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
     const t = tick.tickIndex;
     const beatsBefore = beats.length;
     if (severalTicks) pendingFeed.push(`Tick ${t + 1}`);
+
+    // Defend's Guarded (3B.4) lands at the start of the tick: shown with the tick's first beat.
+    const tickConditions = tick.conditions ?? [];
+    const guards = tickConditions.filter(c => c.abilityId === null);
+    const guardChanges: Record<string, ActiveConditionDto[]> = {};
+    for (const g of guards) {
+      const list = tracker.apply(g);
+      if (list) guardChanges[g.targetId] = list;
+    }
+    pendingFeed.push(...guards.map(g => g.feedText));
 
     // Movement: one beat per cell, every mover stepping in lockstep (as the rules resolve it).
     const uses = tick.abilityUses ?? [];
@@ -267,13 +336,18 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
     // Who fell this tick: Downed (bleeding out) or dead.
     const fell: Record<string, StatusView> = {};
     const downFloats: FloatCue[] = [];
+    const clearedConditions: Record<string, ActiveConditionDto[]> = {};
     for (const a of tick.attacks.filter(a => a.targetDefeated)) {
       const status = toStatus(a.targetStatus, true);
       fell[a.targetId] = { status, bleedoutRoundsLeft: status === 'downed' ? finalBleedout.get(a.targetId) ?? 0 : 0 };
       if (status === 'downed') downFloats.push({ combatantId: a.targetId, text: 'DOWN', kind: 'damage' });
+      if (tracker.clear(a.targetId)) clearedConditions[a.targetId] = []; // falling clears conditions (3B.4)
     }
-    if (Object.keys(fell).length > 0)
-      beats.push({ tick: t, phase: 'defeats', durationMs: timing.defeatMs, statuses: fell, floats: downFloats, feed: takeFeed() });
+    if (Object.keys(fell).length > 0) {
+      const beat: PlaybackBeat = { tick: t, phase: 'defeats', durationMs: timing.defeatMs, statuses: fell, floats: downFloats, feed: takeFeed() };
+      if (Object.keys(clearedConditions).length > 0) beat.conditions = clearedConditions;
+      beats.push(beat);
+    }
 
     // Back on their feet (3B.3): a heal revived someone who was down.
     const revived = heals.filter(h => h.revived && !h.wastedReason);
@@ -288,13 +362,29 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
       });
     }
 
-    // Effects: stabilizes (defends have nothing to show yet).
+    // Effects: stabilizes, then conditions from abilities (3B.4). Defend's Guarded showed at the start.
     const stabilizes = tick.effects.filter(e => e.effectType === 'stabilize');
-    if (stabilizes.length > 0) {
-      pendingFeed.push(...stabilizes.map(e => e.description));
+    const abilityConditions = tickConditions.filter(c => c.abilityId !== null);
+    if (stabilizes.length > 0 || abilityConditions.length > 0) {
+      pendingFeed.push(...stabilizes.map(e => e.description), ...abilityConditions.map(c => c.feedText));
       const statuses: Record<string, StatusView> = {};
       const auras: AuraCue[] = [];
       const floats: FloatCue[] = [];
+      const conditions: Record<string, ActiveConditionDto[]> = {};
+      for (const c of abilityConditions) {
+        const list = tracker.apply(c);
+        if (list) {
+          conditions[c.targetId] = list;
+          const kind = c.harmful ? 'debuff' as const : 'buff' as const;
+          if (!auras.some(a => a.combatantId === c.targetId && a.kind === kind)) auras.push({ combatantId: c.targetId, kind });
+          floats.push({ combatantId: c.targetId, text: c.conditionName, kind });
+        } else if (c.result === 'resisted') {
+          floats.push({ combatantId: c.targetId, text: 'RESISTED', kind: 'miss' });
+        } else if (c.wastedReason && c.wastedReason !== 'missed') {
+          // A miss already showed MISS; anything else says why above whoever used it.
+          floats.push({ combatantId: c.sourceId, text: wastedLabel(c.wastedReason), kind: 'wasted' });
+        }
+      }
       for (const e of stabilizes) {
         if (e.wastedReason || !e.targetCombatantId) {
           floats.push({ combatantId: e.combatantId, text: wastedLabel(e.wastedReason), kind: 'wasted' });
@@ -304,12 +394,22 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
         auras.push({ combatantId: e.targetCombatantId, kind: 'stabilize' });
         floats.push({ combatantId: e.targetCombatantId, text: 'stabilized', kind: 'status' });
       }
-      beats.push({ tick: t, phase: 'effects', durationMs: timing.effectMs, statuses, auras, floats, feed: takeFeed() });
+      const beat: PlaybackBeat = { tick: t, phase: 'effects', durationMs: timing.effectMs, statuses, auras, floats, feed: takeFeed() };
+      if (Object.keys(conditions).length > 0) beat.conditions = conditions;
+      beats.push(beat);
     }
 
     // Nothing visible happened this tick (defends, idles): a short beat for it.
     if (beats.length === beatsBefore)
       beats.push({ tick: t, phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
+
+    // Guarded shows as the tick starts: on its first beat, with a short cue over the defender.
+    if (guards.length > 0) {
+      const first = beats[beatsBefore];
+      first.conditions = { ...guardChanges, ...first.conditions };
+      first.auras = [...(first.auras ?? []), ...Object.keys(guardChanges).map(id => ({ combatantId: id, kind: 'buff' as const }))];
+      first.floats = [...(first.floats ?? []), ...guards.map(g => ({ combatantId: g.targetId, text: g.conditionName, kind: 'buff' as const }))];
+    }
   }
 
   const lastTick = Math.max(0, payload.ticks.length - 1);
@@ -327,6 +427,17 @@ export function buildTimeline(payload: ResolutionPayload, timing: PlaybackTiming
         : { combatantId: b.combatantId, text: `bleeding: ${b.roundsLeft}`, kind: 'status' });
     }
     beats.push({ tick: lastTick, phase: 'bleedout', durationMs: timing.bleedoutMs, statuses, floats, feed: takeFeed() });
+  }
+
+  // End of round: conditions that ran out go (3B.4); chips end on the server's lists.
+  const expired = payload.expiredConditions ?? [];
+  if (expired.length > 0) {
+    if (bleeding.length === 0) pendingFeed.push('End of round');
+    pendingFeed.push(...expired.map(x => x.feedText));
+    const conditions: Record<string, ActiveConditionDto[]> = {};
+    for (const u of payload.updatedCombatants ?? [])
+      if (expired.some(x => x.combatantId === u.id)) conditions[u.id] = u.conditions ?? [];
+    beats.push({ tick: lastTick, phase: 'expiries', durationMs: timing.expiryMs, conditions, feed: takeFeed() });
   }
 
   if (pendingFeed.length > 0)

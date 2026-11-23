@@ -54,7 +54,7 @@ Ability families the framework has to support, and when each one lands:
 | Attack outcomes are one-attacker-one-target, with no link back to the action that made them | `Outcomes.cs` | Add `AbilityId` to attack and movement outcomes, a new `HealOutcome`, and one `AbilityUse` record per activation |
 | Range checks are inline (`InMeleeReach`, ranged has no range) | `RoundResolver` | One `CanReach(caster, target, range)` helper. 3M.2 adds line of sight there, 3M.4 high ground, 3C vision |
 | Basic attacks have unlimited range | `RoundResolver` | Abilities have ranges. Basic ranged stays unlimited for now (tuning decision, not framework) |
-| Defend does nothing (quirk 4) | `RoundResolver` | Not 3B.3. Defend becomes meaningful with conditions in 3B.4 ("Guarded": +Dodge until end of round) |
+| Defend does nothing (quirk 4) | `RoundResolver` | Not 3B.3. *Done in 3B.4 PR 1:* Defend grants Guarded (+3 Dodge) from the start of its tick until the end of the round |
 
 Nothing here requires restructuring the tick loop. The work is: widen the action and outcome records, add an ability catalog, and route effects by phase.
 
@@ -126,7 +126,7 @@ Each effect kind has a fixed phase:
 | `heal` | Attacks | Positive HP delta in the same netting batch as damage (A8) |
 | `stabilize` | Effects | Same as the Stabilize action (3B.5) |
 | `push` (stretch) | Attacks, after damage | Pushes the target `cells` straight away from the caster. Stops at the first blocked or off-grid cell. Resolved in plan order after the tick's HP is applied |
-| `apply_condition` (3B.4) | Effects | Duration-based modifiers |
+| `apply_condition` (3B.4) | Effects | Puts a condition (copied from `conditions.json`) on each target for `duration` full rounds after the current one; `requiresHit` (default: the ability attacks) limits it to targets the same activation hit. Counts from the next tick. See `SPRINT_3B4.md` |
 
 When an ability is at queue position *i*, its effects all run in **tick *i***, each in its own phase. A Charge (`move` to target + `attack`) moves in tick *i*'s Movement phase together with everyone else's moves (lockstep, Speed tiebreaks), then attacks in tick *i*'s Attack phase against post-movement positions. If the target ran out of reach, the attack is wasted (same as melee today). This is the "single action with multi-phase resolution" that TICK_RESOLUTION D2 and its summary call for.
 

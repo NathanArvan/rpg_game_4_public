@@ -1,0 +1,13 @@
+{
+  // 3B.4 (SPRINT_3B4 C12): the same condition again doesn't stack; it keeps the longer duration.
+  "description": "Conditions: re-marking a Marked target refreshes it (longer duration wins) and adds Exposed",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [2, 2], "abilities": ["mark"] },
+    { "id": "Goblin",  "side": "enemy", "at": [5, 6], "conditions": [ { "id": "marked", "rounds": 2 } ] }
+  ],
+  "plans": { "Kestrel": ["ability mark Goblin"] },
+  "expect": {
+    "events": ["t1 Kestrel mark Goblin: marked refreshed (2)", "t1 Kestrel mark Goblin: exposed applied (1)"],
+    "conditions": { "Goblin": { "marked": 1, "exposed": 0 } }
+  }
+}

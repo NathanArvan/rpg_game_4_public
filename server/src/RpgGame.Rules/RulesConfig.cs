@@ -6,6 +6,11 @@ namespace RpgGame.Rules;
 /// </summary>
 public sealed record RulesConfig
 {
+    // Declared before Default: static initializers run in order, and Default reads it.
+    /// <summary>The built-in Guarded condition (+3 Dodge).</summary>
+    public static ConditionDefinition DefaultGuarded { get; } =
+        new(GuardedId, "Guarded", Harmful: false, Tags: [], new Modifiers(Dodge: 3));
+
     public static RulesConfig Default { get; } = new();
 
     /// <summary>Max Chebyshev distance for a melee attack, checked after movement.</summary>
@@ -32,6 +37,15 @@ public sealed record RulesConfig
     /// Hardiness once character stats exist (DEFEAT_AND_INCAPACITATION.md).
     /// </summary>
     public int BleedoutRounds { get; init; } = 2;
+
+    /// <summary>
+    /// The condition Defend grants (3B.4, SPRINT_3B4 C7): +3 Dodge from the start of the Defend's tick until
+    /// the end of the round. Built in, so Rules (and scenarios) need no catalog for it.
+    /// </summary>
+    public ConditionDefinition GuardedCondition { get; init; } = DefaultGuarded;
+
+    /// <summary>Id of <see cref="GuardedCondition"/>.</summary>
+    public const string GuardedId = "guarded";
 
     public int ApCost(ActionType type) => type switch
     {

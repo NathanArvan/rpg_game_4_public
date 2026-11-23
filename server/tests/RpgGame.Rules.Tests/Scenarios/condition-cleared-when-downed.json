@@ -1,0 +1,12 @@
+{
+  // 3B.4 (SPRINT_3B4 C10): going Downed (or dying) clears every condition.
+  "description": "Conditions: a Blessed hero who goes Downed loses Blessed",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5],
+      "conditions": [ { "id": "blessed", "rounds": 2 } ] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6] }
+  ],
+  "plans": { "Goblin": ["melee Hero"] },
+  "dice": [15, 5],
+  "expect": { "status": { "Hero": "downed" }, "conditions": { "Hero": {} } }
+}

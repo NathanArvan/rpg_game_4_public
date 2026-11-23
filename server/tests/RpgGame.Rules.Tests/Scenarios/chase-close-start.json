@@ -12,7 +12,7 @@
   },
   "dice": [
     14, 3,   // tick 2: Mage ranged — d20 14 hits, d4 3 damage
-    11, 6    // tick 3: Fighter melee — d20 11 hits, d8 6 damage
+    14, 6    // tick 3: Fighter melee — d20 14 hits the Guarded Mage (Dodge 10 + 3 from defending, 3B.4), d8 6 damage
   ],
   "expect": {
     "ticks": 3,

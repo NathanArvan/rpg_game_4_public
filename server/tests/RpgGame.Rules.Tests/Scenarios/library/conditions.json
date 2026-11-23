@@ -1,0 +1,18 @@
+{
+  // Shared condition definitions for scenarios (3B.4), same shape as the server's
+  // server/src/RpgGame.Api/Conditions/conditions.json. A combatant's "conditions" list and an ability's
+  // "apply_condition" effect can name any of these; a scenario's own "conditions" block overrides an
+  // entry with the same id. Guarded (Defend's +3 Dodge) is built into the rules and needs no entry.
+  //
+  // Test versions owned by these tests, like library/abilities.json: retuning the shipped file
+  // doesn't change them.
+  "conditions": [
+    { "id": "blessed",    "name": "Blessed",    "harmful": false, "modifiers": { "accuracy": 2 } },
+    { "id": "dazzled",    "name": "Dazzled",    "harmful": true,  "modifiers": { "accuracy": -3, "attackKind": "ranged" } },
+    { "id": "exposed",    "name": "Exposed",    "harmful": true,  "modifiers": { "dodge": -3 } },
+    { "id": "emboldened", "name": "Emboldened", "harmful": false, "modifiers": { "damageDealt": 2 } },
+    { "id": "fortified",  "name": "Fortified",  "harmful": false, "modifiers": { "damageTaken": { "percent": -50 } } },
+    { "id": "marked",     "name": "Marked",     "harmful": true,  "modifiers": { "damageTaken": { "flat": 2 } } },
+    { "id": "flame_ward", "name": "Flame Ward", "harmful": false, "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } } }
+  ]
+}

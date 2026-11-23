@@ -1,0 +1,11 @@
+{
+  // 3B.4: damage taken +2 flat on every hit.
+  "description": "Conditions: Marked adds 2 to each hit, Emboldened adds 2 more from the attacker's side",
+  "combatants": [
+    { "id": "A", "at": [5, 5], "conditions": [ { "id": "emboldened", "rounds": 0 } ] },
+    { "id": "B", "at": [5, 6], "conditions": [ { "id": "marked", "rounds": 0 } ] }
+  ],
+  "plans": { "A": ["melee B", "melee B"] },
+  "dice": [15, 5, 2],                // tick 1: 5 + 2 + 2 = 9; tick 2: a 2 misses, so no damage roll
+  "expect": { "hp": { "B": 11 }, "events": ["t1 A melee B: hit 9 (+4 conditions)", "t2 A melee B: miss"] }
+}

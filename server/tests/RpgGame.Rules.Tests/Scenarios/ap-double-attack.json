@@ -12,7 +12,7 @@
   },
   "dice": [
     15, 6,   // tick 1: hit for 6 → Goblin 4
-    11, 5    // tick 2: hit for 5 → Goblin dies (monsters don't go down)
+    13, 5    // tick 2: hit for 5 (13 beats the Guarded Goblin's Dodge 13, 3B.4) → Goblin dies (monsters don't go down)
   ],
   "expect": {
     "ticks": 2,

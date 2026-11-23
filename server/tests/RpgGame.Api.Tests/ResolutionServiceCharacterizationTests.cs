@@ -41,6 +41,12 @@ public partial class ResolutionServiceTests
         /// <summary>Every SetCooldownsAsync call, in order (3B.3).</summary>
         public List<(string Id, Dictionary<string, int> Cooldowns)> CooldownWrites { get; } = [];
 
+        /// <summary>Conditions at the start of the round (3B.4), by combatant.</summary>
+        public Dictionary<string, List<ActiveConditionValues>> Conditions { get; } = [];
+
+        /// <summary>Every SetConditionsAsync call, in order (3B.4).</summary>
+        public List<(string Id, List<ActiveConditionValues> Conditions)> ConditionWrites { get; } = [];
+
         /// <summary>Starts the round with this combatant downed (3B.5), at 0 HP with the given rounds left.</summary>
         public void StartDowned(string id, int roundsLeft)
         {
@@ -51,14 +57,15 @@ public partial class ResolutionServiceTests
 
         public void Stabilize(string id, string target) => _plans[id] = ActionJson("stabilize", targetId: target);
 
-        public string Monster(string name, (int x, int y)? at, int hp = 20, bool defeated = false)
+        /// <param name="profile">Stored combat profile; null (as on pre-3B.1 rows) means the default profile.</param>
+        public string Monster(string name, (int x, int y)? at, int hp = 20, bool defeated = false, CombatProfileValues? profile = null)
         {
             var id = Guid.NewGuid();
             _combatants.Add(new EncounterCombatant
             {
                 SortOrder = _combatants.Count, // creation order: plan (roll) order follows it
                 Id = id, EncounterId = EncounterId, UserId = "gm", CharacterId = null,
-                CharacterName = name, CombatantType = "monster",
+                CharacterName = name, CombatantType = "monster", Profile = profile,
             });
             return Register(id.ToString(), id.ToString(), at, hp, defeated);
         }
@@ -121,6 +128,14 @@ public partial class ResolutionServiceTests
                 .ReturnsAsync((string _, string id) => Cooldowns.TryGetValue(id, out var c) ? new Dictionary<string, int>(c) : []);
             Redis.Setup(r => r.SetCooldownsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, int>>()))
                 .Callback<string, string, IReadOnlyDictionary<string, int>>((_, id, c) => CooldownWrites.Add((id, new Dictionary<string, int>(c))))
+                .Returns(Task.CompletedTask);
+            Redis.Setup(r => r.GetConditionsAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync((string _, string id) => Conditions.TryGetValue(id, out var c) ? c.Select(x => new ActiveConditionValues
+                {
+                    Condition = x.Condition.Copy(), RoundsLeft = x.RoundsLeft, SourceId = x.SourceId,
+                }).ToList() : []);
+            Redis.Setup(r => r.SetConditionsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<ActiveConditionValues>>()))
+                .Callback<string, string, IReadOnlyList<ActiveConditionValues>>((_, id, c) => ConditionWrites.Add((id, c.ToList())))
                 .Returns(Task.CompletedTask);
             Redis.Setup(r => r.SetHpAsync(It.IsAny<string>(), It.IsAny<long>()))
                 .Callback<string, long>((k, v) => CallLog.Add($"SetHp {k}={v} events={Db.GameEvents.Count()}"))
@@ -729,7 +744,7 @@ public partial class ResolutionServiceTests
         s.Queue(a, new("move", new PositionDto(2, 0), null), new("melee_attack", null, b));
         s.Defend(b);
 
-        var r = await s.Run(new ScriptedDice(12, 4));
+        var r = await s.Run(new ScriptedDice(13, 4)); // 13 beats B's Dodge 13 (defending: Guarded +3, 3B.4)
 
         Assert.Equal([0, 1], r.Ticks.Select(t => t.TickIndex));
         var move = Assert.Single(r.Ticks[0].Movements);
@@ -764,20 +779,35 @@ public partial class ResolutionServiceTests
     // ----- Effects -----
 
     [Fact]
-    public async Task Char_Quirk4_DefendDescription_NoMechanicalEffect()
+    public async Task Char_Defend_GrantsGuarded_FromTheStartOfItsTick()
     {
+        // Quirk 4 (defend did nothing) is fixed in 3B.4: Defend grants Guarded (+3 Dodge) at the start of
+        // its tick, so a 10 that hit before now misses. The defend line itself is unchanged.
         await using var s = new Scene();
         var a = s.Monster("Goblin A", (0, 0));
         var b = s.Monster("Goblin B", (1, 0));
         s.Melee(a, b);
         s.Defend(b);
 
-        var r = await s.Run(new ScriptedDice(10, 5));
+        var r = await s.Run(new ScriptedDice(10));
 
         var tick = Assert.Single(r.Ticks);
         var effect = Assert.Single(tick.Effects);
         Assert.Equal((b, "defend", "Goblin B holds position"), (effect.CombatantId, effect.EffectType, effect.Description));
-        Assert.Equal(15, tick.Attacks.Single().TargetNewHp); // defend reduces nothing
+        var attack = tick.Attacks.Single();
+        Assert.Equal("Goblin A swings at Goblin B and misses", attack.FeedText);
+        Assert.Equal(new AttackRollDto(10, 0, 13, 0, 3), attack.Roll);
+
+        var guarded = Assert.Single(tick.Conditions!);
+        Assert.Equal((b, b, "guarded", "Guarded", false, (string?)null, "applied", 0),
+            (guarded.SourceId, guarded.TargetId, guarded.ConditionId, guarded.ConditionName, guarded.Harmful,
+             guarded.AbilityId, guarded.Result, guarded.RoundsLeft));
+        Assert.Equal("Goblin B is Guarded until the end of the round", guarded.FeedText);
+
+        var expired = Assert.Single(r.ExpiredConditions!);
+        Assert.Equal((b, "Goblin B is no longer Guarded"), (expired.CombatantId, expired.FeedText));
+        Assert.Empty(s.ConditionWrites); // nothing left at the end of the round, and nothing was stored before
+        Assert.Contains(s.Db.GameEvents, e => e.EventType == "condition_applied");
     }
 
     [Fact]
@@ -789,7 +819,7 @@ public partial class ResolutionServiceTests
         s.Melee(a, b);
         s.Defend(b);
 
-        var r = await s.Run(new ScriptedDice(10, 5));
+        var r = await s.Run(new ScriptedDice(13, 5)); // 13 beats the Guarded B's Dodge 13 (3B.4)
 
         Assert.Empty(Assert.Single(r.Ticks).Effects);
     }

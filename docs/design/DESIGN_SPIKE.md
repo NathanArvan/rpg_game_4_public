@@ -102,7 +102,7 @@ computeDamage(attacker, target, actionType):
     return { hit: true, damage: totalDamage, isCrit }
 ```
 
-This pipeline has slots for every modifier source without implementing any of them yet. When items land, `weaponBonus` stops being zero. When abilities land, `abilityModifier` stops being zero. When combat profiles replace classes (3B.1), `baseDamage` switches from class dice to the profile value. None of these changes touch the pipeline structure.
+This pipeline has slots for every modifier source without implementing any of them yet. When items land, `weaponBonus` stops being zero. When abilities land, `abilityModifier` stops being zero. When combat profiles replace classes (3B.1), `baseDamage` switches from class dice to the profile value. None of these changes touch the pipeline structure. *3B.4 added two condition steps:* a `conditionModifier` slot (the attacker's damage-dealt conditions) next to `abilityModifier`, and, after the multiplier and crit, the target's damage-taken conditions (flat, then percent, rounded down, never below 0). Hit checks add the attacker's accuracy and the target's dodge conditions (`SPRINT_3B4.md` C4).
 
 ### Candidate stat formulas (deferred reference — not scheduled)
 

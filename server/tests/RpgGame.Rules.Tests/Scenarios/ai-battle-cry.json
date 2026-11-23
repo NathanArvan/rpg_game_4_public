@@ -1,0 +1,17 @@
+{
+  // 3B.4 (SPRINT_3B4 C14): the AI opens with a ready buff when someone it would reach doesn't have it,
+  // then attacks with the AP left. The Shaman (4 AP): Battle Cry (2) + melee (2).
+  "description": "AI: the goblin shaman shouts Battle Cry, then swings at the adjacent hero",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Shaman", "side": "enemy", "at": [5, 6], "abilities": ["battle_cry"] },
+    { "id": "Grunt",  "side": "enemy", "at": [6, 6] }
+  ],
+  "plans": { "Shaman": ["ai"] },
+  "dice": [15, 3],                      // tick 2: d8 3 + 2 (Emboldened) = 5
+  "expect": {
+    "plans": { "Shaman": ["ability battle_cry", "melee Hero"] },
+    "hp": { "Hero": 15 },
+    "conditions": { "Shaman": { "emboldened": 0 }, "Grunt": { "emboldened": 0 } }
+  }
+}

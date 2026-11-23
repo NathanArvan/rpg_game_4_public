@@ -1,6 +1,6 @@
 import { AttackResult, CombatantQueueDto, HealResult, MovementResult, QueuedActionDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import {
-  makeAbilityUse, makeAttack, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeTick,
+  makeAbilityUse, makeAttack, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeRoll, makeTick,
 } from '../../../testing/builders';
 import { buildLanes } from './round-lanes';
 
@@ -18,7 +18,7 @@ const abilityQueue = (id: string, maxAp: number, apCost: number, abilityId: stri
   makeQueue({ combatantId: id, maxAp, actions: [makeQueuedAction({ type: 'ability', apCost, abilityId, ...extra })] });
 
 const attack = (attackerId: string, targetId: string, extra: Partial<AttackResult> = {}): AttackResult => makeAttack({
-  attackerId, targetId, hit: true, damage: 4, targetNewHp: 6, roll: { d20: 13, accuracy: 3, targetDodge: 12 }, ...extra,
+  attackerId, targetId, hit: true, damage: 4, targetNewHp: 6, roll: makeRoll({ d20: 13, accuracy: 3, targetDodge: 12 }), ...extra,
 });
 
 const tick = (tickIndex: number, parts: Partial<TickResult> = {}): TickResult => makeTick({ tickIndex, ...parts });
@@ -67,13 +67,14 @@ describe('buildLanes', () => {
         movements: [makeMove({ combatantId: 'A', path: [{ x: 0, y: 0 }], wasBlocked: true, blockedByCombatantId: 'C' })],
         attacks: [attack('B', 'C', { wasted: true, hit: false, roll: null, wastedReason: 'out_of_melee_reach' })],
         effects: [makeEffect({ combatantId: 'C', effectType: 'defend' })],
+        conditions: [makeConditionResult({ sourceId: 'C', targetId: 'C', conditionId: 'guarded', conditionName: 'Guarded', abilityId: null, harmful: false, roundsLeft: 0 })],
       }),
     ));
 
     expect(lanes.map(l => l.slots[0].outcome)).toEqual(['blocked', 'wasted', 'defended']);
     expect(lanes[0].slots[0].detail).toBe('A is blocked by C after 0 cells, stopping at (0, 0).');
     expect(lanes[1].slots[0].detail).toBe("B's melee attack on C is wasted (out of reach).");
-    expect(lanes[2].slots[0].detail).toBe('C defends (no effect yet).');
+    expect(lanes[2].slots[0].detail).toBe('C defends: Guarded (+3 Dodge) until the end of the round.');
   });
 
   it('shows a used-up queue as idle and the actions of a defeated combatant as lost', () => {
@@ -173,5 +174,27 @@ describe('buildLanes: movement abilities (3B.3)', () => {
     })));
     expect(lane.slots[0].detail).toBe(
       'Charge: K moves 3 cells to (5, 6). K → G: rolled 13 + 3 = 16 vs dodge 12, hit for 7, incl. +3 from moving (G now 13 HP).');
+  });
+
+  it('describes conditions an ability applied, and how conditions changed a roll and its damage (3B.4)', () => {
+    const lanes = buildLanes(payload(
+      [abilityQueue('K', 4, 1, 'mark', { targetCombatantId: 'G' }), q('F', 4, ['melee_attack', 2, 'G'])],
+      tick(0, {
+        abilityUses: [makeAbilityUse({ combatantId: 'K', abilityId: 'mark', abilityName: 'Mark', targetIds: ['G'] })],
+        attacks: [attack('F', 'G', {
+          hit: true, damage: 6, targetNewHp: 14, conditionDamage: 2,
+          roll: makeRoll({ d20: 8, accuracy: 2, targetDodge: 7, conditionAccuracy: 2, conditionDodge: -3 }),
+        })],
+        conditions: [
+          makeConditionResult({ sourceId: 'K', targetId: 'G', targetName: 'G', conditionName: 'Marked', roundsLeft: 1 }),
+          makeConditionResult({ sourceId: 'K', targetId: 'G', targetName: 'G', conditionId: 'exposed', conditionName: 'Exposed', result: 'refreshed', roundsLeft: 2 }),
+        ],
+      }),
+    ));
+
+    expect(lanes[0].slots[0].outcome).toBe('hit');
+    expect(lanes[0].slots[0].detail).toBe('Mark: G is Marked until end of next round. G is still Exposed, now for 2 more rounds.');
+    expect(lanes[1].slots[0].detail).toBe(
+      'F → G: rolled 8 + 2 (+2 from conditions) = 10 vs dodge 7 (-3 from conditions), hit for 6, incl. +2 from conditions (G now 14 HP).');
   });
 });

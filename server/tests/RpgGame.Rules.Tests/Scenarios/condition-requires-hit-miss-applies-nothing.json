@@ -1,0 +1,20 @@
+{
+  // 3B.4 (SPRINT_3B4 C2): a condition on an ability that also attacks needs that attack to hit.
+  "description": "Conditions: Blinding Strike misses, so no Dazzled; the second one hits and dazzles",
+  "combatants": [
+    { "id": "A", "side": "party", "at": [5, 5], "abilities": ["blinding_strike"] },
+    { "id": "B", "side": "enemy", "at": [5, 6] }
+  ],
+  "plans": { "A": ["ability blinding_strike B", "ability blinding_strike B"] },
+  "dice": [5, 15, 3],
+  "expect": {
+    "hp": { "B": 17 },
+    "events": [
+      "t1 A blinding_strike B: miss",
+      "t1 A blinding_strike B: dazzled wasted missed",
+      "t2 A blinding_strike B: hit 3",
+      "t2 A blinding_strike B: dazzled applied (1)"
+    ],
+    "conditions": { "B": { "dazzled": 0 } }
+  }
+}

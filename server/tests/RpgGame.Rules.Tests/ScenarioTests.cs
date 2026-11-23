@@ -7,7 +7,8 @@ namespace RpgGame.Rules.Tests;
 /// <summary>
 /// Runs every <c>Scenarios/*.json</c> file through <see cref="RoundResolver"/>: one round, or several
 /// in a row (<c>"rounds"</c>), each starting from the state the previous one left. Abilities come from
-/// the scenario's own <c>"abilities"</c> block or the shared <c>Scenarios/library/abilities.json</c>.
+/// the scenario's own <c>"abilities"</c> block or the shared <c>Scenarios/library/abilities.json</c>,
+/// conditions (3B.4) from its <c>"conditions"</c> block or <c>Scenarios/library/conditions.json</c>.
 /// The file format is documented in <c>Scenarios/README.md</c>.
 /// </summary>
 public partial class ScenarioTests
@@ -101,7 +102,19 @@ public partial class ScenarioTests
         const string file = "library/abilities.json";
         var dto = JsonSerializer.Deserialize<LibraryDto>(File.ReadAllText(Path.Combine(ScenarioDir, file)), JsonOptions)
             ?? throw new InvalidDataException($"{file}: empty");
-        return (dto.Abilities ?? []).ToDictionary(a => a.Id, a => ToAbility(a, file));
+        return (dto.Abilities ?? []).ToDictionary(a => a.Id, a => ToAbility(a, file, ConditionLibrary.Value));
+    });
+
+    /// <summary>
+    /// Shared condition definitions (<c>Scenarios/library/conditions.json</c>, 3B.4), same shape as the
+    /// server's conditions.json. Owned by these tests, like the ability library.
+    /// </summary>
+    private static readonly Lazy<Dictionary<string, ConditionDefinition>> ConditionLibrary = new(() =>
+    {
+        const string file = "library/conditions.json";
+        var dto = JsonSerializer.Deserialize<LibraryDto>(File.ReadAllText(Path.Combine(ScenarioDir, file)), JsonOptions)
+            ?? throw new InvalidDataException($"{file}: empty");
+        return (dto.Conditions ?? []).ToDictionary(c => c.Id, c => ToCondition(c, file));
     });
 
     /// <summary>The starting state and rule constants. Plans, dice and checks are per round.</summary>
@@ -112,9 +125,13 @@ public partial class ScenarioTests
 
         var grid = s.Grid ?? [20, 20];
         // The scenario's own definitions win over the shared library's (to test other numbers).
+        var conditions = new Dictionary<string, ConditionDefinition>(ConditionLibrary.Value);
+        foreach (var c in s.Conditions ?? [])
+            conditions[c.Id] = ToCondition(c, file);
+        conditions.TryAdd(RulesConfig.GuardedId, RulesConfig.DefaultGuarded);
         var abilities = new Dictionary<string, AbilityDefinition>(Library.Value);
         foreach (var a in s.Abilities ?? [])
-            abilities[a.Id] = ToAbility(a, file);
+            abilities[a.Id] = ToAbility(a, file, conditions);
         var combatants = s.Combatants.Select(c =>
         {
             if (string.IsNullOrWhiteSpace(c.Id)) throw new InvalidDataException($"{file}: every combatant needs an 'id'");
@@ -148,6 +165,10 @@ public partial class ScenarioTests
             {
                 Team = c.Side ?? "",
                 Cooldowns = c.Cooldowns ?? [],
+                Conditions = (c.Conditions ?? []).Select(cc => new ActiveCondition(
+                    conditions.TryGetValue(cc.Id, out var def) ? def
+                        : throw new InvalidDataException($"{file}: combatant {c.Id} has condition '{cc.Id}', which is neither in 'conditions' nor in Scenarios/library/conditions.json"),
+                    cc.Rounds ?? 0)).ToList(),
             };
         }).ToList();
 
@@ -271,7 +292,7 @@ public partial class ScenarioTests
     }
 
     /// <summary>An inline ability definition, in the same shape as the server's abilities.json (3B.3).</summary>
-    private static AbilityDefinition ToAbility(AbilityDto a, string file)
+    private static AbilityDefinition ToAbility(AbilityDto a, string file, IReadOnlyDictionary<string, ConditionDefinition> conditions)
     {
         var where = $"{file}: ability {a.Id}";
         if (a.Target is null) throw new InvalidDataException($"{where}: 'target' is required");
@@ -297,9 +318,37 @@ public partial class ScenarioTests
                 e.Amount?.Die is null ? null : DamageDie.Parse(e.Amount.Die),
                 e.Amount?.Bonus ?? 0,
                 e.CanRevive ?? true),
+            "apply_condition" => new ApplyConditionEffect(
+                conditions.TryGetValue(e.Condition ?? "", out var condition) ? condition
+                    : throw new InvalidDataException($"{where}: condition '{e.Condition}' is neither in 'conditions' nor in Scenarios/library/conditions.json"),
+                e.Duration ?? 0,
+                // Like the server's catalog: needs a hit when the ability also attacks.
+                e.RequiresHit ?? (a.Effects ?? []).Any(x => x.Kind == "attack")),
             _ => throw new InvalidDataException($"{where}: unknown effect kind '{e.Kind}'"),
         }).ToList();
         return new AbilityDefinition(a.Id, a.Name ?? a.Id, a.Ap ?? 2, a.Cooldown ?? 0, a.Tags ?? [], targeting, effects);
+    }
+
+    /// <summary>An inline condition definition, in the same shape as the server's conditions.json (3B.4).</summary>
+    private static ConditionDefinition ToCondition(ConditionDto c, string file)
+    {
+        var where = $"{file}: condition {c.Id}";
+        var m = c.Modifiers ?? new ModifiersDto();
+        var modifiers = new Modifiers(
+            Accuracy: m.Accuracy ?? 0,
+            Dodge: m.Dodge ?? 0,
+            AttackKind: Enum.Parse<AttackKindFilter>(m.AttackKind ?? "any", ignoreCase: true),
+            DamageDealt: m.DamageDealt ?? 0,
+            DamageTaken: m.DamageTaken is { } t ? new DamageTakenModifier(t.Percent ?? 0, t.Flat ?? 0, t.Tags) : null,
+            Movement: m.Movement ?? 0,
+            Ap: m.Ap ?? 0,
+            Periodic: m.Periodic is { } p
+                ? new PeriodicEffect(Enum.Parse<PeriodicKind>(p.Kind ?? "damage", ignoreCase: true),
+                    p.Die is null ? null : DamageDie.Parse(p.Die), p.Bonus ?? 0)
+                : null,
+            Blocks: (m.Blocks ?? []).Select(b => Enum.TryParse<BlockKind>(b, ignoreCase: true, out var k) ? k
+                : throw new InvalidDataException($"{where}: unknown block '{b}'")).ToList());
+        return new ConditionDefinition(c.Id, c.Name ?? c.Id, c.Harmful ?? false, c.Tags ?? [], modifiers);
     }
 
     private static CombatantStatus ParseStatus(string text, string where) =>
@@ -386,6 +435,17 @@ public partial class ScenarioTests
                 failures.Add($"targets of {want.Id}'s {want.Ability} in tick {want.Tick}: expected [{string.Join(", ", want.Targets!)}], got [{string.Join(", ", use.TargetIds)}]");
         }
 
+        foreach (var (id, expected) in e.Conditions ?? [])
+        {
+            var actual = final.TryGetValue(id, out var c) ? c.Conditions.ToDictionary(x => x.Id, x => x.RoundsLeft) : null;
+            string Show(IEnumerable<KeyValuePair<string, int>> m) =>
+                "{" + string.Join(", ", m.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}: {kv.Value}")) + "}";
+            if (actual is null)
+                failures.Add($"conditions of {id}: unknown combatant");
+            else if (Show(actual) != Show(expected))
+                failures.Add($"conditions of {id}: expected {Show(expected)}, got {Show(actual)}");
+        }
+
         if (e.Heals is { } heals)
             CompareSets("heals", heals.Select(h => Key(h.Tick, HealKey(h.Id, h.Target, h.Amount, h.Revived, h.Wasted))),
                 o.Ticks.SelectMany(t => t.Heals.Select(h => Key(t.Index + 1,
@@ -421,9 +481,9 @@ public partial class ScenarioTests
 
     /// <summary>
     /// Everything the round did, one line per event, in resolution order: per tick (from 1) the ability
-    /// uses, moves, attacks, heals and effects, then the end of round. Lines use ids and wire-style
-    /// reasons, e.g. "t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6, revived",
-    /// "end Hero bleeds out". A new kind of outcome needs one line here to be checkable with
+    /// uses, Defend's Guarded, moves, attacks, heals, effects and conditions, then the end of round.
+    /// Lines use ids and wire-style reasons, e.g. "t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6,
+    /// revived", "t1 Kestrel mark Goblin: marked applied (1)", "end Hero bleeds out", "end Goblin: marked expires". A new kind of outcome needs one line here to be checkable with
     /// <c>expect.events</c>. Printed whenever a scenario fails, so it doubles as an authoring aid.
     /// </summary>
     internal static List<string> EventLog(RoundOutcome o)
@@ -437,6 +497,8 @@ public partial class ScenarioTests
                 var targets = u.TargetIds.Count > 0 ? $" on {string.Join(",", u.TargetIds)}" : "";
                 log.Add($"{at} {u.CombatantId} uses {u.AbilityId}{targets}{(u.Wasted ? $" ({Snake(u.WastedReason)})" : "")}");
             }
+            foreach (var c in t.Conditions.Where(c => c.AbilityId is null))
+                log.Add(ConditionLine(at, c));
             foreach (var m in t.Movements)
             {
                 var end = $"{m.FinalPosition.X},{m.FinalPosition.Y}";
@@ -453,6 +515,8 @@ public partial class ScenarioTests
                     : a.FinishingBlow ? "finishing blow"
                     : a.MoveBonus > 0 ? $"hit {a.Damage} (+{a.MoveBonus} moved)"
                     : $"hit {a.Damage}";
+                if (a.Hit && a.ConditionDamage != 0)
+                    result += $" ({a.ConditionDamage:+#;-#} conditions)";
                 var fell = a.TargetDefeated ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
                 log.Add($"{at} {a.AttackerId} {what} {a.TargetId}: {result}{fell}");
             }
@@ -467,10 +531,26 @@ public partial class ScenarioTests
                 log.Add(e.Type == EffectType.Defend ? $"{at} {e.CombatantId} defends"
                     : e.Wasted ? $"{at} {e.CombatantId} stabilizes {e.TargetId}: wasted {Snake(e.WastedReason)}"
                     : $"{at} {e.CombatantId} stabilizes {e.TargetId}");
+            foreach (var c in t.Conditions.Where(c => c.AbilityId is not null))
+                log.Add(ConditionLine(at, c));
         }
         foreach (var b in o.EndOfRound)
             log.Add(b.Died ? $"end {b.CombatantId} bleeds out" : $"end {b.CombatantId} bleeds, {b.RoundsLeft} left");
+        foreach (var x in o.ExpiredConditions)
+            log.Add($"end {x.CombatantId}: {x.ConditionId} expires");
         return log;
+    }
+
+    /// <summary>"t1 Kestrel mark Goblin: marked applied (1)": rounds left in brackets; Defend's Guarded reads "defend".</summary>
+    private static string ConditionLine(string at, ConditionOutcome c)
+    {
+        var result = c.Result switch
+        {
+            ConditionResultKind.Wasted => $"wasted {Snake(c.WastedReason)}",
+            ConditionResultKind.Resisted => "resisted",
+            _ => $"{c.Result.ToString().ToLowerInvariant()} ({c.RoundsLeft})",
+        };
+        return $"{at} {c.SourceId} {c.AbilityId ?? "defend"} {c.TargetId}: {c.ConditionId} {result}";
     }
 
     /// <summary>Every expected line must appear in the log, in the order listed (other lines may come between).</summary>
@@ -504,6 +584,8 @@ public partial class ScenarioTests
         public List<AbilityDto>? Abilities { get; set; }
         /// <summary>Several rounds in a row, each with its own plans, dice and expect (instead of the top-level ones).</summary>
         public List<RoundDto>? Rounds { get; set; }
+        /// <summary>Condition definitions (3B.4), same shape as conditions.json. They override the shared library.</summary>
+        public List<ConditionDto>? Conditions { get; set; }
     }
 
     private sealed class RoundDto
@@ -517,6 +599,50 @@ public partial class ScenarioTests
     private sealed class LibraryDto
     {
         public List<AbilityDto>? Abilities { get; set; }
+        public List<ConditionDto>? Conditions { get; set; }
+    }
+
+    private sealed class ConditionDto
+    {
+        public string Id { get; set; } = "";
+        public string? Name { get; set; }
+        public bool? Harmful { get; set; }
+        public List<string>? Tags { get; set; }
+        public ModifiersDto? Modifiers { get; set; }
+    }
+
+    private sealed class ModifiersDto
+    {
+        public int? Accuracy { get; set; }
+        public int? Dodge { get; set; }
+        public string? AttackKind { get; set; }
+        public int? DamageDealt { get; set; }
+        public DamageTakenDto? DamageTaken { get; set; }
+        public int? Movement { get; set; }
+        public int? Ap { get; set; }
+        public PeriodicDto? Periodic { get; set; }
+        public List<string>? Blocks { get; set; }
+    }
+
+    private sealed class DamageTakenDto
+    {
+        public int? Percent { get; set; }
+        public int? Flat { get; set; }
+        public List<string>? Tags { get; set; }
+    }
+
+    private sealed class PeriodicDto
+    {
+        public string? Kind { get; set; }
+        public string? Die { get; set; }
+        public int? Bonus { get; set; }
+    }
+
+    private sealed class ActiveConditionDto
+    {
+        public string Id { get; set; } = "";
+        /// <summary>Full rounds it lasts after the current one (0 = until the end of this round).</summary>
+        public int? Rounds { get; set; }
     }
 
     private sealed class AbilityDto
@@ -553,6 +679,10 @@ public partial class ScenarioTests
         public string? To { get; set; }
         public int? MaxCells { get; set; }
         public bool? UsesMovementBudget { get; set; }
+        /// <summary>apply_condition: the condition id, its duration and whether it needs a hit (3B.4).</summary>
+        public string? Condition { get; set; }
+        public int? Duration { get; set; }
+        public bool? RequiresHit { get; set; }
     }
 
     private sealed class MovedBonusDto
@@ -595,6 +725,8 @@ public partial class ScenarioTests
         public List<string>? Abilities { get; set; }
         /// <summary>Abilities already on cooldown at the start of the round: id → rounds left.</summary>
         public Dictionary<string, int>? Cooldowns { get; set; }
+        /// <summary>Conditions at the start of the round (3B.4).</summary>
+        public List<ActiveConditionDto>? Conditions { get; set; }
     }
 
     private sealed class ConfigDto
@@ -624,6 +756,8 @@ public partial class ScenarioTests
         public List<AbilityUseDto>? AbilityUses { get; set; }
         /// <summary>The exact set of heals (3B.3).</summary>
         public List<HealDto>? Heals { get; set; }
+        /// <summary>Conditions at the end of the round, per combatant: id → rounds left (exact map; {} = none) (3B.4).</summary>
+        public Dictionary<string, Dictionary<string, int>>? Conditions { get; set; }
         /// <summary>The exact set of combatants who were down at the start and are standing at the end.</summary>
         public List<string>? Revived { get; set; }
         /// <summary>Lines of the event log (see <see cref="EventLog"/>) that must happen, in this order.</summary>

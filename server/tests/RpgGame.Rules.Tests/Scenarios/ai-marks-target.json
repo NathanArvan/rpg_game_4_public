@@ -1,0 +1,15 @@
+{
+  // 3B.4 (SPRINT_3B4 C14): a debuff goes on the enemy the AI is after, if it's in range and doesn't
+  // have it yet; then the AI walks and attacks with what's left (4 AP: Mark 1 + move 1 + melee 2).
+  "description": "AI: the goblin marks the nearest hero from afar, then closes in and strikes",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 2] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6], "abilities": ["mark"] }
+  ],
+  "plans": { "Goblin": ["ai"] },
+  "dice": [8, 4],                       // tick 3: 8 hits Dodge 7 (Exposed), d8 4 + 2 (Marked) = 6
+  "expect": {
+    "plans": { "Goblin": ["ability mark Hero", "move 5,3", "melee Hero"] },
+    "hp": { "Hero": 14 }
+  }
+}

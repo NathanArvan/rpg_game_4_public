@@ -4,7 +4,7 @@ import { AbilityBarComponent } from './ability-bar.component';
 import { AbilityDto } from '../../../contracts/hub-contracts.generated';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { entry } from '../../../state/encounter/plan-queue';
-import { makeAbility, makeCombatant } from '../../../testing/builders';
+import { makeAbility, makeAbilityCondition, makeCombatant } from '../../../testing/builders';
 
 describe('AbilityBarComponent', () => {
   let component: AbilityBarComponent;
@@ -77,5 +77,15 @@ describe('AbilityBarComponent', () => {
   it('describes the ability in its tooltip', () => {
     expect(AbilityBarComponent.tooltip(firebolt, null))
       .toBe('Firebolt — 3 AP · cooldown 1 round\nA heavy blow.\nTarget: an enemy within 8 cells');
+  });
+
+  it('says which conditions an ability applies, in words (3B.4)', () => {
+    const mark = makeAbility({
+      id: 'mark', name: 'Mark', apCost: 1, cooldown: 2, targeting: { range: 8 },
+      appliesConditions: [makeAbilityCondition({ duration: 1 })],
+    });
+    expect(AbilityBarComponent.tooltip(mark, null)).toContain('Applies marked (takes 2 extra damage per hit) until end of next round');
+    const strike = makeAbility({ appliesConditions: [makeAbilityCondition({ duration: 0, requiresHit: true, condition: { id: 'dazzled', name: 'Dazzled', modifiers: { accuracy: -3, attackKind: 'ranged' } } })] });
+    expect(AbilityBarComponent.tooltip(strike, null)).toContain('Applies Dazzled (-3 to hit (ranged)) until end of round, on a hit');
   });
 });

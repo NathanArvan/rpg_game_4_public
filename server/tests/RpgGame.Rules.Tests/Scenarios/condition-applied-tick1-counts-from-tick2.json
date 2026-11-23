@@ -1,0 +1,25 @@
+{
+  // 3B.4 (SPRINT_3B4 C6): a condition applied in a tick's Effects phase comes after that tick's attacks,
+  // so it counts from the next tick. Mark puts Marked (+2 damage taken) and Exposed (-3 Dodge) on the
+  // Goblin in tick 1: the Fighter's tick-1 swing doesn't benefit, the tick-2 swing does.
+  "description": "Conditions: Mark in tick 1 helps the tick-2 attack, not the tick-1 one",
+  "combatants": [
+    { "id": "Fighter", "side": "party", "at": [5, 5] },
+    { "id": "Kestrel", "side": "party", "at": [2, 2], "abilities": ["mark"] },
+    { "id": "Goblin",  "side": "enemy", "at": [5, 6] }
+  ],
+  "plans": { "Fighter": ["melee Goblin", "melee Goblin"], "Kestrel": ["ability mark Goblin"] },
+  "dice": [8, 8, 4],                 // tick 1: 8 misses Dodge 10; tick 2: 8 hits Dodge 7, d8 4 + 2 = 6
+  "expect": {
+    "hp": { "Goblin": 14 },
+    "events": [
+      "t1 Kestrel uses mark on Goblin",
+      "t1 Fighter melee Goblin: miss",
+      "t1 Kestrel mark Goblin: marked applied (1)",
+      "t1 Kestrel mark Goblin: exposed applied (1)",
+      "t2 Fighter melee Goblin: hit 6 (+2 conditions)"
+    ],
+    "conditions": { "Goblin": { "marked": 0, "exposed": 0 } },
+    "cooldowns": { "Kestrel": { "mark": 2 } }
+  }
+}

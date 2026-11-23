@@ -1,0 +1,20 @@
+{
+  // 3B.4: a self ability puts its condition on the caster. Stoneskin (Fortified) in tick 1 halves the
+  // tick-2 hit; the tick-1 hit landed before it.
+  "description": "Conditions: Stoneskin protects from the next tick on",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5], "abilities": ["stoneskin"] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6] }
+  ],
+  "plans": { "Hero": ["ability stoneskin"], "Goblin": ["melee Hero", "melee Hero"] },
+  "dice": [15, 6, 15, 6],
+  "expect": {
+    "hp": { "Hero": 11 },
+    "events": [
+      "t1 Goblin melee Hero: hit 6",
+      "t1 Hero stoneskin Hero: fortified applied (1)",
+      "t2 Goblin melee Hero: hit 3 (-3 conditions)"
+    ],
+    "conditions": { "Hero": { "fortified": 0 } }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  // 3B.4 (SPRINT_3B4 C5): duration N = the rest of the round it lands in plus N more rounds. Mark
+  // (duration 1) lasts through round 2 and is gone after it; Guarded (duration 0) is gone after round 1.
+  "description": "Conditions: a duration-1 condition lasts into the next round, a duration-0 one doesn't",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [2, 2], "abilities": ["mark"] },
+    { "id": "Goblin",  "side": "enemy", "at": [5, 6] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Kestrel": ["ability mark Goblin"], "Goblin": ["defend"] },
+      "expect": {
+        "events": ["t1 Goblin defend Goblin: guarded applied (0)", "end Goblin: guarded expires"],
+        "conditions": { "Goblin": { "marked": 0, "exposed": 0 } }
+      }
+    },
+    {
+      "plans": {},
+      "expect": {
+        "events": ["end Goblin: marked expires", "end Goblin: exposed expires"],
+        "conditions": { "Goblin": {} }
+      }
+    }
+  ]
+}

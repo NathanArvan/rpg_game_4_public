@@ -47,6 +47,11 @@
           {{ token.combatant.characterName[0] }}
           <span class="bleed-badge" *ngIf="shownStatus(token.combatant).status === 'downed'">{{ shownStatus(token.combatant).bleedoutRoundsLeft }}</span>
           <span class="pick-badge" *ngIf="pickNumber(token.combatant) as n">{{ n }}</span>
+          <app-condition-chips
+            *ngIf="shownConditions(token.combatant).length > 0"
+            class="token-conditions"
+            [compact]="true"
+            [conditions]="shownConditions(token.combatant)"></app-condition-chips>
           <span
             *ngFor="let aura of aurasFor(token.combatant.id); trackBy: trackKey; let i = index"
             class="aura aura-{{ aura.kind }}"

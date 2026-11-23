@@ -655,10 +655,14 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                                             b3.Property<bool>("CanRevive");
 
+                                            b3.Property<int>("Duration");
+
                                             b3.Property<string>("Kind")
                                                 .IsRequired();
 
                                             b3.Property<int>("MaxCells");
+
+                                            b3.Property<bool>("RequiresHit");
 
                                             b3.Property<string>("Roll");
 
@@ -742,7 +746,132 @@ namespace RpgGame.Infrastructure.Data.Migrations
                                                     b4.Navigation("BonusIfMoved");
                                                 });
 
+                                            b3.OwnsOne("RpgGame.Domain.Entities.ConditionValues", "Condition", b4 =>
+                                                {
+                                                    b4.Property<Guid>("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                        .HasColumnName("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCo~");
+
+                                                    b4.Property<int>("AbilityEffectValuesAbilityValues__synthesizedOrdinal");
+
+                                                    b4.Property<int>("AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.Property<string>("Description")
+                                                        .IsRequired();
+
+                                                    b4.Property<bool>("Harmful");
+
+                                                    b4.Property<string>("Id");
+
+                                                    b4.Property<string>("Name")
+                                                        .IsRequired();
+
+                                                    b4.PrimitiveCollection<string>("Tags")
+                                                        .IsRequired();
+
+                                                    b4.HasKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.ToTable("EncounterCombatants");
+
+                                                    b4.WithOwner()
+                                                        .HasForeignKey("AbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityEffectValuesAbilityValues__synthesizedOrdinal", "AbilityEffectValues__synthesizedOrdinal");
+
+                                                    b4.OwnsOne("RpgGame.Domain.Entities.ModifierValues", "Modifiers", b5 =>
+                                                        {
+                                                            b5.Property<Guid>("ConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                                .HasColumnName("ConditionValuesAbilityEffectValuesAbilityValuesCombatProfileVa~");
+
+                                                            b5.Property<int>("ConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal")
+                                                                .HasColumnName("ConditionValuesAbilityEffectValuesAbilityValues__synthesizedOr~");
+
+                                                            b5.Property<int>("ConditionValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                            b5.Property<int>("Accuracy");
+
+                                                            b5.Property<int>("Ap");
+
+                                                            b5.Property<string>("AttackKind")
+                                                                .IsRequired();
+
+                                                            b5.PrimitiveCollection<string>("Blocks")
+                                                                .IsRequired();
+
+                                                            b5.Property<int>("DamageDealt");
+
+                                                            b5.Property<int>("Dodge");
+
+                                                            b5.Property<int>("Movement");
+
+                                                            b5.HasKey("ConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ConditionValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                            b5.ToTable("EncounterCombatants");
+
+                                                            b5.WithOwner()
+                                                                .HasForeignKey("ConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ConditionValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                            b5.OwnsOne("RpgGame.Domain.Entities.DamageTakenValues", "DamageTaken", b6 =>
+                                                                {
+                                                                    b6.Property<Guid>("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesC~");
+
+                                                                    b6.Property<int>("ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValuesAbilityValues_~");
+
+                                                                    b6.Property<int>("ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValues__synthesizedO~");
+
+                                                                    b6.Property<int>("Flat");
+
+                                                                    b6.Property<int>("Percent");
+
+                                                                    b6.PrimitiveCollection<string>("Tags")
+                                                                        .IsRequired();
+
+                                                                    b6.HasKey("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                                    b6.ToTable("EncounterCombatants");
+
+                                                                    b6.WithOwner()
+                                                                        .HasForeignKey("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal");
+                                                                });
+
+                                                            b5.OwnsOne("RpgGame.Domain.Entities.PeriodicValues", "Periodic", b6 =>
+                                                                {
+                                                                    b6.Property<Guid>("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesC~");
+
+                                                                    b6.Property<int>("ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValuesAbilityValues_~");
+
+                                                                    b6.Property<int>("ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal")
+                                                                        .HasColumnName("ModifierValuesConditionValuesAbilityEffectValues__synthesizedO~");
+
+                                                                    b6.Property<int>("Bonus");
+
+                                                                    b6.Property<string>("Die");
+
+                                                                    b6.Property<string>("Kind")
+                                                                        .IsRequired();
+
+                                                                    b6.HasKey("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal");
+
+                                                                    b6.ToTable("EncounterCombatants");
+
+                                                                    b6.WithOwner()
+                                                                        .HasForeignKey("ModifierValuesConditionValuesAbilityEffectValuesAbilityValuesCombatProfileValuesEncounterCombatantId", "ModifierValuesConditionValuesAbilityEffectValuesAbilityValues__synthesizedOrdinal", "ModifierValuesConditionValuesAbilityEffectValues__synthesizedOrdinal");
+                                                                });
+
+                                                            b5.Navigation("DamageTaken");
+
+                                                            b5.Navigation("Periodic");
+                                                        });
+
+                                                    b4.Navigation("Modifiers")
+                                                        .IsRequired();
+                                                });
+
                                             b3.Navigation("Amount");
+
+                                            b3.Navigation("Condition");
 
                                             b3.Navigation("Damage");
                                         });

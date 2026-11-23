@@ -1,0 +1,12 @@
+{
+  // 3B.4: the AI doesn't stack a debuff its target already carries.
+  "description": "AI: Mark is skipped when the hero is already Marked and Exposed",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5],
+      "conditions": [ { "id": "marked", "rounds": 1 }, { "id": "exposed", "rounds": 1 } ] },
+    { "id": "Goblin", "side": "enemy", "at": [5, 6], "abilities": ["mark"] }
+  ],
+  "plans": { "Goblin": ["ai"] },
+  "dice": [1, 1],
+  "expect": { "plans": { "Goblin": ["melee Hero", "melee Hero"] } }
+}

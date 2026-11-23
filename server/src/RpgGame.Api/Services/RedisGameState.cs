@@ -1,3 +1,4 @@
+using RpgGame.Domain.Entities;
 using RpgGame.Api.Models;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -150,6 +151,28 @@ public class RedisGameState : IRedisGameState
             await db.HashDeleteAsync(key, combatantId);
         else
             await db.HashSetAsync(key, combatantId, JsonSerializer.Serialize(cooldowns, _jsonOptions));
+    }
+
+    // Conditions (3B.4): encounter:{id}:conditions, combatantId → JSON list of
+    // { condition: <definition>, roundsLeft, sourceId }. Per encounter, like cooldowns, so conditions
+    // never carry into the next fight; each entry holds its own copy of the definition.
+    public async Task<List<ActiveConditionValues>> GetConditionsAsync(string encounterId, string combatantId)
+    {
+        var db = _redis.GetDatabase();
+        var value = await db.HashGetAsync($"encounter:{encounterId}:conditions", combatantId);
+        return value.IsNullOrEmpty
+            ? []
+            : JsonSerializer.Deserialize<List<ActiveConditionValues>>(value.ToString(), _jsonOptions) ?? [];
+    }
+
+    public async Task SetConditionsAsync(string encounterId, string combatantId, IReadOnlyList<ActiveConditionValues> conditions)
+    {
+        var db = _redis.GetDatabase();
+        var key = $"encounter:{encounterId}:conditions";
+        if (conditions.Count == 0)
+            await db.HashDeleteAsync(key, combatantId);
+        else
+            await db.HashSetAsync(key, combatantId, JsonSerializer.Serialize(conditions, _jsonOptions));
     }
 
     // --- Planning phase ---

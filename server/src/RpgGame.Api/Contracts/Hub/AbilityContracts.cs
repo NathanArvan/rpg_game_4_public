@@ -4,6 +4,7 @@ namespace RpgGame.Api.Contracts.Hub;
 /// <param name="ApCost">AP the ability costs when queued.</param>
 /// <param name="Cooldown">Rounds it can't be planned after the round it was used.</param>
 /// <param name="Move">How the ability moves its caster (Dash, Charge), or null if it doesn't.</param>
+/// <param name="AppliesConditions">The conditions it applies (3B.4).</param>
 public record AbilityDto(
     string Id,
     string Name,
@@ -12,7 +13,8 @@ public record AbilityDto(
     int Cooldown,
     IReadOnlyList<string> Tags,
     AbilityTargetingDto Targeting,
-    AbilityMoveDto? Move = null);
+    AbilityMoveDto? Move = null,
+    IReadOnlyList<AbilityConditionDto>? AppliesConditions = null);
 
 /// <summary>An ability's move effect (3B.3).</summary>
 /// <param name="To">"cell" (planned with a target cell) or "target" (to the free cell next to the ability's target closest to the caster).</param>

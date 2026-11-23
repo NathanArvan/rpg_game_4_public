@@ -1,6 +1,7 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import {
-  makeAbilityUse, makeAttack, makeBleedout, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeTick,
+  makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeConditionResult, makeEffect,
+  makeExpiredCondition, makeHeal, makeMove, makePayload, makePlanningCombatant, makeTick,
 } from '../../testing/builders';
 import { PLAYBACK_TIMING, buildTimeline, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
@@ -234,5 +235,91 @@ describe('playback timeline: heals (3B.3)', () => {
     expect(attacks.floats).toEqual([{ combatantId: 'mira', text: 'out of range', kind: 'wasted' }]);
     expect(attacks.hp).toEqual({});
     expect(attacks.durationMs).toBe(PLAYBACK_TIMING.wastedMs);
+  });
+});
+
+describe('playback timeline: conditions (3B.4)', () => {
+  const guard = makeConditionResult({
+    sourceId: 'g', targetId: 'g', conditionId: 'guarded', conditionName: 'Guarded', abilityId: null, harmful: false, roundsLeft: 0,
+    feedText: 'g is Guarded until the end of the round',
+  });
+  const marked = makeConditionResult({ sourceId: 'k', targetId: 'g', conditionName: 'Marked', feedText: "k's Mark: g is Marked until the end of next round" });
+
+  it('shows Guarded with the first beat of its tick, before anything else happens', () => {
+    const beats = buildTimeline(payload(tick(0, {
+      movements: [move('k', [[0, 0], [1, 0]])],
+      effects: [makeEffect({ combatantId: 'g', effectType: 'defend' })],
+      conditions: [guard],
+    })));
+
+    const first = beats[0];
+    expect(first.phase).toBe('movement');
+    expect(first.conditions!['g'].map(c => c.condition.id)).toEqual(['guarded']);
+    expect(first.floats).toContain({ combatantId: 'g', text: 'Guarded', kind: 'buff' });
+    expect(first.auras).toContain({ combatantId: 'g', kind: 'buff' });
+    expect(first.feed).toContain('g is Guarded until the end of the round');
+  });
+
+  it('plays ability conditions in the effects beat, with the definition from the caster\'s loadout', () => {
+    const kestrel = makePlanningCombatant({
+      id: 'k', abilities: [makeAbility({ id: 'mark', appliesConditions: [makeAbilityCondition({ condition: { id: 'marked', name: 'Marked', description: 'Takes 2 more.' } })] })],
+    });
+    const p = makePayload({
+      ticks: [tick(0, { abilityUses: [makeAbilityUse({ combatantId: 'k', abilityId: 'mark', abilityName: 'Mark' })], conditions: [marked] })],
+      updatedCombatants: [kestrel],
+    });
+
+    const effects = buildTimeline(p).find(b => b.phase === 'effects')!;
+    const shown = effects.conditions!['g'];
+    expect(shown.map(c => [c.condition.id, c.condition.description, c.roundsLeft, c.sourceId])).toEqual([['marked', 'Takes 2 more.', 1, 'k']]);
+    expect(effects.floats).toEqual([{ combatantId: 'g', text: 'Marked', kind: 'debuff' }]);
+    expect(effects.auras).toEqual([{ combatantId: 'g', kind: 'debuff' }]);
+    expect(effects.feed).toContain("k's Mark: g is Marked until the end of next round");
+  });
+
+  it('keeps conditions from before the round and refreshes in place', () => {
+    const before = { g: [makeActiveCondition({ condition: { id: 'blessed', name: 'Blessed', harmful: false }, roundsLeft: 1 }), makeActiveCondition({ roundsLeft: 0 })] };
+    const refreshed = makeConditionResult({ targetId: 'g', result: 'refreshed', roundsLeft: 2 });
+
+    const effects = buildTimeline(payload(tick(0, { conditions: [refreshed] })), PLAYBACK_TIMING, before).find(b => b.phase === 'effects')!;
+
+    expect(effects.conditions!['g'].map(c => [c.condition.id, c.roundsLeft])).toEqual([['blessed', 1], ['marked', 2]]);
+  });
+
+  it('a miss shows no extra label; another waste says why above the user; a resist floats RESISTED', () => {
+    const effects = buildTimeline(payload(tick(0, { conditions: [
+      makeConditionResult({ result: 'wasted', wastedReason: 'missed', roundsLeft: 0 }),
+      makeConditionResult({ sourceId: 'k', result: 'wasted', wastedReason: 'out_of_range', roundsLeft: 0 }),
+      makeConditionResult({ targetId: 'z', result: 'resisted', roundsLeft: 0 }),
+    ] }))).find(b => b.phase === 'effects')!;
+
+    expect(effects.floats).toEqual([
+      { combatantId: 'k', text: 'out of range', kind: 'wasted' },
+      { combatantId: 'z', text: 'RESISTED', kind: 'miss' },
+    ]);
+    expect(effects.conditions).toBeUndefined();
+  });
+
+  it('clears the conditions of someone who falls', () => {
+    const before = { b: [makeActiveCondition()] };
+    const beats = buildTimeline(payload(tick(0, {
+      attacks: [attack('a', 'b', true, 9, 0, { targetDefeated: true, targetStatus: 'dead' })],
+    })), PLAYBACK_TIMING, before);
+
+    expect(beats.find(b => b.phase === 'defeats')!.conditions).toEqual({ b: [] });
+  });
+
+  it('ends with an expiries beat that drops what ran out and lands on the server\'s lists', () => {
+    const p = makePayload({
+      ticks: [tick(0)],
+      expiredConditions: [makeExpiredCondition({ combatantId: 'g', conditionName: 'Marked', feedText: 'g is no longer Marked' })],
+      updatedCombatants: [makePlanningCombatant({ id: 'g', conditions: [makeActiveCondition({ condition: { id: 'blessed' }, roundsLeft: 0 })] })],
+    });
+
+    const beats = buildTimeline(p);
+    const last = beats.find(b => b.phase === 'expiries')!;
+    expect(last.feed).toEqual(['End of round', 'g is no longer Marked']);
+    expect(last.conditions!['g'].map(c => c.condition.id)).toEqual(['blessed']);
+    expect(last.durationMs).toBe(PLAYBACK_TIMING.expiryMs);
   });
 });

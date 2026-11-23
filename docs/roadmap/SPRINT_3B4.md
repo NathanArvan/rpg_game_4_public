@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.4. Hand this to Claude Code alongside `CLAUDE.md`. There is no separate design doc for conditions: the decisions are in the **Decisions** section below (C1–C14). Settle the ones marked *to confirm* before PR 1, then treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (conditions are applied through the `apply_condition` effect it reserves in A5).
 >
-> **Status:** ⬜ Not started.
+> **Status:** 🔄 In progress. PR 1 (framework, hit & damage modifiers) done; PR 2 (ongoing damage & resistance) and PR 3 (movement, AP & action denial) to do.
 >
 > **Goal:** Abilities (and Defend) can put **conditions** on combatants: named, time-limited bundles of modifiers in the game's own vocabulary. A condition can deal or heal damage every round, make someone more or less likely to hit or be hit, change how much damage they take or deal, change how far they can move, change how many AP they have, or stop them from moving or acting at all. Resistance comes from a `ConditionResist` profile value. The enemy AI plays around conditions and uses a few. All of it can be tried in a new **Conditions** Quick Battle.
 
@@ -219,6 +219,19 @@ Follow the design loop for each PR: rules + scenarios first (`dotnet test server
 ---
 
 ## PR 1 — Framework, hit & damage modifiers
+
+*Status: done. Differences from the plan below:*
+- *Durations are stored as `roundsLeft` alone: the full rounds a condition lasts **after the current one**. At every end of round (including the one it landed in) a condition at 0 is removed and any other goes down by one. Same behaviour as C5, but no `appliedRound` and no `EncounterState.RoundNumber`. Duration words follow directly: 0 "until end of round", 1 "until end of next round", N "for N more rounds".*
+- *Guarded is built into Rules (`RulesConfig.GuardedCondition`, `RulesConfig.GuardedId`); `conditions.json` doesn't list it (the catalog rejects the id) and `ConditionCatalog.Guarded` supplies its stored shape and description for display.*
+- *No `ConditionCatalog` on `PlanningPhaseStarted`: `ActiveConditionDto` and `AbilityConditionDto` carry the whole `ConditionDto` (name, description, modifiers), so the client never looks anything up. Conditions after the round arrive on `ResolutionPayload.updatedCombatants` (the rows the next planning phase reuses), so there's no separate conditions map either.*
+- *The Rules enum is `ConditionResultKind` (the hub record is `ConditionResult`). `WastedReason.Missed` (wire `missed`) is a condition that needed a hit that didn't land.*
+- *Feed text for a changed hit is generic: "for 3 damage (-4 from conditions)", not the condition's name (several can contribute). The chips and the round timeline's tick details say which conditions are on whom.*
+- *Checking `resonanceScaling.thresholdEffects` against the condition catalog moves to PR 2: Firebolt names `burning`, which arrives then.*
+- *Ability tags: Battle Cry and Stoneskin are `buff`, Mark is `debuff` (not resonance tags). No profile changed: the new abilities are in the **Conditions** preset only, so other presets play as before apart from Defend now guarding.*
+- *Enemy AI: the condition step plans from where the AI stands, but `auto` abilities find their targets after the tick's movement (as in 3B.3), so a Battle Cry can miss allies who walk out of range in the same tick. Good enough for a minimal use; smarter timing is 3D.*
+- *Playback: Guarded shows with the tick's first beat (blue aura and its name); ability conditions play in the effects beat (blue for buffs, purple for debuffs); falling clears a token's chips; an `expiries` beat at the end of the round drops what ran out. `ResolutionPlaybackService.conditionsOf` follows it, like `hpOf`.*
+- *`AbilityCatalog.FromFile` / `Load` take the `ConditionCatalog`; `FromAppDirectory` loads the shipped one. `ResolutionService` maps the resolver's conditions back to their stored shape (with descriptions) through the combatants' ability snapshots and stored conditions.*
+- *Client: `makeRoll` joined the test builders (rolls gained two fields), along with `makeCondition`, `makeActiveCondition`, `makeAbilityCondition`, `makeConditionResult` and `makeExpiredCondition`.*
 
 ### Rules (`server/src/RpgGame.Rules/`)
 

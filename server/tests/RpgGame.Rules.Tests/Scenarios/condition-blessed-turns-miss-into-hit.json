@@ -1,0 +1,15 @@
+{
+  // 3B.4: Blessed adds +2 to the d20 of the bearer's attacks. 8 + 2 = 10 meets Dodge 10.
+  "description": "Conditions: Blessed turns a miss into a hit",
+  "combatants": [
+    { "id": "A", "at": [5, 5], "conditions": [ { "id": "blessed", "rounds": 0 } ] },
+    { "id": "B", "at": [5, 6] }
+  ],
+  "plans": { "A": ["melee B"] },
+  "dice": [8, 5],
+  "expect": {
+    "hp": { "B": 15 },
+    "events": ["t1 A melee B: hit 5", "end A: blessed expires"],
+    "conditions": { "A": {} }
+  }
+}

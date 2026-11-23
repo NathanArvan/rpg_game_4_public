@@ -10,6 +10,7 @@ export interface AbilityDto {
   tags: string[];
   targeting: AbilityTargetingDto;
   move: AbilityMoveDto | null;
+  appliesConditions: AbilityConditionDto[] | null;
 }
 
 export interface AbilityMoveDto {
@@ -58,6 +59,75 @@ export interface CombatantDto {
   movementRange: number;
   maxAp: number;
   abilities: AbilityDto[] | null;
+  conditions: ActiveConditionDto[] | null;
+}
+
+export interface ConditionDto {
+  id: string;
+  name: string;
+  description: string;
+  harmful: boolean;
+  tags: string[];
+  modifiers: ConditionModifiersDto;
+}
+
+export interface ConditionModifiersDto {
+  accuracy: number;
+  dodge: number;
+  attackKind: string;
+  damageDealt: number;
+  damageTaken: ConditionDamageTakenDto | null;
+  movement: number;
+  ap: number;
+  periodic: ConditionPeriodicDto | null;
+  blocks: string[];
+}
+
+export interface ConditionDamageTakenDto {
+  percent: number;
+  flat: number;
+  tags: string[];
+}
+
+export interface ConditionPeriodicDto {
+  kind: string;
+  die: string | null;
+  bonus: number;
+}
+
+export interface ActiveConditionDto {
+  condition: ConditionDto;
+  roundsLeft: number;
+  sourceId: string | null;
+}
+
+export interface AbilityConditionDto {
+  condition: ConditionDto;
+  duration: number;
+  requiresHit: boolean;
+}
+
+export interface ConditionResult {
+  sourceId: string;
+  sourceName: string;
+  targetId: string;
+  targetName: string;
+  conditionId: string;
+  conditionName: string;
+  harmful: boolean;
+  abilityId: string | null;
+  result: string;
+  roundsLeft: number;
+  wastedReason: string | null;
+  feedText: string;
+}
+
+export interface ExpiredConditionDto {
+  combatantId: string;
+  combatantName: string;
+  conditionId: string;
+  conditionName: string;
+  feedText: string;
 }
 
 export interface EncounterEndedPayload {
@@ -125,6 +195,7 @@ export interface PlanningCombatantDto {
   bleedoutRoundsLeft: number;
   abilities: AbilityDto[] | null;
   cooldowns: { [key: string]: number } | null;
+  conditions: ActiveConditionDto[] | null;
 }
 
 export interface PlayerLockedInPayload {
@@ -162,6 +233,7 @@ export interface ResolutionPayload {
   queues: CombatantQueueDto[];
   endOfRound: BleedoutResultDto[];
   revivedCombatantIds: string[] | null;
+  expiredConditions: ExpiredConditionDto[] | null;
 }
 
 export interface BleedoutResultDto {
@@ -195,6 +267,7 @@ export interface TickResult {
   effects: EffectResult[];
   abilityUses: AbilityUseResult[] | null;
   heals: HealResult[] | null;
+  conditions: ConditionResult[] | null;
 }
 
 export interface HealResult {
@@ -239,12 +312,15 @@ export interface AttackResult {
   finishingBlow: boolean;
   abilityId: string | null;
   moveBonus: number;
+  conditionDamage: number;
 }
 
 export interface AttackRollDto {
   d20: number;
   accuracy: number;
   targetDodge: number;
+  conditionAccuracy: number;
+  conditionDodge: number;
 }
 
 export interface EffectResult {

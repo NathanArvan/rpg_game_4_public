@@ -196,3 +196,31 @@ test('Abilities: the Scout walks its full range, Dashes 3 more cells and still s
   await expect(feedEntries(page).filter({ hasText: /Scout moves to \(\d+, \d+\) with Dash/ })).toHaveCount(1, { timeout: 20_000 });
   await expect(feedEntries(page).filter({ hasText: /Scout (shoots at|'s attack on) Goblin 3/ })).toHaveCount(1, { timeout: 20_000 });
 });
+
+test('Conditions: the Scout Marks a goblin; the chip shows and lasts into the next round, and defenders are Guarded (3B.4)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Conditions');
+
+  // Scout (11,13) has Mark (range 8); Goblin 1 starts at (10,7).
+  const actionBar = page.locator('.action-bar');
+  await tokenAt(page, 11, 13).click();
+  await expect(actionBar).toContainText('Planning for Scout');
+  const mark = actionBar.locator('.ability-btn', { hasText: 'Mark' });
+  await expect(mark).toHaveAttribute('title', /Applies Marked .* until end of next round/);
+  await mark.click();
+  await expect(tokenAt(page, 10, 7)).toHaveClass(/ability-target/);
+  await tokenAt(page, 10, 7).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Mark on Goblin 1');
+
+  // The Bruiser and the Skirmisher defend (unplanned), so they're Guarded.
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expect(feedEntries(page).filter({ hasText: "Scout's Mark: Goblin 1 is Marked until the end of next round" })).toHaveCount(1, { timeout: 20_000 });
+  await expect(feedEntries(page).filter({ hasText: 'Bruiser is Guarded until the end of the round' })).toHaveCount(1, { timeout: 20_000 });
+
+  // Round 2: Marked and Exposed are still on Goblin 1 (they last until the end of this round); Guarded is gone.
+  await expectPlanningRound(page, 2, 30_000);
+  const goblinRow = page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' });
+  await expect(goblinRow.locator('.chip[data-condition="marked"]')).toContainText('this round');
+  await expect(goblinRow.locator('.chip[data-condition="exposed"]')).toBeVisible();
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.chip')).toHaveCount(0);
+});

@@ -18,7 +18,7 @@ import {
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { Combatant, isControlledBy } from '../../../state/encounter/encounter.model';
 import { Position } from '../../../state/map/map.state.model';
-import { AbilityDto, PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
+import { AbilityDto, ActiveConditionDto, PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
 import { ActiveAura, ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 
 interface Cell {
@@ -50,10 +50,12 @@ const TOKEN_INSET_PX = 3;
 /** Fade time for a token being defeated (matches the defeat beat). */
 const FADE_MS = 500;
 
+import { ConditionChipsComponent } from '../condition-chips/condition-chips.component';
+import { describeDuration } from '../condition-chips/condition-format';
 @Component({
   selector: 'app-grid',
   standalone: true,
-  imports: [CommonModule, GmEnemyPlannerComponent, AbilityBarComponent],
+  imports: [CommonModule, GmEnemyPlannerComponent, AbilityBarComponent, ConditionChipsComponent],
   templateUrl: './grid.component.html',
   styleUrl: './grid.component.css',
 })
@@ -274,11 +276,20 @@ export class GridComponent implements OnInit {
     return this.playback.statusOf(combatant);
   }
 
+  /** Conditions as shown (3B.4): playback reveals them as they land. */
+  shownConditions(combatant: Combatant): ActiveConditionDto[] {
+    return this.playback.conditionsOf(combatant);
+  }
+
   tokenTitle(combatant: Combatant): string {
     const { status, bleedoutRoundsLeft } = this.playback.statusOf(combatant);
     const state = status === 'downed' ? ` — downed, bleeds out in ${bleedoutRoundsLeft} ${bleedoutRoundsLeft === 1 ? 'round' : 'rounds'}`
       : status === 'stable' ? ' — stable' : status === 'dead' ? ' — dead' : '';
-    return `${combatant.characterName} (HP: ${this.playback.hpOf(combatant)}/${combatant.maxHp})${state}`;
+    const conditions = this.playback.conditionsOf(combatant);
+    const shown = conditions.length > 0
+      ? ` — ${conditions.map(c => `${c.condition.name} (${describeDuration(c.roundsLeft)})`).join(', ')}`
+      : '';
+    return `${combatant.characterName} (HP: ${this.playback.hpOf(combatant)}/${combatant.maxHp})${state}${shown}`;
   }
 
   onTokenClick(token: TokenView): void {

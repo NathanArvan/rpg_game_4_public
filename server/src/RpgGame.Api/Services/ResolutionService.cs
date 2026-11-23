@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RpgGame.Api.Conditions;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
@@ -59,7 +60,9 @@ public class ResolutionService(
             outcome.Ticks.Count, outcome.DefeatedThisRound.Count);
 
         var finalStates = outcome.Next.Combatants.ToDictionary(c => c.Id);
-        var tickResults = outcome.Ticks.Select(t => ToTickResult(t, records)).ToList();
+        var conditionLookup = ConditionLookup(records);
+        var tickResults = outcome.Ticks.Select(t => ToTickResult(t, records, conditionLookup)).ToList();
+        var finalConditions = finalStates.ToDictionary(kv => kv.Key, kv => ToStored(kv.Value.Conditions, conditionLookup));
 
         // ----- Build payload -----
 
@@ -69,7 +72,7 @@ public class ResolutionService(
         {
             var id = c.Id.ToString();
             var final = finalStates[id];
-            return CombatantDtos.Planning(c, final.Hp, final.Status, final.BleedoutRoundsLeft, final.Cooldowns);
+            return CombatantDtos.Planning(c, final.Hp, final.Status, final.BleedoutRoundsLeft, final.Cooldowns, finalConditions[id]);
         }).ToList();
 
         // ----- Persist -----
@@ -119,6 +122,13 @@ public class ResolutionService(
                 await redisState.SetCooldownsAsync(encounterIdStr, final.Id, final.Cooldowns);
         }
 
+        // Conditions (3B.4): write only the ones that changed.
+        foreach (var final in outcome.Next.Combatants)
+        {
+            if (final.Conditions.SequenceEqual(records[final.Id].State.Conditions)) continue;
+            await redisState.SetConditionsAsync(encounterIdStr, final.Id, finalConditions[final.Id]);
+        }
+
         // Start from the stored map so entries the engine doesn't know about are kept as-is.
         var positions = new Dictionary<string, Position>(mapEntry.Positions);
         foreach (var final in outcome.Next.Combatants)
@@ -147,8 +157,16 @@ public class ResolutionService(
             return new BleedoutResultDto(b.CombatantId, name, b.RoundsLeft, b.Died, ResolutionFeedFormatter.Bleedout(b, name));
         }).ToList();
 
+        var expired = outcome.ExpiredConditions.Select(x =>
+        {
+            var name = records.TryGetValue(x.CombatantId, out var r) ? r.State.Name : "Unknown";
+            var conditionName = conditionLookup.TryGetValue(x.ConditionId, out var c) ? c.Name : x.ConditionId;
+            return new ExpiredConditionDto(x.CombatantId, name, x.ConditionId, conditionName,
+                ResolutionFeedFormatter.ConditionExpired(name, conditionName));
+        }).ToList();
+
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList());
+            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired);
     }
 
     // ----- Inbound mapping -----
@@ -186,7 +204,36 @@ public class ResolutionService(
 
     // ----- Outbound mapping -----
 
-    private static TickResult ToTickResult(TickOutcome tick, Dictionary<string, CombatantRecord> records)
+    /// <summary>
+    /// Every condition that can turn up this round, by id, in its stored shape (with its description): the
+    /// ones combatants already carry, the ones their abilities apply, and Defend's built-in Guarded. The
+    /// resolver's conditions carry no description, so results are mapped back through this.
+    /// </summary>
+    private static Dictionary<string, ConditionValues> ConditionLookup(Dictionary<string, CombatantRecord> records)
+    {
+        var lookup = new Dictionary<string, ConditionValues> { [RulesConfig.GuardedId] = ConditionCatalog.Guarded };
+        foreach (var r in records.Values)
+        {
+            foreach (var effect in r.Entity.Profile?.Abilities?.SelectMany(a => a.Effects) ?? [])
+                if (effect.Condition is { } c) lookup.TryAdd(c.Id, c);
+            foreach (var stored in r.StoredConditions)
+                lookup.TryAdd(stored.Condition.Id, stored.Condition);
+        }
+        return lookup;
+    }
+
+    /// <summary>The resolver's conditions in their stored shape, for Redis and the payload.</summary>
+    private static List<ActiveConditionValues> ToStored(
+        IReadOnlyList<ActiveCondition> conditions, Dictionary<string, ConditionValues> lookup) =>
+        conditions.Select(c => new ActiveConditionValues
+        {
+            Condition = (lookup.TryGetValue(c.Id, out var v) ? v : ConditionMapping.FromRules(c.Definition)).Copy(),
+            RoundsLeft = c.RoundsLeft,
+            SourceId = c.SourceId,
+        }).ToList();
+
+    private static TickResult ToTickResult(
+        TickOutcome tick, Dictionary<string, CombatantRecord> records, Dictionary<string, ConditionValues> conditionLookup)
     {
         string NameOf(string id) => records.TryGetValue(id, out var r) ? r.State.Name : "Unknown";
         string AbilityNameOf(string casterId, string abilityId) =>
@@ -212,12 +259,13 @@ public class ResolutionService(
                 a.TargetHpAfter, a.TargetDefeated, a.Wasted,
                 ResolutionFeedFormatter.Attack(a, attackerName, targetName,
                     a.AbilityId is null ? null : AbilityNameOf(a.AttackerId, a.AbilityId)),
-                a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge) : null,
+                a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge, r.ConditionAccuracy, r.ConditionDodge) : null,
                 RulesWireMapping.ToWire(a.WastedReason),
                 RulesWireMapping.ToWire(a.TargetStatus),
                 a.FinishingBlow,
                 a.AbilityId,
-                a.MoveBonus);
+                a.MoveBonus,
+                a.ConditionDamage);
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(
@@ -247,7 +295,20 @@ public class ResolutionService(
                 ResolutionFeedFormatter.Heal(h, healerName, targetName, AbilityNameOf(h.HealerId, h.AbilityId)));
         }).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals);
+        var conditions = tick.Conditions.Select(c =>
+        {
+            var sourceName = NameOf(c.SourceId);
+            var targetName = NameOf(c.TargetId);
+            var definition = conditionLookup.GetValueOrDefault(c.ConditionId);
+            var conditionName = definition?.Name ?? c.ConditionId;
+            var abilityName = c.AbilityId is null ? null : AbilityNameOf(c.SourceId, c.AbilityId);
+            return new ConditionResult(
+                c.SourceId, sourceName, c.TargetId, targetName, c.ConditionId, conditionName, definition?.Harmful ?? false,
+                c.AbilityId, RulesWireMapping.ToWire(c.Result), c.RoundsLeft, RulesWireMapping.ToWire(c.WastedReason),
+                ResolutionFeedFormatter.Condition(c, sourceName, targetName, conditionName, abilityName));
+        }).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -313,6 +374,17 @@ public class ResolutionService(
                     OccurredAt = now,
                     EventType = heal.WastedReason is not null ? "heal_wasted" : heal.Revived ? "heal_revived" : "heal",
                     Payload = JsonSerializer.Serialize(new { heal.HealerId, heal.TargetId, heal.AbilityId, heal.Amount, heal.TargetNewHp }, _jsonOptions),
+                });
+            }
+            foreach (var condition in tick.Conditions ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = condition.Result == "wasted" ? "condition_wasted" : $"condition_{condition.Result}",
+                    Payload = JsonSerializer.Serialize(new { condition.SourceId, condition.TargetId, condition.ConditionId, condition.AbilityId, condition.RoundsLeft }, _jsonOptions),
                 });
             }
             foreach (var attack in tick.Attacks)

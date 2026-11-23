@@ -7,11 +7,13 @@ import { Combatant, isControlledBy } from '../../state/encounter/encounter.model
 import { SelectMyCombatant } from '../../state/encounter/encounter.actions';
 import { AuthService } from '../../core/services/auth.service';
 import { ResolutionPlaybackService } from '../../core/services/resolution-playback.service';
+import { ActiveConditionDto } from '../../contracts/hub-contracts.generated';
+import { ConditionChipsComponent } from './condition-chips/condition-chips.component';
 
 @Component({
   selector: 'app-encounter-tracker',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, ConditionChipsComponent],
   templateUrl: './encounter-tracker.component.html',
   styleUrl: './encounter-tracker.component.css',
 })
@@ -45,6 +47,11 @@ export class EncounterTrackerComponent {
   /** HP as far as the round's playback has revealed it (the store already holds the final HP). */
   hpOf(combatant: Combatant): number {
     return this.playback.hpOf(combatant);
+  }
+
+  /** Conditions as far as the round's playback has revealed them (3B.4). */
+  conditionsOf(combatant: Combatant): ActiveConditionDto[] {
+    return this.playback.conditionsOf(combatant);
   }
 
   isShownDefeated(combatant: Combatant): boolean {

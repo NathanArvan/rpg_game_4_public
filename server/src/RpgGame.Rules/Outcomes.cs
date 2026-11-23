@@ -11,6 +11,9 @@ public sealed record RoundOutcome(
     IReadOnlyDictionary<string, IReadOnlyList<PlannedAction>> ResolvedPlans,
     IReadOnlyList<BleedoutOutcome> EndOfRound)
 {
+    /// <summary>Conditions that ran out at the end of this round (3B.4), in combatant order.</summary>
+    public IReadOnlyList<ExpiredCondition> ExpiredConditions { get; init; } = [];
+
     /// <summary>
     /// Combatants who were out of the fight (Downed or Stable) when the round started and are
     /// standing again at its end, because a heal brought them back (3B.3, ABILITIES.md A8).
@@ -37,6 +40,45 @@ public sealed record TickOutcome(
 
     /// <summary>Heals this tick (3B.3), resolved with the attacks, in plan order then target order.</summary>
     public IReadOnlyList<HealOutcome> Heals { get; init; } = [];
+
+    /// <summary>
+    /// Conditions applied this tick (3B.4): Defend's Guarded at the start of the tick, then ability
+    /// conditions in the Effects phase, in plan order then target order.
+    /// </summary>
+    public IReadOnlyList<ConditionOutcome> Conditions { get; init; } = [];
+}
+
+/// <summary>A condition that ran out at the end of a round (3B.4).</summary>
+public sealed record ExpiredCondition(string CombatantId, string ConditionId);
+
+public enum ConditionResultKind
+{
+    /// <summary>The target didn't have it; now it does.</summary>
+    Applied,
+    /// <summary>The target already had it: it now lasts the longer of the two durations (SPRINT_3B4 C12).</summary>
+    Refreshed,
+    /// <summary>The target resisted it (ConditionResist, 3B.4 PR 2).</summary>
+    Resisted,
+    /// <summary>Nothing happened: see <see cref="ConditionOutcome.WastedReason"/>.</summary>
+    Wasted,
+}
+
+/// <summary>One attempt to put a condition on one target (3B.4).</summary>
+/// <param name="SourceId">Who applied it (the defender, for Guarded).</param>
+/// <param name="AbilityId">The ability that applied it, or null for Defend's Guarded.</param>
+/// <param name="RoundsLeft">Its rounds left afterwards (C5); 0 for a wasted or resisted one.</param>
+/// <param name="WastedReason">Why nothing happened, for <see cref="ConditionResultKind.Wasted"/>:
+/// out of range, wrong side, target down, or <see cref="WastedReason.Missed"/> (it needed a hit).</param>
+public sealed record ConditionOutcome(
+    string SourceId,
+    string TargetId,
+    string ConditionId,
+    string? AbilityId,
+    ConditionResultKind Result,
+    int RoundsLeft,
+    WastedReason WastedReason = WastedReason.None)
+{
+    public bool Wasted => Result == ConditionResultKind.Wasted;
 }
 
 /// <summary>
@@ -94,12 +136,22 @@ public enum WastedReason
     InvalidTargetType,
     /// <summary>Ability: nobody matched its targeting when it resolved (3B.3 PR 2).</summary>
     NoTargets,
+    /// <summary>Condition: it needed the same ability's attack to hit this target, and it didn't (3B.4).</summary>
+    Missed,
 }
 
 /// <summary>The hit check: the attack hits when <c>D20 + Accuracy</c> is at least <c>TargetDodge</c>.</summary>
+/// <param name="Accuracy">Every bonus added to the d20, conditions included.</param>
+/// <param name="TargetDodge">The target's Dodge, conditions included.</param>
 public sealed record AttackRoll(int D20, int Accuracy, int TargetDodge)
 {
     public int Total => D20 + Accuracy;
+
+    /// <summary>The part of <see cref="Accuracy"/> that came from the attacker's conditions (3B.4).</summary>
+    public int ConditionAccuracy { get; init; }
+
+    /// <summary>The part of <see cref="TargetDodge"/> that came from the target's conditions (3B.4).</summary>
+    public int ConditionDodge { get; init; }
 }
 
 /// <param name="TargetHpBefore">Target HP at the start of this tick's attack phase.</param>
@@ -110,6 +162,8 @@ public sealed record AttackRoll(int D20, int Accuracy, int TargetDodge)
 /// <param name="FinishingBlow">The target was already Downed or Stable: a hit kills it outright, with no damage roll.</param>
 /// <param name="AbilityId">The ability that made this attack, or null for a basic melee / ranged attack (3B.3).</param>
 /// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved the caster far enough (Charge's <see cref="DamageSpec.BonusIfMoved"/>).</param>
+/// <param name="ConditionDamage">How much conditions changed <paramref name="Damage"/> (3B.4): the attacker's damage
+/// dealt plus the target's damage taken, signed (−6 resisted, +2 marked).</param>
 public sealed record AttackOutcome(
     string AttackerId,
     string TargetId,
@@ -125,7 +179,8 @@ public sealed record AttackOutcome(
     CombatantStatus TargetStatus = CombatantStatus.Standing,
     bool FinishingBlow = false,
     string? AbilityId = null,
-    int MoveBonus = 0)
+    int MoveBonus = 0,
+    int ConditionDamage = 0)
 {
     public bool Wasted => WastedReason != WastedReason.None;
 }

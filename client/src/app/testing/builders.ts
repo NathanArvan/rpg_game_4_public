@@ -9,14 +9,21 @@
  * specs use the same string for both.
  */
 import {
+  AbilityConditionDto,
   AbilityDto,
+  ActiveConditionDto,
   AbilityTargetingDto,
   AbilityUseResult,
   AttackResult,
+  AttackRollDto,
   BleedoutResultDto,
   CombatantDto,
   CombatantQueueDto,
+  ConditionDto,
+  ConditionModifiersDto,
+  ConditionResult,
   EffectResult,
+  ExpiredConditionDto,
   HealResult,
   MovementResult,
   PlanningCombatantDto,
@@ -44,10 +51,68 @@ export function makeAbility(
   const { targeting, ...rest } = overrides;
   const id = rest.id ?? 'power_strike';
   return {
-    id, name: id, description: '', apCost: 3, cooldown: 2, tags: [], move: null,
+    id, name: id, description: '', apCost: 3, cooldown: 2, tags: [], move: null, appliesConditions: [],
     ...rest,
     targeting: makeTargeting(targeting),
   };
+}
+
+// --- Conditions (3B.4) ---
+
+/** Modifiers that change nothing; override the ones a test needs. */
+export function makeModifiers(overrides: Partial<ConditionModifiersDto> = {}): ConditionModifiersDto {
+  return {
+    accuracy: 0, dodge: 0, attackKind: 'any', damageDealt: 0, damageTaken: null, movement: 0, ap: 0, periodic: null, blocks: [],
+    ...overrides,
+  };
+}
+
+/** A condition definition; defaults to Marked (harmful, +2 damage taken). `modifiers` may be partial. */
+export function makeCondition(
+  overrides: Partial<Omit<ConditionDto, 'modifiers'>> & { modifiers?: Partial<ConditionModifiersDto> } = {},
+): ConditionDto {
+  const { modifiers, ...rest } = overrides;
+  const id = rest.id ?? 'marked';
+  return {
+    id, name: id, description: '', harmful: true, tags: [],
+    ...rest,
+    modifiers: makeModifiers(modifiers ?? (rest.id ? {} : { damageTaken: { percent: 0, flat: 2, tags: [] } })),
+  };
+}
+
+/** A condition on a combatant; defaults to Marked until the end of the round. */
+export function makeActiveCondition(
+  overrides: Partial<Omit<ActiveConditionDto, 'condition'>> & { condition?: Parameters<typeof makeCondition>[0] } = {},
+): ActiveConditionDto {
+  const { condition, ...rest } = overrides;
+  return { roundsLeft: 0, sourceId: null, ...rest, condition: makeCondition(condition) };
+}
+
+/** A condition an ability applies; defaults to Marked for 1 round, no hit needed. */
+export function makeAbilityCondition(
+  overrides: Partial<Omit<AbilityConditionDto, 'condition'>> & { condition?: Parameters<typeof makeCondition>[0] } = {},
+): AbilityConditionDto {
+  const { condition, ...rest } = overrides;
+  return { duration: 1, requiresHit: false, ...rest, condition: makeCondition(condition) };
+}
+
+/** One condition result in a tick; defaults to Marked applied by 'a' to 'b' with Mark, until the end of next round. */
+export function makeConditionResult(overrides: Partial<ConditionResult> = {}): ConditionResult {
+  const sourceId = overrides.sourceId ?? 'a';
+  const targetId = overrides.targetId ?? 'b';
+  const conditionId = overrides.conditionId ?? 'marked';
+  return {
+    sourceId, sourceName: sourceId, targetId, targetName: targetId, conditionId, conditionName: conditionId,
+    harmful: true, abilityId: 'mark', result: 'applied', roundsLeft: 1, wastedReason: null, feedText: '',
+    ...overrides,
+  };
+}
+
+/** A condition that ran out at the end of the round; defaults to Marked on c1. */
+export function makeExpiredCondition(overrides: Partial<ExpiredConditionDto> = {}): ExpiredConditionDto {
+  const combatantId = overrides.combatantId ?? 'c1';
+  const conditionId = overrides.conditionId ?? 'marked';
+  return { combatantId, combatantName: combatantId, conditionId, conditionName: conditionId, feedText: '', ...overrides };
 }
 
 // --- Combatants ---
@@ -58,7 +123,7 @@ export function makePlanningCombatant(overrides: Partial<PlanningCombatantDto> =
   return {
     id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     combatantType: 'player', isAiControlled: false, profileId: 'test', profileName: 'Test',
-    movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {},
+    movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {}, conditions: [],
     ...overrides,
   };
 }
@@ -69,7 +134,7 @@ export function makeCombatantDto(overrides: Partial<CombatantDto> = {}): Combata
   return {
     id, userId: 'me', characterId: '', characterName: id, currentHp: 10, maxHp: 10,
     combatantType: 'player', isAiControlled: false, profileId: 'test', profileName: 'Test',
-    movementRange: 6, maxAp: 4, abilities: [],
+    movementRange: 6, maxAp: 4, abilities: [], conditions: [],
     ...overrides,
   };
 }
@@ -80,7 +145,7 @@ export function makeCombatant(overrides: Partial<Combatant> = {}): Combatant {
   return {
     id, userId: 'me', characterId: '', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     status: 'standing', bleedoutRoundsLeft: 0, combatantType: 'player', isAiControlled: false,
-    profileName: 'Test', movementRange: 6, maxAp: 4, abilities: [], cooldowns: {},
+    profileName: 'Test', movementRange: 6, maxAp: 4, abilities: [], cooldowns: {}, conditions: [],
     ...overrides,
   };
 }
@@ -119,8 +184,14 @@ export function makeAttack(overrides: Partial<AttackResult> = {}): AttackResult 
     attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
     hit: false, damage: 0, targetNewHp: 10, targetDefeated: false, wasted: false, feedText: '',
     roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
+    conditionDamage: 0,
     ...overrides,
   };
+}
+
+/** A hit check; conditions changed nothing unless overridden (3B.4). */
+export function makeRoll(overrides: Partial<AttackRollDto> = {}): AttackRollDto {
+  return { d20: 10, accuracy: 0, targetDodge: 10, conditionAccuracy: 0, conditionDodge: 0, ...overrides };
 }
 
 /** A heal; defaults to a Mend for 0 on a standing target at 10 HP. */
@@ -151,7 +222,7 @@ export function makeAbilityUse(overrides: Partial<AbilityUseResult> = {}): Abili
 
 /** A tick with nothing in it; `tickIndex` defaults to 0. */
 export function makeTick(overrides: Partial<TickResult> = {}): TickResult {
-  return { tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], ...overrides };
+  return { tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], conditions: [], ...overrides };
 }
 
 /** End-of-round bleedout for a downed combatant; defaults to one round fewer, 1 left. */
@@ -164,6 +235,7 @@ export function makeBleedout(overrides: Partial<BleedoutResultDto> = {}): Bleedo
 export function makePayload(overrides: Partial<ResolutionPayload> = {}): ResolutionPayload {
   return {
     ticks: [], newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
+    expiredConditions: [],
     ...overrides,
   };
 }

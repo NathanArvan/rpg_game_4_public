@@ -1,3 +1,4 @@
+using RpgGame.Api.Conditions;
 using RpgGame.Domain.Entities;
 using RpgGame.Rules;
 using System.Text.Json;
@@ -34,8 +35,9 @@ public sealed class AbilityCatalog
 
     private readonly Dictionary<string, AbilityValues> _byId;
 
-    public AbilityCatalog(IReadOnlyList<AbilityValues> abilities)
+    public AbilityCatalog(IReadOnlyList<AbilityValues> abilities, ConditionCatalog? conditions = null)
     {
+        Conditions = conditions ?? ConditionCatalog.Empty;
         _byId = new Dictionary<string, AbilityValues>(StringComparer.Ordinal);
         foreach (var a in abilities)
             if (!_byId.TryAdd(a.Id, a))
@@ -45,10 +47,19 @@ public sealed class AbilityCatalog
 
     public static AbilityCatalog Empty { get; } = new([]);
 
-    public static AbilityCatalog FromFile(string path) => new(Load(path));
+    /// <param name="conditions">The conditions "apply_condition" effects may name (3B.4); none if left out.</param>
+    public static AbilityCatalog FromFile(string path, ConditionCatalog? conditions = null)
+    {
+        conditions ??= ConditionCatalog.Empty;
+        return new(Load(path, conditions), conditions);
+    }
 
+    /// <summary>The shipped abilities, with the shipped conditions (<c>Conditions/conditions.json</c>).</summary>
     public static AbilityCatalog FromAppDirectory() =>
-        FromFile(Path.Combine(AppContext.BaseDirectory, "Abilities", "abilities.json"));
+        FromFile(Path.Combine(AppContext.BaseDirectory, "Abilities", "abilities.json"), ConditionCatalog.FromAppDirectory());
+
+    /// <summary>The conditions this catalog's abilities were checked against (3B.4).</summary>
+    public ConditionCatalog Conditions { get; }
 
     /// <summary>Abilities in file order.</summary>
     public IReadOnlyList<AbilityValues> All { get; }
@@ -64,8 +75,9 @@ public sealed class AbilityCatalog
 
     // ----- Loading & validation -----
 
-    internal static List<AbilityValues> Load(string path)
+    internal static List<AbilityValues> Load(string path, ConditionCatalog? conditions = null)
     {
+        conditions ??= ConditionCatalog.Empty;
         var file = Path.GetFileName(path);
         FileDto dto;
         try
@@ -78,10 +90,10 @@ public sealed class AbilityCatalog
             throw new InvalidDataException($"Abilities {file}: invalid JSON ({ex.Message})", ex);
         }
 
-        return (dto.Abilities ?? []).Select(a => Validate(a, file)).ToList();
+        return (dto.Abilities ?? []).Select(a => Validate(a, file, conditions)).ToList();
     }
 
-    private static AbilityValues Validate(AbilityDto a, string file)
+    private static AbilityValues Validate(AbilityDto a, string file, ConditionCatalog conditions)
     {
         var who = string.IsNullOrWhiteSpace(a.Id) ? "an ability" : a.Id;
         string Fail(string message) => throw new InvalidDataException($"Abilities {file}: {who}: {message}");
@@ -110,7 +122,8 @@ public sealed class AbilityCatalog
         if (target.IncludeSelf == true && filter == "enemy") Fail("target 'includeSelf' doesn't apply to an \"enemy\" filter");
 
         if (a.Effects is not { Count: > 0 }) Fail("'effects' must list at least one effect");
-        var effects = a.Effects!.Select((e, i) => ValidateEffect(e, $"effect {i + 1}", Fail)).ToList();
+        bool attacks = a.Effects!.Any(e => e.Kind?.Trim().ToLowerInvariant() == "attack");
+        var effects = a.Effects!.Select((e, i) => ValidateEffect(e, $"effect {i + 1}", Fail, conditions, attacks)).ToList();
         if (filter == "enemy" && effects.Any(e => e.Kind == "heal")) Fail("a heal can't target enemies (use an \"ally\" or \"any\" filter)");
         if (self && filter != "ally") Fail("a \"self\" ability doesn't take a target 'filter'");
         if (self && effects.Any(e => e.Kind == "attack")) Fail("a \"self\" ability can't attack (it would hit its caster)");
@@ -123,6 +136,14 @@ public sealed class AbilityCatalog
         }
         if (moves.Count == 0 && effects.Any(e => e.Damage?.BonusIfMoved is not null))
             Fail("damage 'bonusIfMoved' needs a \"move\" effect in the same ability");
+
+        if (effects.Any(e => e.Kind == "apply_condition" && e.RequiresHit) && !attacks)
+            Fail("an \"apply_condition\" with 'requiresHit' needs an \"attack\" effect in the same ability");
+        var harmful = effects.Where(e => e.Condition is { Harmful: true }).Select(e => e.Condition!.Id).ToList();
+        var helpful = effects.Where(e => e.Condition is { Harmful: false }).Select(e => e.Condition!.Id).ToList();
+        if (self && harmful.Count > 0) Fail($"a \"self\" ability can't apply a harmful condition ('{harmful[0]}')");
+        if (filter is "ally" or "downed_ally" && harmful.Count > 0) Fail($"an \"ally\" ability can't apply a harmful condition ('{harmful[0]}')");
+        if (filter == "enemy" && helpful.Count > 0) Fail($"an \"enemy\" ability can't apply a beneficial condition ('{helpful[0]}')");
 
         ValidateResonanceScaling(a.ResonanceScaling, Fail);
 
@@ -143,7 +164,8 @@ public sealed class AbilityCatalog
         };
     }
 
-    private static AbilityEffectValues ValidateEffect(EffectDto e, string which, Func<string, string> fail)
+    private static AbilityEffectValues ValidateEffect(
+        EffectDto e, string which, Func<string, string> fail, ConditionCatalog conditions, bool abilityAttacks)
     {
         switch (e.Kind?.Trim().ToLowerInvariant())
         {
@@ -197,8 +219,23 @@ public sealed class AbilityCatalog
                 {
                     Kind = "move", To = to, MaxCells = e.MaxCells!.Value, UsesMovementBudget = e.UsesMovementBudget ?? true,
                 };
+            case "apply_condition":
+                var id = e.Condition?.Trim() ?? "";
+                if (id.Length == 0) fail($"{which}: 'condition' is required");
+                var condition = conditions.Find(id);
+                if (condition is null) fail($"{which}: unknown condition '{id}'");
+                if (e.Duration is not (>= 0 and <= MaxCooldown))
+                    fail($"{which}: 'duration' must be between 0 and {MaxCooldown} (0 = until the end of the round)");
+                return new AbilityEffectValues
+                {
+                    Kind = "apply_condition",
+                    Condition = condition!.Copy(),
+                    Duration = e.Duration!.Value,
+                    // A condition on an ability that attacks lands only on a hit, unless it says otherwise.
+                    RequiresHit = e.RequiresHit ?? abilityAttacks,
+                };
             default:
-                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\", \"move\")");
+                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\", \"move\", \"apply_condition\")");
                 return null!;
         }
     }
@@ -259,6 +296,9 @@ public sealed class AbilityCatalog
         public int? MaxCells { get; set; }
         public bool? UsesMovementBudget { get; set; }
         public string? Path { get; set; }
+        public string? Condition { get; set; }
+        public int? Duration { get; set; }
+        public bool? RequiresHit { get; set; }
     }
 
     private sealed class MovedBonusDto
@@ -316,6 +356,10 @@ internal static class AbilityMapping
             e.Amount?.Die is { } die ? DamageDie.Parse(die) : null,
             e.Amount?.Bonus ?? 0,
             e.CanRevive),
+        "apply_condition" => new ApplyConditionEffect(
+            ConditionMapping.ToRules(e.Condition ?? throw new InvalidDataException("An apply_condition effect has no condition.")),
+            e.Duration,
+            e.RequiresHit),
         _ => throw new InvalidDataException($"Unknown ability effect kind '{e.Kind}'."),
     };
 

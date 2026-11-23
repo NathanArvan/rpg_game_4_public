@@ -41,7 +41,7 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
         var (battle, ids) = await StartAsync("it-duel");
         var (hero, goblin) = (ids["Hero"], ids["Goblin"]);
 
-        // Round 1: Hero hits (d20 15 + 1 ≥ dodge 10) for 4; the manual Goblin defends.
+        // Round 1: Hero hits (d20 15 + 1 ≥ dodge 13: the manual Goblin defends, so it's Guarded, 3B.4) for 4.
         api.Dice.Script(15, 4);
         await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Melee(goblin)), hero);
         await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
@@ -50,7 +50,7 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
         var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
         var attack = Assert.Single(round1.Ticks.SelectMany(t => t.Attacks));
         Assert.Equal((hero, goblin, true, 4, 6), (attack.AttackerId, attack.TargetId, attack.Hit, attack.Damage, attack.TargetNewHp));
-        Assert.Equal(new AttackRollDto(15, 1, 10), attack.Roll);
+        Assert.Equal(new AttackRollDto(15, 1, 13, 0, 3), attack.Roll);
         Assert.Equal(0, api.Dice.Remaining);
 
         var round2 = await _client.NextAsync<PlanningPhaseStartedPayload>(Events.PlanningPhaseStarted, p => p.RoundNumber == 2);
@@ -89,6 +89,49 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
         });
         Assert.Equal(EncounterStatus.Ended, status);
         Assert.Contains("encounter_ended", eventTypes);
+
+        ContractShape.AssertEventsMatch(_client.Events);
+    }
+
+    [Fact]
+    public async Task Mark_puts_conditions_on_the_goblin_that_change_the_next_hit_and_carry_into_the_next_round()
+    {
+        var (battle, ids) = await StartAsync("it-mark");
+        var (hero, goblin) = (ids["Hero"], ids["Goblin"]);
+        var encounterId = (await api.Redis.GetActiveEncounterAsync(battle.GameSessionId.ToString()))!.EncounterId;
+
+        // Round 1: Mark (tick 1) makes the Goblin Exposed (-3 Dodge) and Marked (+2 damage taken); it also
+        // defends, so it's Guarded (+3) all round. Tick 2's melee: d20 10 + 1 vs 10 + 3 - 3 = 10 hits,
+        // d6 3 + 2 = 5.
+        api.Dice.Script(10, 3);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Ability("mark", goblin), Melee(goblin)), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+
+        var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
+        Assert.Equal(0, api.Dice.Remaining);
+        var conditions = round1.Ticks.SelectMany(t => t.Conditions ?? []).ToList();
+        Assert.Equal([("guarded", "applied"), ("marked", "applied"), ("exposed", "applied")],
+            conditions.Select(c => (c.ConditionId, c.Result)));
+        var attack = Assert.Single(round1.Ticks.SelectMany(t => t.Attacks));
+        Assert.Equal((5, 2), (attack.Damage, attack.ConditionDamage));
+        Assert.Equal(new AttackRollDto(10, 1, 10, 0, 0), attack.Roll); // +3 Guarded and -3 Exposed cancel out
+        Assert.Equal(["guarded"], round1.ExpiredConditions!.Select(x => x.ConditionId));
+
+        // Next planning phase and real Redis: Marked and Exposed last through round 2 (0 rounds left after it).
+        var round2 = await _client.NextAsync<PlanningPhaseStartedPayload>(Events.PlanningPhaseStarted, p => p.RoundNumber == 2);
+        var goblinDto = round2.Combatants.Single(c => c.Id == goblin);
+        Assert.Equal([("marked", 0), ("exposed", 0)], goblinDto.Conditions!.Select(c => (c.Condition.Id, c.RoundsLeft)));
+        Assert.Equal([("marked", hero), ("exposed", hero)],
+            (await api.Redis.GetConditionsAsync(encounterId, goblin)).Select(c => (c.Condition.Id, c.SourceId!)));
+
+        // Round 2: nobody acts; at its end both expire and the Redis entry goes.
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Move(8, 9)), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+        var round2Result = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted, p => p.NewRoundNumber == 3);
+        Assert.Equal(["marked", "exposed", "guarded"], round2Result.ExpiredConditions!.Select(x => x.ConditionId));
+        Assert.Empty(await api.Redis.GetConditionsAsync(encounterId, goblin));
 
         ContractShape.AssertEventsMatch(_client.Events);
     }

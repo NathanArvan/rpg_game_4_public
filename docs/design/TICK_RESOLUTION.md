@@ -48,7 +48,7 @@ Max queue length: 3 → 3 ticks
 - A: Melee Attack. B: No action (queue exhausted, implicitly idles). C: Move.
 - C moves first (Movement), then A's melee attack resolves against post-movement positions (Attacks). Adjacency checked at this point.
 
-After all ticks complete, process end-of-round effects: condition duration ticks, ley point volatility, cooldown decrements.
+After all ticks complete, process end-of-round effects: condition duration ticks, ley point volatility, cooldown decrements. As built (3B.4): periodic condition effects and any falls they cause (PR 2) → bleedout → cooldowns → conditions count down and expire. Condition modifiers to a round's budgets (AP, movement) apply from the next planning phase; blocks (Stunned, Rooted) and hit / damage modifiers from the next tick (`SPRINT_3B4.md` C6).
 
 ### Sub-decisions
 
@@ -112,9 +112,9 @@ resolve_round(all_combatants):
 | Move | Movement | 1 | Path-based. Since 3B.2, all of a round's moves share the combatant's movement range (see below) |
 | Melee Attack | Attack | 2 | Requires adjacency (Chebyshev ≤ 1) post-movement |
 | Ranged Attack | Attack | 2 | Requires target within range post-movement. Unlimited range in 3A. |
-| Defend | Effects | 1 | No resolution in 3A. Future: damage reduction buff. |
+| Defend | Start of its tick | 1 | No effect in 3A–3B.3. Since 3B.4 it grants **Guarded** (+3 Dodge) at the start of its own tick, before Movement, until the end of the round (`SPRINT_3B4.md` C7); its feed entry still comes with the Effects phase |
 | Disengage | Movement | 1 | Move without provoking reactive attacks. See Decision 5. |
-| Ability (3B.3) | Per effect | Its own (`abilities.json`) | One queue slot. Each effect runs in its own phase of that tick: attacks and heals with the Attacks phase (heals net with damage), moves with Movement (in lockstep with plain moves; Dash's cells don't use the movement budget, Charge's do), stabilize with Effects. See `ABILITIES.md` |
+| Ability (3B.3) | Per effect | Its own (`abilities.json`) | One queue slot. Each effect runs in its own phase of that tick: attacks and heals with the Attacks phase (heals net with damage), moves with Movement (in lockstep with plain moves; Dash's cells don't use the movement budget, Charge's do), stabilize and `apply_condition` (3B.4) with Effects, so a condition counts from the next tick. See `ABILITIES.md`, `SPRINT_3B4.md` |
 | Prepared Action | Special | Varies | Doesn't resolve at its queue position. Activates reactively. See Decision 4. |
 
 ### Movement Budget per Round (3B.2) ✅

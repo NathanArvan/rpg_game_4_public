@@ -22,12 +22,14 @@ internal static class CombatantDtos
         c.Profile?.ProfileName ?? "",
         CombatProfileMapping.MovementRange(c.Profile),
         CombatProfileMapping.MaxAp(c.Profile),
-        Abilities(c.Profile));
+        Abilities(c.Profile),
+        []);
 
     /// <param name="cooldowns">Abilities on cooldown at the start of the planning phase (3B.3); null = none.</param>
+    /// <param name="conditions">Conditions at the start of the planning phase (3B.4); null = none.</param>
     public static PlanningCombatantDto Planning(
         EncounterCombatant c, int currentHp, CombatantStatus status = CombatantStatus.Standing, int bleedoutRoundsLeft = 0,
-        IReadOnlyDictionary<string, int>? cooldowns = null) => new(
+        IReadOnlyDictionary<string, int>? cooldowns = null, IReadOnlyList<ActiveConditionValues>? conditions = null) => new(
         c.Id.ToString(),
         c.UserId,
         c.CharacterName,
@@ -43,7 +45,8 @@ internal static class CombatantDtos
         RulesWireMapping.ToWire(status),
         bleedoutRoundsLeft,
         Abilities(c.Profile),
-        cooldowns is null ? [] : new Dictionary<string, int>(cooldowns));
+        cooldowns is null ? [] : new Dictionary<string, int>(cooldowns),
+        (conditions ?? []).Select(ActiveCondition).ToList());
 
     public static CombatProfileDto Profile(CombatProfileDefinition p) => new(
         p.Id, p.Name, p.Description, p.Side, p.MaxHp, p.MovementRange, p.Speed,
@@ -59,5 +62,19 @@ internal static class CombatantDtos
         new AbilityTargetingDto(a.Target.Kind, a.Target.Filter, a.Target.Range, a.Target.Count, a.Target.IncludeSelf),
         a.Effects.FirstOrDefault(e => e.Kind == "move") is { } move
             ? new AbilityMoveDto(move.To ?? "cell", move.MaxCells, move.UsesMovementBudget)
-            : null);
+            : null,
+        a.Effects.Where(e => e.Kind == "apply_condition" && e.Condition is not null)
+            .Select(e => new AbilityConditionDto(Condition(e.Condition!), e.Duration, e.RequiresHit)).ToList());
+
+    public static ActiveConditionDto ActiveCondition(ActiveConditionValues a) =>
+        new(Condition(a.Condition), a.RoundsLeft, a.SourceId);
+
+    public static ConditionDto Condition(ConditionValues c) => new(
+        c.Id, c.Name, c.Description, c.Harmful, c.Tags,
+        new ConditionModifiersDto(
+            c.Modifiers.Accuracy, c.Modifiers.Dodge, c.Modifiers.AttackKind, c.Modifiers.DamageDealt,
+            c.Modifiers.DamageTaken is { } t ? new ConditionDamageTakenDto(t.Percent, t.Flat, t.Tags) : null,
+            c.Modifiers.Movement, c.Modifiers.Ap,
+            c.Modifiers.Periodic is { } p ? new ConditionPeriodicDto(p.Kind, p.Die, p.Bonus) : null,
+            c.Modifiers.Blocks));
 }

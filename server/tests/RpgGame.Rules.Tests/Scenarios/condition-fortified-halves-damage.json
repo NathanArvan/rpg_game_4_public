@@ -1,0 +1,11 @@
+{
+  // 3B.4 (SPRINT_3B4 C4): damage taken -50%, rounded down. 7 → 3.
+  "description": "Conditions: Fortified halves a hit, rounding down",
+  "combatants": [
+    { "id": "A", "at": [5, 5] },
+    { "id": "B", "at": [5, 6], "conditions": [ { "id": "fortified", "rounds": 0 } ] }
+  ],
+  "plans": { "A": ["melee B"] },
+  "dice": [15, 7],
+  "expect": { "hp": { "B": 17 }, "events": ["t1 A melee B: hit 3 (-4 conditions)"] }
+}

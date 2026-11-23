@@ -62,6 +62,7 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `side` | none | Team: used by `"ai"` plans (missing = `"party"` there) and by ability target filters (missing = no team, everyone's enemy). Any two different sides are enemies |
 | `abilities` | none | Ability ids from the scenario's top-level `abilities` block (3B.3): the loadout |
 | `cooldowns` | none | `{ "power_strike": 1 }`: abilities already on cooldown at the start of the round |
+| `conditions` | none | `[{ "id": "marked", "rounds": 1 }]`: conditions at the start of the round (3B.4). `rounds` = full rounds it lasts after this one (default 0: until the end of this round) |
 
 ### `plans`
 
@@ -161,6 +162,41 @@ ability still on cooldown, or not in the loadout, is refused (no roll, no new co
 of the round every cooldown goes down by one, then each ability used this round is set to its
 `cooldown`: used in round 3 with cooldown 2 → usable again in round 6.
 
+### `conditions` (optional, 3B.4)
+
+A combatant's `conditions` list and an ability's `apply_condition` effect name conditions by id. They
+come from the **shared library**, [`library/conditions.json`](library/conditions.json) (Blessed,
+Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward), owned by these tests like the ability
+library. A scenario's own `conditions` block adds or overrides entries, in the same shape as
+`server/src/RpgGame.Api/Conditions/conditions.json`:
+
+```jsonc
+"conditions": [
+  { "id": "fortified", "name": "Fortified", "harmful": false, "modifiers": { "damageTaken": { "percent": -50 } } }
+]
+```
+
+Modifiers: `accuracy`, `dodge` (with `attackKind`: `any` / `melee` / `ranged`), `damageDealt`,
+`damageTaken` (`{ percent, flat, tags }`), and, parsed but not acted on until later PRs, `movement`,
+`ap`, `periodic`, `blocks`. Numbers from several conditions are added up. **Guarded** (Defend's +3
+Dodge) is built into the rules and needs no entry.
+
+An ability applies one with `{ "kind": "apply_condition", "condition": "marked", "duration": 1 }`
+(`requiresHit` defaults to true when the ability also attacks). It resolves in the **Effects** phase,
+on the targets the ability found, so it counts from the **next** tick. Defend's Guarded is the
+exception: it lands at the **start** of the Defend's tick. The same condition again doesn't stack: it
+keeps the longer duration. Falling (Downed or Dead) clears every condition, and none land on someone
+who is down.
+
+Durations: `duration` / `rounds` = full rounds after the current one. At every end of round a
+condition at 0 is removed and any other goes down by one, so `duration: 1` lasts the rest of this
+round and all of the next.
+
+Hit check with conditions: d20 + accuracy (+ the attacker's `accuracy` modifiers) ≥ Dodge (+ the
+target's `dodge` modifiers). Damage: `(die + bonus + attacker's damageDealt) × multiplier`, then the
+target's `damageTaken`: flat added, then percent (rounded down, never below 0). Finishing blows ignore
+conditions.
+
 ### `dice`
 
 These are the exact rolls, used in order. Every attack that isn't wasted rolls a d20 to
@@ -194,6 +230,7 @@ Every key is optional, and only what you list gets checked. **Ticks are numbered
 | `hits` | The exact set of `{ "tick", "attacker" }` attacks that hit |
 | `wasted` | The exact set of `{ "tick", "attacker" }` attacks that were wasted |
 | `cooldowns` | `{ "id": { "power_strike": 2 } }`, the **exact** cooldowns at the end of the round (`{}` = none) |
+| `conditions` | `{ "id": { "marked": 0 } }`, the **exact** conditions and their rounds left at the end of the round, after the countdown (`{}` = none) (3B.4) |
 | `abilityUses` | The exact set of `{ "tick", "id", "ability" }` activations; add `"wasted": "on_cooldown"` (or `"not_in_loadout"`, `"no_targets"`) for a failed one, and optionally `"targets": ["G1", "G2"]` to check its targets in order (for `auto`, the ones it found) |
 | `heals` | The exact set of `{ "tick", "id" (healer), "target", "amount" }` heals (`amount` = die + bonus, before the max-HP cap); add `"revived": true` when it got the target back up, or `"wasted": "out_of_range"` (amount ignored) |
 | `revived` | The exact set of combatants who were down at the start of the round and are standing at its end |
@@ -208,16 +245,17 @@ When a check fails, the test lists every mismatch, for example
 The runner writes down everything a round did, one line per event. `expect.events` checks lines
 of it, and a failing scenario prints all of it, so a quick way to write expectations is to run
 the scenario once and copy the lines you care about. Within each tick (`t1`, `t2`, …) the order is:
-ability uses, moves, attacks, heals, effects; then the end of round.
+ability uses, Defend's Guarded, moves, attacks, heals, effects, conditions from abilities; then the end of round.
 
 | Event | Line |
 |---|---|
 | Ability use | `t1 Bruiser uses cleave on G1,G2`, `t1 Bruiser uses cleave (no_targets)`, `t2 Bruiser uses power_strike on G1 (on_cooldown)` |
 | Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2`; a move made by an ability adds its id: `t1 Scout moves to 9,5 (dash)`, `t1 Kestrel moves to 5,7 (charge) (blocked by Runner)` |
-| Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
+| Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`, `t1 A melee B: hit 3 (-4 conditions)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
 | Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |
 | Effect | `t1 Hero defends`, `t1 Knight stabilizes Archer`, `t1 Knight stabilizes Archer: wasted target_not_downed` |
-| End of round | `end Hero bleeds, 1 left`, `end Hero bleeds out` |
+| Condition (3B.4) | `t1 Kestrel mark Goblin: marked applied (1)`, `t1 Kestrel mark Goblin: marked refreshed (2)`, `t1 A blinding_strike B: dazzled wasted missed`; Defend's: `t1 B defend B: guarded applied (0)`. The number is rounds left |
+| End of round | `end Hero bleeds, 1 left`, `end Hero bleeds out`, `end Goblin: marked expires` |
 
 Attacks name the ability that made them (`cleave`), or `melee` / `ranged` for basic attacks.
 Wasted reasons are written in snake case, as on the wire. A new kind of outcome gets one line
@@ -227,7 +265,7 @@ in `ScenarioTests.EventLog` and is then checkable with `events`, with no new `ex
 
 To play several rounds in a row, put `plans`, `dice` and `expect` inside each entry of a `rounds`
 list instead of at the top level. Each round starts from the state the previous one left: HP,
-positions, statuses, bleedout and cooldowns carry over, exactly as they would between two server
+positions, statuses, bleedout, cooldowns and conditions carry over, exactly as they would between two server
 rounds. `"ai"` plans are chosen from the state at the start of their round. Leftover dice are
 checked per round, and failures say which round they're in.
 
