@@ -27,7 +27,7 @@
     },
     {
       "plans": { "Bruiser": ["ability power_strike Goblin"], "Goblin": ["defend"] },
-      "dice": [12, 3],                   // hit; d8 3 + 4 = 7
+      "dice": [13, 3],                   // hit vs Dodge 13 (the Goblin is Guarded, 3B.4); d8 3 + 4 = 7
       "expect": {
         "events": ["t1 Bruiser uses power_strike on Goblin", "t1 Bruiser power_strike Goblin: hit 7"],
         "hp": { "Goblin": 24 },

@@ -39,3 +39,7 @@ tr.selected { background: rgba(255, 213, 79, 0.25); }
   font-size: 0.75em;
   white-space: nowrap;
 }
+
+.conditions {
+  margin-top: 2px;
+}

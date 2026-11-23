@@ -454,7 +454,7 @@ public class RoundResolverTests
     {
         var o = Resolve(State(C("A", 0, 0), C("B", 1, 0, hp: 2), C("D", 5, 5)),
             new Plans().Add("A", PlannedAction.Melee("B")).Add("B", PlannedAction.Defend()).Add("D", PlannedAction.Defend()),
-            new ScriptedDice(10, 5));
+            new ScriptedDice(13, 5)); // 13 beats B's Dodge 13 (10 + 3 from Guarded, 3B.4)
 
         var effect = Assert.Single(o.Ticks[0].Effects);
         Assert.Equal(new EffectOutcome("D", EffectType.Defend), effect);
@@ -510,7 +510,7 @@ public class RoundResolverTests
                 .Add("A", PlannedAction.Melee("B"), PlannedAction.Defend())
                 .Add("B", PlannedAction.Defend(), PlannedAction.Melee("A"), PlannedAction.Move(5, 5))
                 .Add("C", PlannedAction.Defend(), PlannedAction.Melee("B")),
-            new ScriptedDice(10, 8)); // only A's tick-0 attack rolls
+            new ScriptedDice(13, 8)); // only A's tick-0 attack rolls; 13 beats the Guarded B's Dodge 13 (3B.4)
 
         Assert.Equal(["B"], o.DefeatedThisRound);
         var t1 = o.Ticks[1];

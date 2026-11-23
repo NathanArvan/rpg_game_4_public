@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { AbilityDto, PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { DEFAULT_AP_COSTS, abilityUnavailableReason } from '../../../state/encounter/plan-queue';
+import { describeAppliedDuration, describeModifiers } from '../condition-chips/condition-format';
 
 /** One button's worth of display data. */
 export interface AbilityButton {
@@ -64,10 +65,16 @@ export class AbilityBarComponent {
       ? `Target: a cell up to ${move.maxCells} away${move.usesMovementBudget ? '' : ' (on top of your movement)'}`
       : t.kind === 'self' ? 'Target: yourself'
       : `Target: ${who} ${reach}${move ? ` (you run next to them${move.usesMovementBudget ? ', using your movement' : ''})` : ''}`;
+    // Conditions it applies (3B.4): "Applies Marked (takes 2 extra damage per hit) until end of next round, on a hit".
+    const conditions = (ability.appliesConditions ?? []).map(a => {
+      const what = describeModifiers(a.condition.modifiers).join(', ');
+      return `Applies ${a.condition.name}${what ? ` (${what})` : ''} ${describeAppliedDuration(a.duration)}${a.requiresHit ? ', on a hit' : ''}`;
+    });
     const lines = [
       `${ability.name} — ${ability.apCost} AP${cooldown}`,
       ability.description,
       target,
+      ...conditions,
     ];
     if (unavailable) lines.push(`(${unavailable})`);
     return lines.filter(l => l).join('\n');

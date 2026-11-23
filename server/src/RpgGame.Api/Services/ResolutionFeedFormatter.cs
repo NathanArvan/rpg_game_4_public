@@ -24,11 +24,12 @@ internal static class ResolutionFeedFormatter
             return $"{attackerName} {missVerb} {targetName} and misses";
         if (attack.FinishingBlow)
             return $"{attackerName} {attackVerb} {targetName} — finished off!";
+        var damage = $"{attack.Damage} damage{ConditionSuffix(attack)}";
         if (attack.TargetStatus == CombatantStatus.Downed)
-            return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage — goes down!";
+            return $"{attackerName} {attackVerb} {targetName} for {damage} — goes down!";
         if (attack.TargetDefeated)
-            return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage — defeated!";
-        return $"{attackerName} {attackVerb} {targetName} for {attack.Damage} damage (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
+            return $"{attackerName} {attackVerb} {targetName} for {damage} — defeated!";
+        return $"{attackerName} {attackVerb} {targetName} for {damage} (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
     }
 
     /// <summary>
@@ -38,7 +39,8 @@ internal static class ResolutionFeedFormatter
     private static string AbilityAttack(AttackOutcome attack, string attackerName, string targetName, string abilityName)
     {
         var who = $"{attackerName}'s {abilityName}";
-        var damage = attack.MoveBonus > 0 ? $"{attack.Damage} damage (+{attack.MoveBonus} from moving)" : $"{attack.Damage} damage";
+        var damage = (attack.MoveBonus > 0 ? $"{attack.Damage} damage (+{attack.MoveBonus} from moving)" : $"{attack.Damage} damage")
+            + ConditionSuffix(attack);
         if (attack.Wasted)
             return $"{who} on {targetName} fails — {WastedReasonText(attack.WastedReason)}";
         if (!attack.Hit)
@@ -51,6 +53,50 @@ internal static class ResolutionFeedFormatter
             return $"{who} hits {targetName} for {damage} — defeated!";
         return $"{who} hits {targetName} for {damage} (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
     }
+
+    /// <summary>
+    /// How much conditions changed a hit (3B.4): " (+2 from conditions)" / " (-4 from conditions)", or nothing.
+    /// Empty when they changed nothing, so every line from before 3B.4 reads exactly as it did.
+    /// </summary>
+    private static string ConditionSuffix(AttackOutcome attack) =>
+        attack.ConditionDamage == 0 || !attack.Hit || attack.FinishingBlow ? ""
+        : attack.ConditionDamage > 0 ? $" (+{attack.ConditionDamage} from conditions)"
+        : $" ({attack.ConditionDamage} from conditions)";
+
+    /// <summary>
+    /// One condition on one target (3B.4): "Kestrel's Mark: Goblin is Marked until the end of next round",
+    /// "Brakka is Guarded until the end of the round" (Defend), a refresh, a resist or why it failed.
+    /// </summary>
+    /// <param name="abilityName">The ability's name, or null for Defend's Guarded.</param>
+    public static string Condition(
+        ConditionOutcome condition, string sourceName, string targetName, string conditionName, string? abilityName)
+    {
+        var who = abilityName is null ? "" : $"{sourceName}'s {abilityName}: ";
+        return condition.Result switch
+        {
+            ConditionResultKind.Applied => $"{who}{targetName} is {conditionName} {Duration(condition.RoundsLeft)}",
+            ConditionResultKind.Refreshed => $"{who}{targetName} is still {conditionName}, now {Duration(condition.RoundsLeft)}",
+            ConditionResultKind.Resisted => $"{targetName} resists {conditionName}",
+            _ when condition.WastedReason == WastedReason.Missed =>
+                $"{who}{targetName} isn't {conditionName} — the attack missed",
+            _ => $"{(abilityName is null ? sourceName : $"{sourceName}'s {abilityName}")} on {targetName} fails — {WastedReasonText(condition.WastedReason)}",
+        };
+    }
+
+    /// <summary>End-of-round line for a condition that ran out (3B.4).</summary>
+    public static string ConditionExpired(string combatantName, string conditionName) =>
+        $"{combatantName} is no longer {conditionName}";
+
+    /// <summary>
+    /// How long a condition lasts, in words (SPRINT_3B4 C5): players never see the number. 0 = until the
+    /// end of the round, 1 = until the end of next round, N = for N more rounds.
+    /// </summary>
+    public static string Duration(int roundsLeft) => roundsLeft switch
+    {
+        <= 0 => "until the end of the round",
+        1 => "until the end of next round",
+        _ => $"for {roundsLeft} more rounds",
+    };
 
     /// <summary>
     /// One ability activation (3B.3): "Brakka uses Power Strike on Goblin", or why it was refused.
@@ -109,6 +155,7 @@ internal static class ResolutionFeedFormatter
         WastedReason.NotInLoadout => "doesn't have that ability",
         WastedReason.InvalidTargetType => "can't target that combatant",
         WastedReason.NoTargets => "no targets in range",
+        WastedReason.Missed => "the attack missed",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 }

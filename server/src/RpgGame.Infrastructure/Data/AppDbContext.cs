@@ -75,6 +75,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
                     {
                         ef.OwnsOne(d => d.Damage, dm => dm.OwnsOne(x => x.BonusIfMoved));
                         ef.OwnsOne(d => d.Amount);
+                        // apply_condition (3B.4): the condition definition, copied into the effect.
+                        ef.OwnsOne(d => d.Condition, c => c.OwnsOne(x => x.Modifiers, m =>
+                        {
+                            m.OwnsOne(x => x.DamageTaken);
+                            m.OwnsOne(x => x.Periodic);
+                        }));
                     });
                 });
             });

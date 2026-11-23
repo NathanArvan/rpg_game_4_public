@@ -37,6 +37,8 @@
     <Content Update="CombatProfiles/*.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Ability definitions (3B.3), also read at startup -->
     <Content Update="Abilities/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Condition definitions (3B.4), also read at startup -->
+    <Content Update="Conditions/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -9,7 +9,7 @@ import { FeedState } from '../../../state/feed/feed.state';
 import { ClearEncounter, PlanningPhaseStarted } from '../../../state/encounter/encounter.actions';
 import { MapInitialized } from '../../../state/map/map.actions';
 import { AttackResult, PlanningCombatantDto, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
-import { makeAttack, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeTick } from '../../../testing/builders';
+import { makeAttack, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeRoll, makeTick } from '../../../testing/builders';
 
 describe('RoundTimelineComponent', () => {
   let fixture: ComponentFixture<RoundTimelineComponent>;
@@ -20,7 +20,7 @@ describe('RoundTimelineComponent', () => {
 
   const hit = (attackerId: string, targetId: string, d20: number): AttackResult => makeAttack({
     attackerId, targetId, hit: true, damage: 2, targetNewHp: 8, feedText: `${attackerId} hits ${targetId}`,
-    roll: { d20, accuracy: 1, targetDodge: 10 },
+    roll: makeRoll({ d20, accuracy: 1, targetDodge: 10 }),
   });
 
   // Two combatants trade two melee attacks each (4 AP apiece): two ticks.

@@ -49,7 +49,7 @@ public class AbilityTargetValues
 
 public class AbilityEffectValues
 {
-    /// <summary>"attack", "heal" or "move" (3B.3); more kinds later.</summary>
+    /// <summary>"attack", "heal" or "move" (3B.3), "apply_condition" (3B.4).</summary>
     public string Kind { get; set; } = "";
     /// <summary>Attack: "melee", "ranged" or "none" (always hits).</summary>
     public string? Roll { get; set; }
@@ -65,11 +65,18 @@ public class AbilityEffectValues
     public int MaxCells { get; set; }
     /// <summary>Move: the cells come out of the round's movement budget (false: on top of it, like Dash).</summary>
     public bool UsesMovementBudget { get; set; } = true;
+    /// <summary>Apply condition (3B.4): the full condition definition, copied in when the ability was loaded.</summary>
+    public ConditionValues? Condition { get; set; }
+    /// <summary>Apply condition: full rounds it lasts after the current one (0 = until the end of this round).</summary>
+    public int Duration { get; set; }
+    /// <summary>Apply condition: only targets the same ability's attack hit get it.</summary>
+    public bool RequiresHit { get; set; }
 
     public AbilityEffectValues Copy() => new()
     {
         Kind = Kind, Roll = Roll, AccuracyBonus = AccuracyBonus, Damage = Damage?.Copy(), Amount = Amount?.Copy(),
         CanRevive = CanRevive, To = To, MaxCells = MaxCells, UsesMovementBudget = UsesMovementBudget,
+        Condition = Condition?.Copy(), Duration = Duration, RequiresHit = RequiresHit,
     };
 }
 

@@ -1,5 +1,6 @@
-import { AttackResult, HealResult, MovementResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
+import { AttackResult, ConditionResult, HealResult, MovementResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
 import { wastedLabel } from '../../../core/services/playback-timeline';
+import { describeDuration } from '../condition-chips/condition-format';
 
 /**
  * The round as lanes: one row per combatant, one column per tick. Column i holds every
@@ -154,6 +155,13 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
           return slot(i, kind, action.apCost, outcome, label, `${use.abilityName}: ` + heals.map(h => healDetail(name, h)).join(' '));
         }
         const hits = tick.attacks.filter(a => a.attackerId === q.combatantId && a.abilityId === use.abilityId);
+        // Conditions it applied (3B.4), after its attacks.
+        const conditions = (tick.conditions ?? []).filter(c => c.sourceId === q.combatantId && c.abilityId === use.abilityId);
+        const conditionText = conditions.length > 0 ? ' ' + conditions.map(conditionDetail).join(' ') : '';
+        if (hits.length === 0 && conditions.length > 0) {
+          const outcome = conditions.some(c => c.result === 'applied' || c.result === 'refreshed') ? 'hit' : 'wasted';
+          return slot(i, kind, action.apCost, outcome, label, `${use.abilityName}: ${moved}${conditionText.trim()}`);
+        }
         if (hits.length === 0 && move) return slot(i, kind, action.apCost, move.wasBlocked ? 'blocked' : 'moved', label,
           `${use.abilityName}: ${moved.trim()}`);
         if (hits.length === 0) return slot(i, kind, action.apCost, 'none', label, `${name} uses ${use.abilityName}.`);
@@ -163,7 +171,7 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
         return slot(i, kind, action.apCost, outcome, label,
           `${use.abilityName}: ${moved}` + hits.map(a => a.wasted
             ? `${a.targetName}: wasted (${wastedLabel(a.wastedReason)}).`
-            : attackDetail(name, a)).join(' '));
+            : attackDetail(name, a)).join(' ') + conditionText);
       }
 
       if (kind === 'stabilize') {
@@ -178,7 +186,11 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       // defend
       const defended = tick.effects.some(e => e.combatantId === q.combatantId && e.effectType === 'defend');
       if (!defended) return lost();
-      return slot(i, kind, action.apCost, 'defended', label, `${name} defends (no effect yet).`);
+      // Defend grants Guarded (3B.4) from the start of its tick.
+      const guard = (tick.conditions ?? []).find(c => c.targetId === q.combatantId && c.abilityId === null);
+      return slot(i, kind, action.apCost, 'defended', label, guard
+        ? `${name} defends: ${guard.conditionName} (+3 Dodge) until the end of the round.`
+        : `${name} defends.`);
     });
 
     return {
@@ -228,13 +240,33 @@ function abilityMoveDetail(name: string, m: MovementResult, nameOf: (id: string)
   return cells === 0 ? `${name} doesn't need to move.` : `${name} moves ${n} to (${x}, ${y}).`;
 }
 
-/** "Zara Forge → Goblin 1: rolled 13 + 3 = 16 vs dodge 12, hit for 5 (Goblin 1 now 12 HP)." */
+/** "Goblin 1 is Marked until end of next round." / "Goblin 1 resists Burning." / "Dazzled: missed." (3B.4) */
+export function conditionDetail(c: ConditionResult): string {
+  switch (c.result) {
+    case 'applied': return `${c.targetName} is ${c.conditionName} ${describeDuration(c.roundsLeft)}.`;
+    case 'refreshed': return `${c.targetName} is still ${c.conditionName}, now ${describeDuration(c.roundsLeft)}.`;
+    case 'resisted': return `${c.targetName} resists ${c.conditionName}.`;
+    default: return `${c.conditionName} on ${c.targetName}: ${wastedLabel(c.wastedReason)}.`;
+  }
+}
+
+const fromConditions = (n: number) => n === 0 ? '' : ` (${n > 0 ? '+' : ''}${n} from conditions)`;
+
+/**
+ * "Zara Forge → Goblin 1: rolled 13 + 3 = 16 vs dodge 12, hit for 5 (Goblin 1 now 12 HP)." Parts that
+ * came from conditions are called out (3B.4): "rolled 8 + 2 (+2 from conditions) = 10 vs dodge 13 (+3 from conditions)".
+ */
 export function attackDetail(name: string, a: AttackResult): string {
-  const roll = a.roll ? `rolled ${a.roll.d20} + ${a.roll.accuracy} = ${a.roll.d20 + a.roll.accuracy} vs dodge ${a.roll.targetDodge}, ` : '';
+  const r = a.roll;
+  const roll = r
+    ? `rolled ${r.d20} + ${r.accuracy}${fromConditions(r.conditionAccuracy ?? 0)} = ${r.d20 + r.accuracy} vs dodge ${r.targetDodge}${fromConditions(r.conditionDodge ?? 0)}, `
+    : '';
   if (!a.hit) return `${name} → ${a.targetName}: ${roll}miss.`;
   if (a.finishingBlow) return `${name} → ${a.targetName}: ${roll}hit, finishing them off.`;
   const after = !a.targetDefeated ? `${a.targetName} now ${Math.max(0, a.targetNewHp)} HP`
     : a.targetStatus === 'downed' ? `${a.targetName} goes down` : `${a.targetName} is defeated`;
-  const bonus = a.moveBonus > 0 ? `, incl. +${a.moveBonus} from moving` : '';
+  const condition = a.conditionDamage ?? 0;
+  const bonus = (a.moveBonus > 0 ? `, incl. +${a.moveBonus} from moving` : '')
+    + (condition !== 0 ? `, incl. ${condition > 0 ? '+' : ''}${condition} from conditions` : '');
   return `${name} → ${a.targetName}: ${roll}hit for ${a.damage}${bonus} (${after}).`;
 }

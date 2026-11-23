@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { Actions, ofActionDispatched, Store } from '@ngxs/store';
-import { ResolutionPayload } from '../../contracts/hub-contracts.generated';
+import { ActiveConditionDto, ResolutionPayload } from '../../contracts/hub-contracts.generated';
 import { ClearEncounter, EncounterStarted, ResolutionCompleted } from '../../state/encounter/encounter.actions';
 import { Combatant, CombatantStatus } from '../../state/encounter/encounter.model';
 import { EncounterState } from '../../state/encounter/encounter.state';
@@ -56,6 +56,7 @@ export class ResolutionPlaybackService {
 
   private readonly hp = signal<Record<string, number>>({});
   private readonly statuses = signal<Record<string, StatusView>>({});
+  private readonly conditions = signal<Record<string, ActiveConditionDto[]>>({});
 
   timing: PlaybackTiming = PLAYBACK_TIMING;
 
@@ -92,6 +93,12 @@ export class ResolutionPlaybackService {
     return shown ?? { status: c.status, bleedoutRoundsLeft: c.bleedoutRoundsLeft };
   }
 
+  /** Conditions to show (3B.4): what playback has revealed so far, else the store's. */
+  conditionsOf(c: Combatant): ActiveConditionDto[] {
+    const shown = this.playing() ? this.conditions()[c.id] : undefined;
+    return shown ?? c.conditions ?? [];
+  }
+
   /** Out of the fight as far as the screen has shown: downed, stable or dead. */
   isDefeated(c: Combatant): boolean {
     return this.statusOf(c).status !== 'standing';
@@ -112,6 +119,7 @@ export class ResolutionPlaybackService {
     this.floats.set([]);
     this.hp.set({});
     this.statuses.set({});
+    this.conditions.set({});
   }
 
   private start(payload: ResolutionPayload): void {
@@ -124,6 +132,8 @@ export class ResolutionPlaybackService {
     this.hp.set(Object.fromEntries(combatantsBefore.map(c => [c.id, c.currentHp])));
     this.statuses.set(Object.fromEntries(combatantsBefore.map(c =>
       [c.id, { status: c.status as CombatantStatus, bleedoutRoundsLeft: c.bleedoutRoundsLeft }])));
+    const conditionsBefore = Object.fromEntries(combatantsBefore.map(c => [c.id, c.conditions ?? []]));
+    this.conditions.set(conditionsBefore);
     this.moveMs.set(0);
     this.tick.set(0);
     this.tickCount.set(payload.ticks.length);
@@ -134,7 +144,7 @@ export class ResolutionPlaybackService {
     this.store.dispatch(new ResolutionCompleted(payload));
     this.store.dispatch(new ApplyResolutionPositions(positionsAfterResolution(positionsBefore, payload.ticks)));
 
-    void this.play(buildTimeline(payload, this.timing), generation);
+    void this.play(buildTimeline(payload, this.timing, conditionsBefore), generation);
   }
 
   private async play(beats: PlaybackBeat[], generation: number): Promise<void> {
@@ -166,6 +176,7 @@ export class ResolutionPlaybackService {
     }
     if (beat.hp) this.hp.update(hp => ({ ...hp, ...beat.hp }));
     if (beat.statuses) this.statuses.update(st => ({ ...st, ...beat.statuses }));
+    if (beat.conditions) this.conditions.update(c => ({ ...c, ...beat.conditions }));
     if (beat.feed?.length) this.store.dispatch(new AddFeedBatch(beat.feed));
   }
 

@@ -7,8 +7,11 @@ namespace RpgGame.Rules;
 /// (one move, up to the whole movement budget) and attack with the AP left if the walk ends in
 /// reach. If the target isn't in reach but a ready Charge gets next to it, it charges instead of
 /// walking (step 3). An attack opens with a ready multi-target ability if it would hit two or more
-/// enemies (step 2), or else a ready single-target melee ability (step 4), then basic melee attacks
-/// with what's left. With nothing to do, it defends.
+/// enemies (step 2), or else a ready single-target melee ability (step 4; one that would put a new
+/// condition on the target comes first), then basic melee attacks with what's left. Right after
+/// healing, it uses a ready condition ability (3B.4, SPRINT_3B4 C14): a buff if someone it would
+/// reach doesn't have it yet, or a debuff on its target if the target doesn't have it yet. With
+/// nothing to do, it defends.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -84,6 +87,14 @@ public static class EnemyAi
             }
 
             var target = FindTarget(state, self, from);
+
+            // Condition step (3B.4): a buff or a debuff, from where it stands, in tick 1.
+            if (target is not null && ChooseConditionAbility(state, self, from, target, apLeft) is { } condition)
+            {
+                queue.Add(condition.Action);
+                apLeft -= condition.Ability.ApCost;
+            }
+
             if (target is null)
             {
                 plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
@@ -152,7 +163,7 @@ public static class EnemyAi
             queue.Add(PlannedAction.Ability(multi.Id));
             apLeft -= multi.ApCost;
         }
-        if (MeleeAttackAbility(self, apLeft, config) is { } ability)
+        if (MeleeAttackAbility(self, target, apLeft, config) is { } ability)
         {
             queue.Add(PlannedAction.Ability(ability.Id, target.Id));
             apLeft -= ability.ApCost;
@@ -251,16 +262,70 @@ public static class EnemyAi
                                            && at.ChebyshevDistanceTo(c.Position!.Value) <= a.Targeting.Range) >= 2);
 
     /// <summary>
-    /// The first loadout ability that is a single-target melee attack on an enemy, ready (no
-    /// cooldown) and affordable. Abilities count as stronger than a basic swing.
+    /// The first loadout ability that is a single-target melee attack on an enemy (possibly with
+    /// conditions on hit), ready (no cooldown) and affordable. Abilities count as stronger than a basic
+    /// swing; one that would put a condition on <paramref name="target"/> that it doesn't have yet comes
+    /// first (3B.4).
     /// </summary>
-    private static AbilityDefinition? MeleeAttackAbility(CombatantState self, int apLeft, RulesConfig config) =>
-        self.Profile.Abilities.FirstOrDefault(a =>
-            Ready(self, a, apLeft)
-            && a.Targeting is { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy }
-            && a.Targeting.Range >= config.MeleeReach
-            && a.Effects.Count > 0
-            && a.Effects.All(e => e is AttackEffect { Roll: AttackKind.Melee }));
+    private static AbilityDefinition? MeleeAttackAbility(CombatantState self, CombatantState target, int apLeft, RulesConfig config) =>
+        self.Profile.Abilities
+            .Where(a => Ready(self, a, apLeft)
+                        && a.Targeting is { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy }
+                        && a.Targeting.Range >= config.MeleeReach
+                        && a.Effects.Any(e => e is AttackEffect)
+                        && a.Effects.All(e => e is AttackEffect { Roll: AttackKind.Melee } or ApplyConditionEffect))
+            .OrderBy(a => AddsCondition(a, target) ? 0 : 1) // stable: otherwise loadout order
+            .FirstOrDefault();
+
+    /// <summary>Whether the ability would put at least one condition on <paramref name="c"/> that it doesn't have.</summary>
+    private static bool AddsCondition(AbilityDefinition a, CombatantState c) =>
+        a.ConditionEffects.Any(e => !c.HasCondition(e.Condition.Id));
+
+    /// <summary>
+    /// The condition step (3B.4, SPRINT_3B4 C14): the first ready ability that only applies conditions and
+    /// would add one someone doesn't have yet, from where the AI stands. Buffs (no harmful condition) go on
+    /// itself or allies it reaches: for a <see cref="TargetKind.Self"/> or <see cref="TargetKind.Auto"/> one,
+    /// if anyone it would affect lacks it; for a chosen ally, itself first, then allies in state order.
+    /// Debuffs (all harmful) go on <paramref name="target"/>, the enemy it's after, if it's in range and lacks one.
+    /// </summary>
+    private static (AbilityDefinition Ability, PlannedAction Action)? ChooseConditionAbility(
+        EncounterState state, CombatantState self, GridPosition from, CombatantState target, int apLeft)
+    {
+        foreach (var ability in self.Profile.Abilities)
+        {
+            if (!Ready(self, ability, apLeft) || ability.Effects.Count == 0
+                || !ability.Effects.All(e => e is ApplyConditionEffect))
+                continue;
+            var t = ability.Targeting;
+            bool InRange(CombatantState c) =>
+                c.Id == self.Id || (c.Position is { } p && from.ChebyshevDistanceTo(p) <= t.Range);
+
+            if (ability.ConditionEffects.All(e => e.Condition.Harmful))
+            {
+                if (t is { Kind: TargetKind.Combatant, Filter: TargetFilter.Enemy } && InRange(target) && AddsCondition(ability, target))
+                    return (ability, PlannedAction.Ability(ability.Id, target.Id));
+                continue;
+            }
+            if (ability.ConditionEffects.Any(e => e.Condition.Harmful)) continue; // mixed: not used by the AI
+
+            var allies = state.Combatants
+                .Where(c => !c.IsDefeated && c.Team.Length > 0 && Relations.Matches(self, c, t) && InRange(c))
+                .OrderBy(c => c.Id == self.Id ? 0 : 1) // stable: then state order
+                .ToList();
+            switch (t.Kind)
+            {
+                case TargetKind.Self when AddsCondition(ability, self):
+                    return (ability, PlannedAction.Ability(ability.Id));
+                case TargetKind.Auto when t.Filter != TargetFilter.Enemy && allies.Any(c => AddsCondition(ability, c)):
+                    return (ability, PlannedAction.Ability(ability.Id));
+                case TargetKind.Combatant when t.Filter is TargetFilter.Ally or TargetFilter.Any:
+                    if (allies.FirstOrDefault(c => AddsCondition(ability, c)) is { } ally)
+                        return (ability, PlannedAction.Ability(ability.Id, ally.Id));
+                    break;
+            }
+        }
+        return null;
+    }
 
     /// <summary>Appends as many melee attacks on <paramref name="targetId"/> as <paramref name="apLeft"/> pays for.</summary>
     private static void AddMelees(List<PlannedAction> queue, string targetId, int apLeft, RulesConfig config)

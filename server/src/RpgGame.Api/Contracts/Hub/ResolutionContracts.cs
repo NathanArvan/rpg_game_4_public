@@ -4,6 +4,7 @@ namespace RpgGame.Api.Contracts.Hub;
 /// Combatants who were down when the round started and are standing again, healed back up (3B.3).
 /// They plan and lock in from the next round.
 /// </param>
+/// <param name="ExpiredConditions">Conditions that ran out at the end of the round (3B.4).</param>
 public record ResolutionPayload(
     IReadOnlyList<TickResult> Ticks,
     int NewRoundNumber,
@@ -11,7 +12,8 @@ public record ResolutionPayload(
     IReadOnlyList<PlanningCombatantDto> UpdatedCombatants,
     IReadOnlyList<CombatantQueueDto> Queues,
     IReadOnlyList<BleedoutResultDto> EndOfRound,
-    IReadOnlyList<string>? RevivedCombatantIds = null);
+    IReadOnlyList<string>? RevivedCombatantIds = null,
+    IReadOnlyList<ExpiredConditionDto>? ExpiredConditions = null);
 
 /// <summary>
 /// End of round for a combatant who was already downed when it started (3B.5): one bleedout
@@ -46,13 +48,16 @@ public record QueuedActionDto(
 
 /// <param name="AbilityUses">Abilities used this tick, one per activation, in plan order (3B.3).</param>
 /// <param name="Heals">Heals this tick, resolved with the attacks and netted with their damage (3B.3).</param>
+/// <param name="Conditions">Conditions applied this tick (3B.4): Defend's Guarded at the start of the tick,
+/// then abilities' conditions in the Effects phase.</param>
 public record TickResult(
     int TickIndex,
     IReadOnlyList<MovementResult> Movements,
     IReadOnlyList<AttackResult> Attacks,
     IReadOnlyList<EffectResult> Effects,
     IReadOnlyList<AbilityUseResult>? AbilityUses = null,
-    IReadOnlyList<HealResult>? Heals = null);
+    IReadOnlyList<HealResult>? Heals = null,
+    IReadOnlyList<ConditionResult>? Conditions = null);
 
 /// <summary>One heal on one target (3B.3).</summary>
 /// <param name="Amount">HP rolled, before netting and the max-HP cap; 0 when wasted.</param>
@@ -85,6 +90,8 @@ public record MovementResult(
 
 /// <param name="AbilityId">The ability that made this attack, or null for a basic attack (3B.3).</param>
 /// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved its caster far enough (Charge).</param>
+/// <param name="ConditionDamage">How much conditions changed <paramref name="Damage"/>, signed: the attacker's damage dealt plus
+/// the target's damage taken (3B.4).</param>
 public record AttackResult(
     string AttackerId,
     string AttackerName,
@@ -102,13 +109,20 @@ public record AttackResult(
     string TargetStatus,
     bool FinishingBlow,
     string? AbilityId = null,
-    int MoveBonus = 0);
+    int MoveBonus = 0,
+    int ConditionDamage = 0);
 
 /// <summary>The hit check: hit when D20 + Accuracy ≥ TargetDodge. Null on a wasted attack.</summary>
+/// <param name="Accuracy">Everything added to the d20, conditions included.</param>
+/// <param name="TargetDodge">The target's Dodge, conditions included.</param>
+/// <param name="ConditionAccuracy">The part of <paramref name="Accuracy"/> from the attacker's conditions (3B.4).</param>
+/// <param name="ConditionDodge">The part of <paramref name="TargetDodge"/> from the target's conditions (3B.4).</param>
 public record AttackRollDto(
     int D20,
     int Accuracy,
-    int TargetDodge);
+    int TargetDodge,
+    int ConditionAccuracy = 0,
+    int ConditionDodge = 0);
 
 /// <param name="TargetCombatantId">Stabilize: who was being stabilized.</param>
 /// <param name="WastedReason">Stabilize: why it did nothing ("target_not_downed", "out_of_melee_reach", …), or null.</param>

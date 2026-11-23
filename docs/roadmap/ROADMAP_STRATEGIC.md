@@ -94,7 +94,9 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 *Map note:* abilities ship before walls (3M.2), so ability range checks are distance-only at first. Keep the range check in one place in `RoundResolver` so 3M.2 can add line of sight there, and 3M.4 the high-ground range bonus.
 
-### ⬜ Slice 3B.4 — Conditions & Status Effects
+### 🔄 Slice 3B.4 — Conditions & Status Effects
+
+*Status: in progress (`SPRINT_3B4.md`, three PRs). PR 1 done: conditions are data in `Conditions/conditions.json` (no table), applied by an `apply_condition` ability effect (Effects phase, on a hit if the ability attacks) and copied into each ability snapshot; they change hit chance (accuracy / dodge, optionally melee or ranged only) and damage (dealt, and taken as a percent and/or flat amount, optionally only from tagged sources); durations count full rounds after the current one and are shown in words; the same condition refreshes rather than stacks; falling clears them; Defend grants Guarded (+3 Dodge) from the start of its tick. Active conditions live in a per-encounter Redis hash. Battle Cry, Stoneskin and Mark in a new **Conditions** Quick Battle; the AI buffs and debuffs. To do: ongoing damage and `ConditionResist` (PR 2), movement / AP modifiers and Stunned / Rooted (PR 3; budgets change from the next round, blocks from the next tick).*
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
@@ -265,7 +267,7 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Now         3B.4 Conditions & Status Effects (3B.3 Abilities & Cooldowns done)
+Now         3B.4 Conditions & Status Effects (PR 1 of 3 done; 3B.3 Abilities & Cooldowns done)
 Next        3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
 Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
@@ -311,7 +313,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts`, `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) and `AddMovementEffects` (PR 3: the move effect and `bonusIfMoved`) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
-**3B.4** — New table: `condition_definitions` (id, name, effects JSONB, description). Effects JSONB: `{ blocksActions, damagePerRound, movementModifier, ... }`.
+**3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot.
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 
@@ -355,7 +357,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3M.5** — Add ley point and resonance data to `encounter:map:{encounterId}` (copied from the map file): `leyPoints[]` (position, power, resonance, volatility, radius) and `resonanceProfile` (map-level resonance levels by type). Optional `resonanceZones[]` for cell-level overrides (deferred to 3D.4).
 
-**3B.4** — Extend `character:live` conditions array: `{ conditionId, name, roundsRemaining, sourceId, effects }`.
+**3B.4** — New hash `encounter:{encounterId}:conditions`: combatantId → JSON list of `{ condition: <definition>, roundsLeft, sourceId }` (per encounter rather than in `character:live`, which outlives the encounter, as with cooldowns). `roundsLeft` = full rounds after the current one.
 
 **3M.1** — `encounter:map:{encounterId}` grid dimensions vary per encounter (the fields already exist; the cap is enforced on creation).
 
@@ -431,11 +433,12 @@ Per-tick, three phases in fixed order. See `TICK_RESOLUTION.md` for the full loo
 
 ```
 for tick in 0..max_ticks:
+    (start)              — Defend grants Guarded (3B.4)
     Phase 1 (Movement)  — path-based, cell-by-cell, Speed tiebreaker for conflicts
     Phase 2 (Attacks)    — snapshot HP → hit checks → damage → net deltas → apply → defeat check
-    Phase 3 (Effects)    — conditions, environment, defend actions
+    Phase 3 (Effects)    — stabilize, conditions from abilities, environment
 
-End of round: tick conditions, process environment, decrement cooldowns, reset AP, advance round
+End of round: periodic condition effects and falls (3B.4 PR 2) → bleedout → cooldowns → conditions count down and expire → reset AP, advance round
 ```
 
 ### Ability Effect Schema (3B.3)
@@ -459,7 +462,8 @@ The 3B.3 format (targeting + an ordered list of effects, each resolved in its ow
 See `DESIGN_SPIKE.md` Decision 4 and `MAGIC_SYSTEM.md`. Slots are built from 3A, filled progressively:
 
 ```
-baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + leyBonus
+(baseDamage + statModifier + weaponBonus + abilityModifier + conditionModifier + resonanceBonus + leyBonus) × multiplier
+→ target's damage taken (3B.4): + flat, then × (100 + percent) / 100, rounded down, min 0
 ```
 
 ### SignalR Hub Methods (Planned End State)
@@ -576,6 +580,11 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Prepared reactions | Own slice (3B.6) after 3B.4, with opportunity attacks and Disengage | `ABILITIES.md` A9 (Nov 2026) | A separate framework (watching state, triggers, interrupts); keeps 3B.3 focused |
 | Environmental magic timing | Ability-side hooks in 3B.3; map side (ley points, resonance) in 3M.5 after 3M.2 | `ABILITIES.md` A12 (Nov 2026) | Ley points and resonance are map content and should land once, in the map file format |
 | High ground | Affects combat, not just movement | This roadmap (Nov 2026); details in `ELEVATION.md` | Makes elevation a tactical objective, like ley points |
+| Condition storage | JSON catalog, definition copied into each ability snapshot; active conditions in a per-encounter Redis hash | `SPRINT_3B4.md` C1, C13 (Nov 2026) | Same pattern as abilities; retuning never changes a running fight |
+| Condition durations | N = the rest of the round it lands in plus N more rounds; always shown in words; one condition per effect whatever its length | `SPRINT_3B4.md` C5 (Nov 2026) | Round-level modifiers (AP, movement) need duration 1 to matter, which reads right; no "0-round" wording on screen |
+| When condition modifiers apply | Budgets (AP, movement) from the next planning phase; blocks (Stunned, Rooted) and hit / damage modifiers from the next tick | `SPRINT_3B4.md` C6 (Nov 2026) | A condition never shrinks or grows a locked-in plan; Stunned and Rooted are the deliberate way to disrupt one |
+| Defend | Grants Guarded (+3 Dodge) from the start of its tick until the end of the round | `SPRINT_3B4.md` C7 (Nov 2026, for now) | Gives the timeout default and the AI's fallback a purpose without a free whole-round buff |
+| Ongoing damage timing | Once at the end of the round, before bleedout | `SPRINT_3B4.md` C11 (Nov 2026, for now) | Damage per round doesn't depend on how many ticks the round had |
 
 ### Open Design Decisions
 

@@ -103,6 +103,19 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
+    public async Task Start_ConditionsPreset_StoresConditionAbilitiesWithTheirConditions()
+    {
+        await Service().StartAsync("user-1", "conditions");
+
+        var combatants = await _db.EncounterCombatants.ToListAsync();
+        var scout = combatants.Single(c => c.CharacterName == "Scout").Profile!;
+        var mark = scout.Abilities!.Single(a => a.Id == "mark");
+        Assert.Equal(["marked", "exposed"], mark.Effects.Select(e => e.Condition!.Id));
+        var shaman = combatants.Single(c => c.CharacterName == "Shaman").Profile!;
+        Assert.Equal(2, shaman.Abilities!.Single(a => a.Id == "battle_cry").Effects[0].Condition!.Modifiers.DamageDealt);
+    }
+
+    [Fact]
     public async Task Start_SeedsMapHpAndAnActiveEncounterWithTheTimerOff()
     {
         var r = await Service().StartAsync("user-1", "skirmish");

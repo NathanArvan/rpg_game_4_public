@@ -92,3 +92,35 @@ describe('formatFeedLine heals (3B.3)', () => {
       .toEqual(['[party]Zara Forge', ' moves to (9, 5) with ', '[ability]Dash']);
   });
 });
+
+describe('formatFeedLine conditions (3B.4)', () => {
+  const sides: NameSides = new Map([['Kestrel', 'party'], ['Goblin 1', 'enemy']]);
+  const show = (segments: FeedSegment[]) => segments.map(s => (s.style ? `[${s.style}]` : '') + s.text);
+
+  it('styles the ability and the condition when one lands', () => {
+    expect(show(formatFeedLine("Kestrel's Mark: Goblin 1 is Marked until the end of next round", sides).segments))
+      .toEqual(['[party]Kestrel', "'s ", '[ability]Mark', ': ', '[enemy]Goblin 1', ' is ', '[condition]Marked', ' until the end of next round']);
+  });
+
+  it('styles Guarded, refreshes, misses, resists and expiries', () => {
+    expect(show(formatFeedLine('Goblin 1 is Guarded until the end of the round', sides).segments))
+      .toEqual(['[enemy]Goblin 1', ' is ', '[condition]Guarded', ' until the end of the round']);
+    expect(show(formatFeedLine("Kestrel's Mark: Goblin 1 is still Flame Ward, now for 2 more rounds", sides).segments))
+      .toContain('[condition]Flame Ward');
+    expect(show(formatFeedLine("Kestrel's Blinding Strike: Goblin 1 isn't Dazzled — the attack missed", sides).segments))
+      .toContain('[condition]Dazzled');
+    expect(show(formatFeedLine('Goblin 1 resists Burning', sides).segments)).toContain('[condition]Burning');
+    expect(show(formatFeedLine('Goblin 1 is no longer Marked', sides).segments))
+      .toEqual(['[enemy]Goblin 1', ' is no longer ', '[condition]Marked']);
+  });
+
+  it('keeps the damage highlight when conditions changed a hit', () => {
+    expect(show(formatFeedLine('Kestrel strikes Goblin 1 for 3 damage (-4 from conditions) (HP: 20 → 17)', sides).segments))
+      .toEqual(['[party]Kestrel', ' strikes ', '[enemy]Goblin 1', ' ', '[damage]for 3 damage (-4 from conditions) (HP: 20 → 17)']);
+  });
+
+  it('leaves bleeding out alone (lower-case words are not condition names)', () => {
+    expect(show(formatFeedLine('Kestrel is bleeding out — 2 rounds left', sides).segments))
+      .toEqual(['[party]Kestrel', ' ', '[damage]is bleeding out — 2 rounds left']);
+  });
+});

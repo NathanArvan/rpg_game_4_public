@@ -1,0 +1,15 @@
+{
+  // 3B.4: a modifier with "attackKind": "ranged" only changes ranged attacks.
+  "description": "Conditions: Dazzled (-3 ranged) spoils a shot but not a melee swing on the same roll",
+  "combatants": [
+    { "id": "A", "at": [5, 5], "conditions": [ { "id": "dazzled", "rounds": 1 } ] },
+    { "id": "B", "at": [5, 6] }
+  ],
+  "plans": { "A": ["ranged B", "melee B"] },
+  "dice": [11, 11, 4],               // ranged: 11 - 3 = 8 misses; melee: 11 hits, d8 4
+  "expect": {
+    "hp": { "B": 16 },
+    "events": ["t1 A ranged B: miss", "t2 A melee B: hit 4"],
+    "conditions": { "A": { "dazzled": 0 } }
+  }
+}

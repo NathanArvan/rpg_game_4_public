@@ -6,9 +6,9 @@ import { EncounterStarted, PlanningPhaseStarted, ClearEncounter, PlayerLockedIn 
 import { MapInitialized } from '../../../../state/map/map.actions';
 import { AddFeedBatch, ClearFeed } from '../../../../state/feed/feed.actions';
 import { ResolutionPlaybackService } from '../../../../core/services/resolution-playback.service';
-import { AbilityDto, AttackResult, CombatantDto, PlanningCombatantDto, QueuedActionDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
+import { AbilityDto, ActiveConditionDto, AttackResult, CombatantDto, PlanningCombatantDto, QueuedActionDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
 import {
-  makeAbility, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeTick,
+  makeAbility, makeActiveCondition, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeRoll, makeTick,
 } from '../../../../testing/builders';
 
 const ENCOUNTER_ID = 'preview-encounter-1';
@@ -48,6 +48,14 @@ const CHARGE: AbilityDto = makeAbility({
 });
 const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND, DASH, CHARGE], c4: [POWER_STRIKE, CHARGE] };
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
+/** Conditions (3B.4): Zara is Emboldened, Goblin 1 is Marked and Exposed. */
+const CONDITIONS: Record<string, ActiveConditionDto[]> = {
+  c1: [makeActiveCondition({ condition: { id: 'emboldened', name: 'Emboldened', harmful: false, description: '+2 damage on every hit.', modifiers: { damageDealt: 2 } }, roundsLeft: 0 })],
+  c3: [
+    makeActiveCondition({ condition: { id: 'marked', name: 'Marked', description: 'Takes 2 extra damage from every hit.', modifiers: { damageTaken: { percent: 0, flat: 2, tags: [] } } }, roundsLeft: 1, sourceId: 'c2' }),
+    makeActiveCondition({ condition: { id: 'exposed', name: 'Exposed', description: '-3 Dodge: easier to hit.', modifiers: { dodge: -3 } }, roundsLeft: 1, sourceId: 'c2' }),
+  ],
+};
 
 const COMBATANTS_DTO: CombatantDto[] = [
   makeCombatantDto({ id: 'c1', userId: USER_PLAYER, characterId: 'ch1', characterName: 'Zara Forge', currentHp: 8, maxHp: 10, profileId: 'bruiser', profileName: 'Bruiser', movementRange: 4, maxAp: 4 }),
@@ -57,7 +65,7 @@ const COMBATANTS_DTO: CombatantDto[] = [
 ].map(c => ({ ...c, abilities: ABILITIES[c.id] ?? [] }));
 
 const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(({ characterId, ...c }) =>
-  makePlanningCombatant({ ...c, cooldowns: COOLDOWNS[c.id] ?? {} }));
+  makePlanningCombatant({ ...c, cooldowns: COOLDOWNS[c.id] ?? {}, conditions: CONDITIONS[c.id] ?? [] }));
 
 const NAMES: Record<string, string> = Object.fromEntries(COMBATANTS_DTO.map(c => [c.id, c.characterName]));
 
@@ -120,16 +128,16 @@ const MOCK_RESOLUTION: ResolutionPayload = makePayload({
       tickIndex: 0,
       movements: [walk('c1', [8, 10], [7, 11], [6, 12]), walk('c4', [6, 16], [6, 15], [6, 14])],
       attacks: [
-        strike('c2', 'c3', { attackType: 'ranged_attack', hit: false, targetNewHp: 17, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: { d20: 6, accuracy: 2, targetDodge: 12 } }),
-        strike('c3', 'c2', { attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: { d20: 15, accuracy: 1, targetDodge: 11 } }),
+        strike('c2', 'c3', { attackType: 'ranged_attack', hit: false, targetNewHp: 17, feedText: 'Isolde Blade shoots at Goblin 1 — miss', roll: makeRoll({ d20: 6, accuracy: 2, targetDodge: 12 }) }),
+        strike('c3', 'c2', { attackType: 'ranged_attack', hit: true, damage: 2, targetNewHp: 2, feedText: 'Goblin 1 shoots at Isolde Blade for 2 damage (HP: 4 → 2)', roll: makeRoll({ d20: 15, accuracy: 1, targetDodge: 11 }) }),
       ],
     }),
     makeTick({
       tickIndex: 1,
       attacks: [
-        strike('c1', 'c3', { hit: true, damage: 5, targetNewHp: 12, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: { d20: 13, accuracy: 3, targetDodge: 12 } }),
-        strike('c2', 'c4', { attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: { d20: 17, accuracy: 2, targetDodge: 12 } }),
-        strike('c3', 'c1', { hit: false, targetNewHp: 8, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: { d20: 4, accuracy: 2, targetDodge: 13 } }),
+        strike('c1', 'c3', { hit: true, damage: 5, targetNewHp: 12, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: makeRoll({ d20: 13, accuracy: 3, targetDodge: 12 }) }),
+        strike('c2', 'c4', { attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: makeRoll({ d20: 17, accuracy: 2, targetDodge: 12 }) }),
+        strike('c3', 'c1', { hit: false, targetNewHp: 8, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: makeRoll({ d20: 4, accuracy: 2, targetDodge: 13 }) }),
         strike('c4', 'c1', { hit: false, targetNewHp: 8, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", wastedReason: 'out_of_melee_reach' }),
       ],
     }),

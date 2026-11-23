@@ -8,7 +8,9 @@
  *   "for 5 damage — defeated!" / "— goes down!" / "— finished off!" orange, "and misses" grey,
  *   bleeding out orange, stabilizes and heals teal (3B.5, 3B.3: "for 6 (HP: 0 → 6) — back on their feet!"),
  *   ability names purple (3B.3: "Bruiser's Power Strike hits …", "Mira's Mend heals …",
- *   "Bruiser uses Power Strike on …", "… can't use Power Strike — …")
+ *   "Bruiser uses Power Strike on …", "… can't use Power Strike — …"), condition names blue (3B.4:
+ *   "Goblin is Marked until the end of next round", "is still Marked, now …", "is no longer Marked",
+ *   "isn't Marked — the attack missed", "resists Burning"; the ability in "Kestrel's Mark: …" is purple)
  */
 
 export type FeedLineKind = 'round' | 'tick' | 'event';
@@ -16,7 +18,7 @@ export type FeedLineKind = 'round' | 'tick' | 'event';
 /** First line of every encounter's log (added when EncounterStarted arrives). */
 export const BATTLE_START_LINE = '— Battle Start —';
 
-export type SegmentStyle = 'party' | 'enemy' | 'damage' | 'miss' | 'save' | 'ability';
+export type SegmentStyle = 'party' | 'enemy' | 'damage' | 'miss' | 'save' | 'ability' | 'condition';
 
 export interface FeedSegment {
   text: string;
@@ -32,14 +34,18 @@ export interface FeedLine {
 export type NameSides = ReadonlyMap<string, 'party' | 'enemy'>;
 
 // From ResolutionFeedFormatter (server): "for {damage} damage (HP: {before} → {after})" or "… — defeated!".
-const DAMAGE = String.raw`for \d+ damage(?: \(\+\d+ from moving\))?(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
+const DAMAGE = String.raw`for \d+ damage(?: \(\+\d+ from moving\))?(?: \([+-]\d+ from conditions\))?(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
 const MISS = String.raw`and misses|misses`;
 const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on their feet!)?`;
 // Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
 // or after "uses " / "can't use " and before " on " / " —" / the end; and in movement lines made by
 // an ability: "moves to (9, 5) with Dash", "stays at (5, 6) (Charge)".
 // (Not the basic "X's attack on …" and "X's stabilize on …" lines.)
-const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
+const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) |: )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
+
+// Condition names in the server's condition lines (3B.4): after "is ", "is still ", "is no longer ",
+// "isn't " or "resists ", a capitalised name, up to " until", " for N", ",", " —" or the end.
+const CONDITION = String.raw`(?<=(?:\bis (?:still |no longer )?|\bisn't |\bresists ))\p{Lu}[\p{L}\p{N} ]*?(?= until | for \d|,| —|$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {
@@ -54,7 +60,7 @@ function highlight(text: string, sides: NameSides): FeedSegment[] {
   // more letters or digits ("Goblin 1" is not part of "Goblin 12").
   const names = [...sides.keys()].filter(n => n.length > 0).sort((a, b) => b.length - a.length);
   const nameAlternatives = names.map(n => `${escapeRegExp(n)}(?![\\p{L}\\p{N}])`);
-  const pattern = new RegExp([DAMAGE, MISS, SAVE, ABILITY, ...nameAlternatives].map(p => `(${p})`).join('|'), 'gu');
+  const pattern = new RegExp([DAMAGE, MISS, SAVE, ABILITY, CONDITION, ...nameAlternatives].map(p => `(${p})`).join('|'), 'gu');
 
   const segments: FeedSegment[] = [];
   let last = 0;
@@ -73,6 +79,7 @@ function styleOf(match: RegExpMatchArray, sides: NameSides): SegmentStyle {
   if (match[2] !== undefined) return 'miss';
   if (match[3] !== undefined) return 'save';
   if (match[4] !== undefined) return 'ability';
+  if (match[5] !== undefined) return 'condition';
   return sides.get(match[0]) ?? 'party';
 }
 

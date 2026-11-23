@@ -1,0 +1,24 @@
+{
+  // 3B.4: Battle Cry (auto / ally / range 3 / includeSelf) emboldens the caster and allies in range in
+  // tick 1's Effects phase; their tick-2 hits deal +2. Allies out of range and enemies are left alone.
+  "description": "Conditions: Battle Cry emboldens the Bruiser and a nearby ally, not a far one or the enemy",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["battle_cry"] },
+    { "id": "Mira",    "side": "party", "at": [6, 5] },
+    { "id": "Far",     "side": "party", "at": [15, 15] },
+    { "id": "Goblin",  "side": "enemy", "hp": 30, "at": [5, 6] }
+  ],
+  "plans": { "Bruiser": ["ability battle_cry", "melee Goblin"], "Mira": ["defend", "melee Goblin"] },
+  "dice": [15, 3, 15, 4],            // Bruiser d8 3 + 2 = 5; Mira d8 4 + 2 = 6
+  "expect": {
+    "hp": { "Goblin": 19 },
+    "events": [
+      "t1 Bruiser uses battle_cry on Bruiser,Mira",
+      "t1 Bruiser battle_cry Bruiser: emboldened applied (1)",
+      "t1 Bruiser battle_cry Mira: emboldened applied (1)",
+      "t2 Bruiser melee Goblin: hit 5 (+2 conditions)",
+      "t2 Mira melee Goblin: hit 6 (+2 conditions)"
+    ],
+    "conditions": { "Bruiser": { "emboldened": 0 }, "Mira": { "emboldened": 0 }, "Far": {}, "Goblin": {} }
+  }
+}

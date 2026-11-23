@@ -150,7 +150,16 @@ public sealed record CombatantState(
 
     private static readonly IReadOnlyDictionary<string, int> EmptyCooldowns = new Dictionary<string, int>();
 
-    // Records compare collections by reference; cooldowns are compared by content so two states
+    /// <summary>
+    /// Conditions on this combatant (3B.4), in the order they were applied. What they do is worked out by
+    /// <see cref="ConditionMath"/>. Falling (Downed or Dead) clears them.
+    /// </summary>
+    public IReadOnlyList<ActiveCondition> Conditions { get; init; } = [];
+
+    /// <summary>Whether this condition is on the combatant.</summary>
+    public bool HasCondition(string conditionId) => Conditions.Any(c => c.Id == conditionId);
+
+    // Records compare collections by reference; cooldowns and conditions are compared by content so two states
     // with the same values are equal (determinism tests, scenario checks).
     public bool Equals(CombatantState? other) =>
         other is not null
@@ -159,9 +168,10 @@ public sealed record CombatantState(
         && Status == other.Status && BleedoutRoundsLeft == other.BleedoutRoundsLeft
         && Team == other.Team
         && Cooldowns.Count == other.Cooldowns.Count
-        && Cooldowns.All(kv => other.Cooldowns.TryGetValue(kv.Key, out var v) && v == kv.Value);
+        && Cooldowns.All(kv => other.Cooldowns.TryGetValue(kv.Key, out var v) && v == kv.Value)
+        && Conditions.SequenceEqual(other.Conditions);
 
-    public override int GetHashCode() => HashCode.Combine(Id, Hp, Position, Status, BleedoutRoundsLeft, Team, Cooldowns.Count);
+    public override int GetHashCode() => HashCode.Combine(Id, Hp, Position, Status, BleedoutRoundsLeft, Team, Cooldowns.Count, Conditions.Count);
 
     /// <summary>Out of the fight: Downed, Stable or Dead. Such a combatant can't act.</summary>
     public bool IsDefeated => Status != CombatantStatus.Standing;

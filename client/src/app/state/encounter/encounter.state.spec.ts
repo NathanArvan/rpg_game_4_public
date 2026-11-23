@@ -18,7 +18,7 @@ import {
 import { ResolutionPayload } from '../../contracts/hub-contracts.generated';
 import { entry } from './plan-queue';
 import { CombatantDto, PlanningCombatantDto } from '../../contracts/hub-contracts.generated';
-import { makeAttack, makeCombatantDto as makeDto, makePayload, makePlanningCombatant, makeTick } from '../../testing/builders';
+import { makeActiveCondition, makeAttack, makeCombatantDto as makeDto, makePayload, makePlanningCombatant, makeRoll, makeTick } from '../../testing/builders';
 
 // Frodo (a 20-HP Bruiser) unless a test says otherwise.
 const makeCombatantDto = (overrides: Partial<CombatantDto> = {}): CombatantDto => makeDto({
@@ -69,6 +69,19 @@ describe('EncounterState', () => {
   });
 
   describe('action points (3B.2)', () => {
+    it('keeps conditions from every combatant payload, and from the end-of-round rows (3B.4)', () => {
+      const marked = makeActiveCondition({ roundsLeft: 1 });
+      store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'c1' })]));
+      expect(store.selectSnapshot(EncounterState.combatants)[0].conditions).toEqual([]);
+
+      store.dispatch(new PlanningPhaseStarted(2, 0, [makePlanningCombatantDto({ id: 'c1', conditions: [marked] })]));
+      expect(store.selectSnapshot(EncounterState.combatants)[0].conditions).toEqual([marked]);
+
+      const after = makeActiveCondition({ roundsLeft: 0 });
+      store.dispatch(new ResolutionCompleted(makePayload({ updatedCombatants: [makePlanningCombatantDto({ id: 'c1', conditions: [after] })] })));
+      expect(store.selectSnapshot(EncounterState.combatants)[0].conditions).toEqual([after]);
+    });
+
     it('keeps maxAp from every combatant payload', () => {
       store.dispatch(new EncounterStarted('enc-1', [makeCombatantDto({ id: 'c1', maxAp: 5 })]));
       expect(store.snapshot().encounter.combatants[0].maxAp).toBe(5);
@@ -211,7 +224,7 @@ describe('EncounterState', () => {
       ticks: [makeTick({
         attacks: [makeAttack({
           attackerId: 'c2', attackerName: 'Sam', targetId: 'c1', targetName: 'Frodo', hit: true, damage: 5, targetNewHp: 15,
-          feedText: 'Sam strikes Frodo for 5 damage', roll: { d20: 15, accuracy: 0, targetDodge: 10 },
+          feedText: 'Sam strikes Frodo for 5 damage', roll: makeRoll({ d20: 15, accuracy: 0, targetDodge: 10 }),
         })],
       })],
       ...overrides,

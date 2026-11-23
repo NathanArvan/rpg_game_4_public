@@ -145,6 +145,7 @@ export class EncounterState {
       maxAp: c.maxAp ?? DEFAULT_MAX_AP,
       abilities: c.abilities ?? [],
       cooldowns: {},
+      conditions: c.conditions ?? [],
     }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
@@ -173,6 +174,7 @@ export class EncounterState {
       maxAp: c.maxAp ?? DEFAULT_MAX_AP,
       abilities: c.abilities ?? [],
       cooldowns: c.cooldowns ?? {},
+      conditions: c.conditions ?? [],
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -217,6 +219,7 @@ export class EncounterState {
         status: u ? toStatus(u.status, u.isDefeated) : isDefeated && c.status === 'standing' ? 'dead' : c.status,
         bleedoutRoundsLeft: u ? u.bleedoutRoundsLeft ?? 0 : c.bleedoutRoundsLeft,
         cooldowns: u?.cooldowns ?? c.cooldowns,
+        conditions: u?.conditions ?? c.conditions,
       };
     });
 
@@ -296,6 +299,7 @@ export class EncounterState {
       maxAp: payload.monster.maxAp ?? DEFAULT_MAX_AP,
       abilities: payload.monster.abilities ?? [],
       cooldowns: payload.monster.cooldowns ?? {},
+      conditions: payload.monster.conditions ?? [],
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }

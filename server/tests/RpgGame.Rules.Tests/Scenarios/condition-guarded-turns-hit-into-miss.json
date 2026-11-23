@@ -1,0 +1,22 @@
+{
+  // 3B.4 (SPRINT_3B4 C7): Defend grants Guarded (+3 Dodge) at the start of its own tick, so it already
+  // counts against that tick's attacks, and lasts until the end of the round.
+  "description": "Conditions: Defend's Guarded makes 12s miss in its own tick and the next",
+  "combatants": [
+    { "id": "A", "at": [5, 5] },
+    { "id": "B", "at": [5, 6] }
+  ],
+  "plans": { "A": ["melee B", "melee B"], "B": ["defend"] },
+  "dice": [12, 12],                  // both miss Dodge 13; without Guarded both would hit
+  "expect": {
+    "hp": { "B": 20 },
+    "events": [
+      "t1 B defend B: guarded applied (0)",
+      "t1 A melee B: miss",
+      "t1 B defends",
+      "t2 A melee B: miss",
+      "end B: guarded expires"
+    ],
+    "conditions": { "B": {} }
+  }
+}

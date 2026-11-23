@@ -1,0 +1,15 @@
+{
+  // 3B.4: a damage-taken modifier with tags only applies to damage from a source with one of them.
+  // A basic melee attack carries "melee"; Firebolt carries "flame", "ranged", "spell".
+  "description": "Conditions: Flame Ward halves Firebolt but not a sword",
+  "combatants": [
+    { "id": "A", "at": [5, 5], "maxAp": 5, "abilities": ["firebolt"] },
+    { "id": "B", "at": [5, 6], "conditions": [ { "id": "flame_ward", "rounds": 1 } ] }
+  ],
+  "plans": { "A": ["melee B", "ability firebolt B"] },
+  "dice": [15, 6, 15, 7],            // melee d8 6 → 6; Firebolt d8 7 + 1 = 8 → 4
+  "expect": {
+    "hp": { "B": 10 },
+    "events": ["t1 A melee B: hit 6", "t2 A firebolt B: hit 4 (-4 conditions)"]
+  }
+}

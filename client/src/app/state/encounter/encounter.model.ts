@@ -1,4 +1,4 @@
-import { AbilityDto, PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
+import { AbilityDto, ActiveConditionDto, PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
 
 /** Where a combatant stands in the fight (3B.5). Anyone not standing is out of the fight. */
 export type CombatantStatus = 'standing' | 'downed' | 'stable' | 'dead';
@@ -34,6 +34,8 @@ export interface Combatant {
   abilities: AbilityDto[];
   /** Abilities on cooldown: ability id → rounds left before it can be planned again (3B.3). */
   cooldowns: Record<string, number>;
+  /** Conditions on the combatant (3B.4), in the order they were applied. */
+  conditions: ActiveConditionDto[];
 }
 
 /** Movement range for a combatant whose server DTO doesn't carry one (the 3A default). */

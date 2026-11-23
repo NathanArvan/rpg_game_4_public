@@ -39,6 +39,7 @@ public static class RoundResolver
             // Combatants defeated in an earlier tick are skipped (CanAct), which voids
             // their remaining queued actions.
             ResolveAbilityActivations(round, tick);
+            ResolveGuards(round, tick);
             var movements = ResolveMovementPhase(round, tick);
             var (attacks, heals) = ResolveAttackPhase(round, tick);
             var effects = ResolveEffectsPhase(round, tick);
@@ -46,11 +47,13 @@ public static class RoundResolver
             {
                 AbilityUses = round.TickUses.ToList(),
                 Heals = heals,
+                Conditions = round.TickConditions.ToList(),
             });
         }
 
         var endOfRound = ResolveBleedout(round);
         var cooldowns = ResolveCooldowns(round);
+        var (conditions, expired) = ResolveConditionCountdown(round);
 
         var next = state with
         {
@@ -61,13 +64,18 @@ public static class RoundResolver
                 Status = round.Status[c.Id],
                 BleedoutRoundsLeft = round.Status[c.Id] == CombatantStatus.Downed ? round.Bleedout[c.Id] : 0,
                 Cooldowns = cooldowns[c.Id],
+                Conditions = conditions[c.Id],
             }).ToList(),
         };
 
         // Net change over the round: someone who went down and was healed back up is in neither list.
         var defeated = round.DefeatedThisRound.Distinct().Where(round.IsOut).ToList();
         var revived = state.Combatants.Where(c => c.IsDefeated && !round.IsOut(c.Id)).Select(c => c.Id).ToList();
-        return new RoundOutcome(next, ticks, defeated, round.Plans, endOfRound) { RevivedThisRound = revived };
+        return new RoundOutcome(next, ticks, defeated, round.Plans, endOfRound)
+        {
+            RevivedThisRound = revived,
+            ExpiredConditions = expired,
+        };
     }
 
     // ----- Ability activations (start of each tick) -----
@@ -84,6 +92,9 @@ public static class RoundResolver
     {
         round.TickAbilities.Clear();
         round.TickUses.Clear();
+        round.TickConditions.Clear();
+        round.TickTargets.Clear();
+        round.TickHits.Clear();
         var uses = round.TickUses;
         foreach (var (casterId, queue) in round.Plans)
         {
@@ -167,6 +178,23 @@ public static class RoundResolver
             .OrderBy(c => from.ChebyshevDistanceTo(round.Positions[c.Id])) // stable: ties keep the state's order
             .Select(c => c.Id);
         return (targeting.Count is { } n ? found.Take(n) : found).ToList();
+    }
+
+    // ----- Defend (start of each tick) -----
+
+    /// <summary>
+    /// Defend grants Guarded at the start of its own tick, before Movement (SPRINT_3B4 C7), so it counts
+    /// against this tick's attacks and every later one this round. It lasts until the end of the round;
+    /// defending again refreshes it.
+    /// </summary>
+    private static void ResolveGuards(RoundContext round, int tick)
+    {
+        foreach (var (combatantId, queue) in round.Plans)
+        {
+            if (!round.CanAct(combatantId) || ActionAt(queue, tick)?.Type != ActionType.Defend) continue;
+            round.TickConditions.Add(round.ApplyCondition(
+                combatantId, combatantId, round.Config.GuardedCondition, duration: 0, abilityId: null));
+        }
     }
 
     // ----- Phase 1: Movement -----
@@ -365,7 +393,7 @@ public static class RoundResolver
 
     private sealed record PendingAttack(
         string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
-        AttackRoll? Roll, bool Finishing, string? AbilityId, int MoveBonus);
+        AttackRoll? Roll, bool Finishing, string? AbilityId, int MoveBonus, int ConditionDamage);
 
     private sealed record PendingHeal(
         string HealerId, string TargetId, string AbilityId, WastedReason Reason, int Amount, bool CanRevive)
@@ -398,13 +426,14 @@ public static class RoundResolver
                     var wasted = CheckAttackTarget(round, attackerId, action.TargetCombatantId ?? "",
                         targeting: null, range: melee ? round.Config.MeleeReach : null, WastedReason.OutOfMeleeReach);
                     pending.Add(RollAttack(round, hpDeltas, attackerId, action.TargetCombatantId ?? "", action.Type,
-                        melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, accuracyBonus: 0, wasted, abilityId: null));
+                        melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, accuracyBonus: 0, wasted, ability: null));
                     break;
                 }
                 case ActionType.Ability when round.TickAbilities.TryGetValue(attackerId, out var active):
                 {
                     var ability = active.Ability;
                     var targets = ResolveTargets(round, attackerId, active);
+                    round.TickTargets[attackerId] = targets; // the Effects phase applies conditions to the same targets
                     foreach (var effect in ability.Effects)
                     {
                         switch (effect)
@@ -426,8 +455,11 @@ public static class RoundResolver
                                 {
                                     var wasted = CheckAttackTarget(round, attackerId, targetId,
                                         ability.Targeting, reach, WastedReason.OutOfRange);
-                                    pending.Add(RollAttack(round, hpDeltas, attackerId, targetId, type,
-                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability.Id, moved));
+                                    var rolled = RollAttack(round, hpDeltas, attackerId, targetId, type,
+                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability, moved);
+                                    pending.Add(rolled);
+                                    if (rolled.Hit)
+                                        (round.TickHits.TryGetValue(attackerId, out var hits) ? hits : round.TickHits[attackerId] = []).Add(targetId);
                                 }
                                 break;
                             case HealEffect heal:
@@ -514,7 +546,8 @@ public static class RoundResolver
             TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
             FinishingBlow: a.Finishing,
             AbilityId: a.AbilityId,
-            MoveBonus: a.MoveBonus)).ToList();
+            MoveBonus: a.MoveBonus,
+            ConditionDamage: a.ConditionDamage)).ToList();
 
         var healOutcomes = heals.Select(h => new HealOutcome(
             h.HealerId,
@@ -607,62 +640,83 @@ public static class RoundResolver
 
     /// <summary>Rolls one attack (unless wasted) and adds its damage to the tick's netting batch.</summary>
     /// <param name="cellsMoved">Cells the same activation's move effect covered this tick (for <see cref="DamageSpec.BonusIfMoved"/>).</param>
+    /// <param name="ability">The ability making the attack, or null for a basic attack (its tags filter damage-taken modifiers).</param>
     private static PendingAttack RollAttack(
         RoundContext round, Dictionary<string, int> hpDeltas, string attackerId, string targetId, ActionType type,
-        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, string? abilityId, int cellsMoved = 0)
+        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, AbilityDefinition? ability, int cellsMoved = 0)
     {
         bool hit = false, isCrit = false, finishing = false;
-        int amount = 0, moveBonus = 0;
+        int amount = 0, moveBonus = 0, conditionDamage = 0;
         AttackRoll? roll = null;
         if (wasted == WastedReason.None)
         {
             // Downed or Stable before this tick's attacks: any hit kills, with no damage roll.
             finishing = round.Status[targetId] != CombatantStatus.Standing;
-            (hit, amount, isCrit, roll, moveBonus) = ComputeAttack(
+            // Conditions as they stand now: anything applied in this tick's Effects phase counts from the
+            // next tick (SPRINT_3B4 C6). Defend's Guarded, applied at the start of the tick, already counts.
+            var mods = new AttackConditions(
+                round.Conditions[attackerId], round.Conditions[targetId], ConditionMath.AttackTags(ability, kind));
+            (hit, amount, isCrit, roll, moveBonus, conditionDamage) = ComputeAttack(
                 round.Combatants[attackerId], round.Combatants[targetId], kind, damage, accuracyBonus, round.Dice,
-                rollDamage: !finishing, cellsMoved);
+                mods, rollDamage: !finishing, cellsMoved);
             if (hit && !finishing)
                 hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - amount;
         }
-        return new PendingAttack(attackerId, targetId, type, wasted, hit, amount, isCrit, roll, finishing, abilityId, moveBonus);
+        return new PendingAttack(attackerId, targetId, type, wasted, hit, amount, isCrit, roll, finishing, ability?.Id, moveBonus, conditionDamage);
     }
+
+    /// <summary>The conditions that bear on one attack: the attacker's, the target's, and the attack's tags.</summary>
+    private sealed record AttackConditions(
+        IReadOnlyList<ActiveCondition> Attacker, IReadOnlyList<ActiveCondition> Target, IReadOnlyCollection<string> SourceTags);
 
     /// <summary>
     /// Damage pipeline (DESIGN_SPIKE Decision 4, MAGIC_SYSTEM.md). The slots exist now so items,
     /// stats, resonance and crits can fill them in later without restructuring.
     /// </summary>
     /// <returns>Roll is null for an attack that can't miss (<see cref="AttackKind.None"/>). MoveBonus is
-    /// the part of the damage from <see cref="DamageSpec.BonusIfMoved"/>, before the multiplier.</returns>
-    private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll, int MoveBonus) ComputeAttack(
+    /// the part of the damage from <see cref="DamageSpec.BonusIfMoved"/>, before the multiplier.
+    /// ConditionDamage is how much conditions changed the damage, signed (SPRINT_3B4 C4).</returns>
+    private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll, int MoveBonus, int ConditionDamage) ComputeAttack(
         CombatantState attacker, CombatantState target, AttackKind kind, DamageSpec spec, int accuracyBonus,
-        IDiceRoller dice, bool rollDamage = true, int cellsMoved = 0)
+        IDiceRoller dice, AttackConditions conditions, bool rollDamage = true, int cellsMoved = 0)
     {
         AttackRoll? roll = null;
         if (kind != AttackKind.None)
         {
+            int conditionAccuracy = ConditionMath.AccuracyBonus(conditions.Attacker, kind);
+            int conditionDodge = ConditionMath.DodgeBonus(conditions.Target, kind);
             int accuracy = (kind == AttackKind.Melee ? attacker.Profile.MeleeAccuracy : attacker.Profile.RangedAccuracy)
-                + accuracyBonus;
-            roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge);
+                + accuracyBonus + conditionAccuracy;
+            roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge + conditionDodge)
+            {
+                ConditionAccuracy = conditionAccuracy,
+                ConditionDodge = conditionDodge,
+            };
             if (roll.Total < roll.TargetDodge)
-                return (false, 0, false, roll, 0);
+                return (false, 0, false, roll, 0, 0);
         }
         if (!rollDamage)
-            return (true, 0, false, roll, 0); // a finishing blow: the hit is what counts
+            return (true, 0, false, roll, 0, 0); // a finishing blow: the hit is what counts, conditions don't matter
 
         int baseDamage = dice.Roll((spec.Die ?? attacker.Profile.BaseDamage).Sides);
         int statModifier = 0;                                // stats (deferred)
         int weaponBonus = 0;                                 // items (4.2)
         int moveBonus = spec.BonusIfMoved is { } ifMoved && cellsMoved >= ifMoved.MinCells ? ifMoved.Bonus : 0;
         int abilityModifier = spec.Bonus + moveBonus;        // abilities (3B.3), incl. Charge's bonus
+        int conditionModifier = ConditionMath.DamageDealtBonus(conditions.Attacker); // attacker's conditions (3B.4)
         int resonanceBonus = 0;                              // resonance (3M.5)
         int leyBonus = 0;                                    // ley points (3M.5)
-        int totalDamage = (baseDamage + statModifier + weaponBonus + abilityModifier + resonanceBonus + leyBonus)
+        int totalDamage = (baseDamage + statModifier + weaponBonus + abilityModifier + conditionModifier + resonanceBonus + leyBonus)
             * spec.Multiplier;
 
         bool isCrit = false;                                 // crit system (3B+)
         if (isCrit) totalDamage *= 2;
 
-        return (true, totalDamage, isCrit, roll, moveBonus);
+        // The target's damage taken (3B.4): flat, then percent, rounded down, never below 0.
+        int beforeConditions = totalDamage - conditionModifier * spec.Multiplier;
+        totalDamage = ConditionMath.ApplyDamageTaken(Math.Max(0, totalDamage), conditions.Target, conditions.SourceTags);
+
+        return (true, totalDamage, isCrit, roll, moveBonus, totalDamage - beforeConditions);
     }
 
     // ----- Phase 3: Effects -----
@@ -678,15 +732,62 @@ public static class RoundResolver
             switch (action?.Type)
             {
                 case ActionType.Defend:
-                    // Quirk 4: defend has no mechanical effect yet; it only produces an entry.
+                    // Its effect, Guarded, was applied at the start of the tick (ResolveGuards).
                     results.Add(new EffectOutcome(combatantId, EffectType.Defend));
                     break;
                 case ActionType.Stabilize:
                     results.Add(ResolveStabilize(round, combatantId, action.TargetCombatantId ?? ""));
                     break;
+                case ActionType.Ability when round.TickAbilities.TryGetValue(combatantId, out var active):
+                    ResolveAbilityConditions(round, combatantId, active);
+                    break;
             }
         }
         return results;
+    }
+
+    /// <summary>
+    /// An ability's <see cref="ApplyConditionEffect"/>s (SPRINT_3B4 C2), in effect order, each on the targets
+    /// the ability found in the Attack phase, in that order. A target must still be standing and in range (or
+    /// be the caster), and for a condition that needs a hit, the same activation must have hit it.
+    /// </summary>
+    private static void ResolveAbilityConditions(RoundContext round, string casterId, ActiveAbility active)
+    {
+        var ability = active.Ability;
+        var targets = round.TickTargets.GetValueOrDefault(casterId) ?? [];
+        var hits = round.TickHits.GetValueOrDefault(casterId);
+        foreach (var effect in ability.ConditionEffects)
+        {
+            foreach (var targetId in targets)
+            {
+                var wasted = CheckConditionTarget(round, casterId, targetId, ability.Targeting);
+                if (wasted == WastedReason.None && effect.RequiresHit && hits?.Contains(targetId) != true)
+                    wasted = WastedReason.Missed;
+                round.TickConditions.Add(wasted == WastedReason.None
+                    ? round.ApplyCondition(casterId, targetId, effect.Condition, effect.Duration, ability.Id)
+                    : new ConditionOutcome(casterId, targetId, effect.Condition.Id, ability.Id, ConditionResultKind.Wasted, 0, wasted));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a condition can land on a target right now (the condition side of <see cref="CheckAttackTarget"/>):
+    /// the target exists → it's on the side the targeting allows → it's standing (conditions never go on
+    /// someone who is down, SPRINT_3B4 C10) → it's within range of the caster (the caster itself always is).
+    /// </summary>
+    private static WastedReason CheckConditionTarget(RoundContext round, string casterId, string targetId, Targeting targeting)
+    {
+        if (!round.Combatants.TryGetValue(targetId, out var target))
+            return WastedReason.InvalidTarget;
+        if (casterId == targetId)
+            return round.IsOut(targetId) ? WastedReason.TargetDefeated : WastedReason.None;
+        if (!Relations.Matches(round.Combatants[casterId], target, targeting))
+            return WastedReason.InvalidTargetType;
+        if (round.IsOut(targetId))
+            return WastedReason.TargetDefeated;
+        if (!round.WithinRange(casterId, targetId, targeting.Range))
+            return WastedReason.OutOfRange;
+        return WastedReason.None;
     }
 
     /// <summary>
@@ -751,6 +852,28 @@ public static class RoundResolver
             result[c.Id] = next.Count == 0 && c.Cooldowns.Count == 0 ? c.Cooldowns : next;
         }
         return result;
+    }
+
+    /// <summary>
+    /// Conditions for the next round (SPRINT_3B4 C5): one with no rounds left is removed, any other goes down
+    /// by one. Runs last, after bleedout and cooldowns.
+    /// </summary>
+    private static (Dictionary<string, IReadOnlyList<ActiveCondition>>, List<ExpiredCondition>) ResolveConditionCountdown(RoundContext round)
+    {
+        var next = new Dictionary<string, IReadOnlyList<ActiveCondition>>();
+        var expired = new List<ExpiredCondition>();
+        foreach (var c in round.State.Combatants)
+        {
+            var current = round.Conditions[c.Id];
+            if (current.Count == 0)
+            {
+                next[c.Id] = current;
+                continue;
+            }
+            next[c.Id] = ConditionMath.CountDown(current, out var gone);
+            expired.AddRange(gone.Select(id => new ExpiredCondition(c.Id, id)));
+        }
+        return (next, expired);
     }
 
     // ----- Helpers -----
@@ -854,6 +977,18 @@ public static class RoundResolver
         /// <summary>Every ability activation of the current tick, in plan order (auto targets are filled in during the attack phase).</summary>
         public List<AbilityUse> TickUses { get; } = [];
 
+        /// <summary>Everyone's conditions as the round goes (3B.4).</summary>
+        public Dictionary<string, IReadOnlyList<ActiveCondition>> Conditions { get; }
+
+        /// <summary>Conditions applied in the current tick, in order.</summary>
+        public List<ConditionOutcome> TickConditions { get; } = [];
+
+        /// <summary>The targets each ability found in the current tick's Attack phase, by caster.</summary>
+        public Dictionary<string, IReadOnlyList<string>> TickTargets { get; } = [];
+
+        /// <summary>The targets each ability's attacks hit in the current tick, by caster (for conditions that need a hit).</summary>
+        public Dictionary<string, HashSet<string>> TickHits { get; } = [];
+
         /// <summary>
         /// Standing when the round started and hasn't fallen since: the only ones whose queues still
         /// run. Someone healed back up mid-round stays off it until the next round.
@@ -876,6 +1011,8 @@ public static class RoundResolver
             Hp = state.Combatants.ToDictionary(c => c.Id, c => c.Hp);
             Status = state.Combatants.ToDictionary(c => c.Id, c => c.Status);
             Bleedout = state.Combatants.ToDictionary(c => c.Id, c => c.BleedoutRoundsLeft);
+            // Someone who is already down carries no conditions (SPRINT_3B4 C10), whatever the input says.
+            Conditions = state.Combatants.ToDictionary(c => c.Id, c => c.IsDefeated ? [] : c.Conditions);
             DownedAtStart = state.Combatants.Where(c => c.Status == CombatantStatus.Downed).Select(c => c.Id).ToHashSet();
             OutAtStart = state.Combatants
                 .Where(c => c.Status is CombatantStatus.Downed or CombatantStatus.Stable).Select(c => c.Id).ToHashSet();
@@ -910,8 +1047,23 @@ public static class RoundResolver
             {
                 DefeatedThisRound.Add(id);
                 Acting.Remove(id);
+                Conditions[id] = []; // falling clears every condition (SPRINT_3B4 C10)
             }
             Status[id] = status;
+        }
+
+        /// <summary>
+        /// Puts a condition on <paramref name="targetId"/> (or refreshes it, SPRINT_3B4 C12) and reports it.
+        /// The caller has already checked the target can take it.
+        /// </summary>
+        public ConditionOutcome ApplyCondition(
+            string sourceId, string targetId, ConditionDefinition condition, int duration, string? abilityId)
+        {
+            var updated = ConditionMath.Apply(Conditions[targetId], new ActiveCondition(condition, duration, sourceId), out bool refreshed);
+            Conditions[targetId] = updated;
+            int left = updated.First(c => c.Id == condition.Id).RoundsLeft;
+            return new ConditionOutcome(sourceId, targetId, condition.Id, abilityId,
+                refreshed ? ConditionResultKind.Refreshed : ConditionResultKind.Applied, left);
         }
 
         /// <summary>

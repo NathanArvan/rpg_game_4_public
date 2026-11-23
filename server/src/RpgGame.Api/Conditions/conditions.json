@@ -1,0 +1,62 @@
+{
+  // Condition definitions (roadmap 3B.4, docs/roadmap/SPRINT_3B4.md). Abilities apply them with an
+  // "apply_condition" effect, which also says how long they last; each ability stores a copy of the
+  // definition when it's loaded, so retuning this file never changes a running encounter.
+  //
+  //   id, name, description
+  //   harmful     true for a debuff: shown in red, and the enemy AI won't put it on someone who has it
+  //   tags        tags of its periodic damage (e.g. "flame"), for damage-taken filters (3B.4 PR 2)
+  //   modifiers   all optional; numbers from several conditions on one combatant are added up
+  //               accuracy      + to the d20 of the bearer's attacks
+  //               dodge         + to the bearer's Dodge
+  //               attackKind    "any" (default) | "melee" | "ranged": which attacks accuracy/dodge apply to
+  //               damageDealt   + to each of the bearer's hits
+  //               damageTaken   { "percent": -50, "flat": 0, "tags": ["flame"] } on each hit the bearer
+  //                             takes: flat is added, then percent scales it (rounded down, never below
+  //                             0). -50 = resistant, +50 = vulnerable, -100 = immune. tags: only damage
+  //                             from a source with one of them (empty = all damage)
+  //               movement      ± cells of movement per round, from the next round (3B.4 PR 3)
+  //               ap            ± AP per round, from the next round (3B.4 PR 3)
+  //               periodic      { "kind": "damage" | "heal", "die": "d4", "bonus": 0 } at the end of
+  //                             every round (3B.4 PR 2)
+  //               blocks        ["all"] (no actions) | ["move"] (no movement) (3B.4 PR 3)
+  //
+  // Guarded (+3 Dodge until the end of the round, from Defend) is built into the rules: don't list it.
+  "conditions": [
+    {
+      "id": "blessed", "name": "Blessed", "harmful": false,
+      "description": "+2 to hit.",
+      "modifiers": { "accuracy": 2 }
+    },
+    {
+      "id": "dazzled", "name": "Dazzled", "harmful": true,
+      "description": "-3 to hit with ranged attacks.",
+      "modifiers": { "accuracy": -3, "attackKind": "ranged" }
+    },
+    {
+      "id": "exposed", "name": "Exposed", "harmful": true,
+      "description": "-3 Dodge: easier to hit.",
+      "modifiers": { "dodge": -3 }
+    },
+    {
+      "id": "emboldened", "name": "Emboldened", "harmful": false,
+      "description": "+2 damage on every hit.",
+      "modifiers": { "damageDealt": 2 }
+    },
+    {
+      "id": "fortified", "name": "Fortified", "harmful": false,
+      "description": "Takes half damage from every hit.",
+      "modifiers": { "damageTaken": { "percent": -50 } }
+    },
+    {
+      "id": "marked", "name": "Marked", "harmful": true,
+      "description": "Takes 2 extra damage from every hit.",
+      "modifiers": { "damageTaken": { "flat": 2 } }
+    },
+    {
+      "id": "flame_ward", "name": "Flame Ward", "harmful": false,
+      "description": "Takes half damage from flame.",
+      "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } }
+    }
+  ]
+}

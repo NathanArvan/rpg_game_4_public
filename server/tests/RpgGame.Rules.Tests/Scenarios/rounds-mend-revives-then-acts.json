@@ -24,7 +24,7 @@
     },
     {
       "plans": { "Hero": ["melee Goblin"], "Goblin": ["defend"] },
-      "dice": [12, 6],
+      "dice": [13, 6],                   // 13 hits the defending (Guarded, Dodge 13) Goblin
       "expect": { "events": ["t1 Hero melee Goblin: hit 6"], "hp": { "Goblin": 14 }, "cooldowns": { "Mira": { "mend": 1 } } }
     }
   ]

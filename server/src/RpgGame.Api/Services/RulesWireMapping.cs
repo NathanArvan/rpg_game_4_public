@@ -89,7 +89,18 @@ internal static class RulesWireMapping
         WastedReason.NotInLoadout => "not_in_loadout",
         WastedReason.InvalidTargetType => "invalid_target_type",
         WastedReason.NoTargets => "no_targets",
+        WastedReason.Missed => "missed",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
+    };
+
+    /// <summary>"applied", "refreshed", "resisted" or "wasted" (3B.4).</summary>
+    public static string ToWire(ConditionResultKind result) => result switch
+    {
+        ConditionResultKind.Applied => "applied",
+        ConditionResultKind.Refreshed => "refreshed",
+        ConditionResultKind.Resisted => "resisted",
+        ConditionResultKind.Wasted => "wasted",
+        _ => throw new ArgumentOutOfRangeException(nameof(result), result, null),
     };
 
     public static string ToWire(EffectType type) => type switch

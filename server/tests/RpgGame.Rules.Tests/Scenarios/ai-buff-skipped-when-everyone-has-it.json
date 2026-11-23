@@ -1,0 +1,12 @@
+{
+  // 3B.4 (SPRINT_3B4 C14): no point shouting when everyone in reach is already Emboldened.
+  "description": "AI: Battle Cry is skipped when every ally in range already has Emboldened",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Shaman", "side": "enemy", "at": [5, 6], "abilities": ["battle_cry"],
+      "conditions": [ { "id": "emboldened", "rounds": 0 } ] }
+  ],
+  "plans": { "Shaman": ["ai"] },
+  "dice": [1, 1],
+  "expect": { "plans": { "Shaman": ["melee Hero", "melee Hero"] } }
+}

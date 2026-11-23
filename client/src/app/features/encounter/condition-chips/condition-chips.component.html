@@ -1,0 +1,18 @@
+@if (conditions.length > 0) {
+  <span class="chips" [class.compact]="compact">
+    @for (c of conditions; track c.condition.id) {
+      <span
+        class="chip"
+        [class.harmful]="c.condition.harmful"
+        [class.helpful]="!c.condition.harmful"
+        [attr.data-condition]="c.condition.id"
+        [title]="tooltip(c)">
+        @if (compact) {
+          {{ c.condition.name[0] }}
+        } @else {
+          {{ c.condition.name }} <span class="left">· {{ duration(c.roundsLeft) }}</span>
+        }
+      </span>
+    }
+  </span>
+}

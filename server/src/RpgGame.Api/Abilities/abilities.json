@@ -32,6 +32,11 @@
   //               { "kind": "heal", "amount": { "die": "d6", "bonus": 2 }, "canRevive": true }
   //               resolved with the attacks and netted with the tick's damage, capped at max HP.
   //               canRevive (default true): brings a downed or stable ally back on their feet
+  //               { "kind": "apply_condition", "condition": "marked", "duration": 1, "requiresHit": true }
+  //               resolved in the Effects phase on the ability's targets (3B.4). condition: an id from
+  //               Conditions/conditions.json. duration: full rounds it lasts after the current one (0 =
+  //               until the end of this round; 1 = until the end of next round). requiresHit: only targets
+  //               the same ability's attack hit get it (default: true if the ability attacks)
   //   resonanceScaling   optional (MAGIC_SYSTEM.md format). Checked, but only applied from 3M.5
   "abilities": [
     {
@@ -86,6 +91,30 @@
       "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
       "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ],
       "resonanceScaling": { "flame": { "damagePerLevel": 2, "thresholdEffects": { "2": "ember", "3": "burning" } } }
+    },
+    {
+      "id": "battle_cry", "name": "Battle Cry",
+      "description": "You and allies within 3 cells deal +2 damage until the end of next round.",
+      "ap": 2, "cooldown": 3, "tags": ["buff"],
+      "target": { "kind": "auto", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "apply_condition", "condition": "emboldened", "duration": 1 } ]
+    },
+    {
+      "id": "stoneskin", "name": "Stoneskin",
+      "description": "Take half damage until the end of next round.",
+      "ap": 1, "cooldown": 3, "tags": ["buff"],
+      "target": { "kind": "self" },
+      "effects": [ { "kind": "apply_condition", "condition": "fortified", "duration": 1 } ]
+    },
+    {
+      "id": "mark", "name": "Mark",
+      "description": "Mark an enemy up to 8 cells away: until the end of next round it's easier to hit (-3 Dodge) and takes 2 extra damage per hit.",
+      "ap": 1, "cooldown": 2, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [
+        { "kind": "apply_condition", "condition": "marked", "duration": 1 },
+        { "kind": "apply_condition", "condition": "exposed", "duration": 1 }
+      ]
     }
   ]
 }

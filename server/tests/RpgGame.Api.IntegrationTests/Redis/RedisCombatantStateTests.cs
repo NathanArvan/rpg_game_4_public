@@ -1,9 +1,10 @@
+using RpgGame.Domain.Entities;
 using RpgGame.Api.Models;
 using StackExchange.Redis;
 
 namespace RpgGame.Api.IntegrationTests.Redis;
 
-/// <summary>Per-combatant state: live HP, defeated / status / revive (3B.5, 3B.3) and cooldowns (3B.3).</summary>
+/// <summary>Per-combatant state: live HP, defeated / status / revive (3B.5, 3B.3), cooldowns (3B.3) and conditions (3B.4).</summary>
 [Collection(RedisCollection.Name)]
 public class RedisCombatantStateTests(RedisFixture redis)
 {
@@ -126,5 +127,50 @@ public class RedisCombatantStateTests(RedisFixture redis)
 
         Assert.Empty(await redis.State.GetCooldownsAsync(encounterId, "c1"));
         Assert.False(await _db.HashExistsAsync($"encounter:{encounterId}:cooldowns", "c1"));
+    }
+
+    // --- Conditions (3B.4) ---
+
+    private static ActiveConditionValues Marked(int roundsLeft) => new()
+    {
+        Condition = new ConditionValues
+        {
+            Id = "marked", Name = "Marked", Description = "Takes 2 extra damage.", Harmful = true, Tags = ["flame"],
+            Modifiers = new ModifierValues { DamageTaken = new DamageTakenValues { Flat = 2, Tags = ["melee"] }, Blocks = ["move"] },
+        },
+        RoundsLeft = roundsLeft,
+        SourceId = "kestrel",
+    };
+
+    [Fact]
+    public async Task Conditions_round_trip_as_a_json_list_per_combatant()
+    {
+        var encounterId = RedisFixture.NewId();
+
+        await redis.State.SetConditionsAsync(encounterId, "c1", [Marked(1)]);
+
+        var back = Assert.Single(await redis.State.GetConditionsAsync(encounterId, "c1"));
+        Assert.Equal(("marked", "Marked", "Takes 2 extra damage.", true, 1, "kestrel"),
+            (back.Condition.Id, back.Condition.Name, back.Condition.Description, back.Condition.Harmful, back.RoundsLeft, back.SourceId));
+        Assert.Equal((2, "melee"), (back.Condition.Modifiers.DamageTaken!.Flat, back.Condition.Modifiers.DamageTaken.Tags.Single()));
+        Assert.Equal(["move"], back.Condition.Modifiers.Blocks);
+        Assert.Empty(await redis.State.GetConditionsAsync(encounterId, "c2"));
+
+        Assert.Equal(RedisType.Hash, await _db.KeyTypeAsync($"encounter:{encounterId}:conditions"));
+        var json = (string?)await _db.HashGetAsync($"encounter:{encounterId}:conditions", "c1");
+        Assert.StartsWith("""[{"condition":{"id":"marked","name":"Marked",""", json);
+        Assert.EndsWith("\"roundsLeft\":1,\"sourceId\":\"kestrel\"}]", json);
+    }
+
+    [Fact]
+    public async Task Setting_no_conditions_removes_the_entry()
+    {
+        var encounterId = RedisFixture.NewId();
+        await redis.State.SetConditionsAsync(encounterId, "c1", [Marked(0)]);
+
+        await redis.State.SetConditionsAsync(encounterId, "c1", []);
+
+        Assert.Empty(await redis.State.GetConditionsAsync(encounterId, "c1"));
+        Assert.False(await _db.HashExistsAsync($"encounter:{encounterId}:conditions", "c1"));
     }
 }
