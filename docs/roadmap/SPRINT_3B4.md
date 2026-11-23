@@ -135,7 +135,7 @@ At planning, the Api uses the conditions active **at the start of the planning p
 
 With C5, this means "Slowed, 1 round" applied in round 3 does nothing more in round 3 and gives round 4 two fewer movement cells; then it expires. (Its chip shows from the moment it lands, marked "from next round" until then.)
 
-### C7. Defend grants Guarded — to confirm
+### C7. Defend grants Guarded ✅ Decided (for now, 2026-11-23)
 
 Defend (1 AP, basic action) applies **Guarded** (`dodge +3`, duration 0) to the defender **at the start of its own tick** (before Movement), not in the Effects phase, so it protects against that tick's attacks and every later one this round. Defend stays a basic action (wire format and `EffectOutcome` unchanged; the outcome additionally lists the condition applied). Defending twice refreshes, it doesn't stack (C12).
 
@@ -168,7 +168,7 @@ This makes the timeout default ("defend in place") and the AI's fallback a real 
 - Periodic damage never targets someone who is Downed, Stable or Dead (they have no conditions anyway).
 - An `apply_condition` on a target that is out is wasted (`TargetDefeated`).
 
-### C11. Periodic effects (ongoing damage) resolve at end of round — to confirm
+### C11. Periodic effects (ongoing damage) resolve at end of round ✅ Decided (for now, 2026-11-23)
 
 New step at the **start of end of round**, before bleedout:
 
