@@ -110,12 +110,14 @@ die + statModifier + weaponBonus + abilityModifier + conditionModifier (attacker
 - Heals aren't modified by conditions in this slice (no "healing received" modifier).
 - `AttackOutcome` gains `ConditionDamage` (the net change from `damageDealt` and `damageTaken`, signed), so the feed can say "(−4 resisted)" / "(+2 marked)".
 
-### C5. Durations — to confirm
+### C5. Durations ✅ Decided (2026-11-23)
 
 - `duration: N` (N ≥ 0) on the effect. The condition is active **from the moment it is applied until the end of the round it was applied in, plus N more full rounds.**
 - At the end of each round, every condition that wasn't applied this round counts down by 1; one that reaches 0 (or was applied with duration 0) is removed after the round. Same rule as bleedout: the round it started in doesn't count.
 - Examples: Slowed `duration 1` applied in round 3 → rest of round 3 and all of round 4 (so it does cut round 4's movement budget). Guarded `duration 0` → rest of this round only.
 - Stored as `roundsLeft` (N, counting down) plus `appliedRound`.
+- **Players never see the number.** The data keeps `duration` / `roundsLeft`, but the UI (chips, tooltips, feed, ability bar) says it in words: 0 → "until end of round", 1 → "until end of next round", N ≥ 2 → "for N more rounds". There is no "0-round" anything on screen. One shared client helper (`describeDuration(roundsLeft, appliedThisRound)`) and its feed-formatter twin produce the wording, so every surface says the same thing.
+- **One condition per effect, whatever its length.** A short stun and a long stun are both **Stunned** (one definition); the ability that applies it picks the duration. No separate names for short and long versions.
 
 *Alternative considered:* count the application round (duration 1 = rest of this round only). Rejected: round-level modifiers (AP, movement, stun at planning) would then need duration 2 to do anything, which reads wrong in tooltips.
 
@@ -148,7 +150,8 @@ This makes the timeout default ("defend in place") and the AI's fallback a real 
 ### C8. Blocked actions (Stunned, Rooted, 0 AP)
 
 **Mid-round** (condition applied during resolution):
-- `blocks: all`: from the next tick, the combatant's remaining queued actions don't resolve. Each is reported once as a blocked action (`TickOutcome.Blocked`: `BlockedAction(CombatantId, PlannedAction, ConditionId)`), so the feed says "Brakka is Stunned and can't act". A blocked ability **doesn't start its cooldown** (it never happened, same as a caster defeated first, A10). AP isn't refunded (there's no AP to refund).
+- `blocks: all`: from the next tick, the combatant's remaining queued actions don't resolve. Each is reported once as a blocked action (`TickOutcome.Blocked`: `BlockedAction(CombatantId, PlannedAction, ConditionId)`), so the feed says "Brakka is Stunned and can't act".
+- **When a stun lands**, the feed and the playback cue say how long it lasts, in C5's words: "Brakka is Stunned until the end of the round" (duration 0) or "Brakka is Stunned until the end of next round" (duration 1). The next planning phase then shows the result: after a duration-0 stun the character plans as normal (the condition has expired); after a longer one their action bar shows they skip the round (below). A blocked ability **doesn't start its cooldown** (it never happened, same as a caster defeated first, A10). AP isn't refunded (there's no AP to refund).
 - `blocks: move`: plain moves are blocked (reported the same way); an ability's `move` effect doesn't move the caster, and its other effects still resolve from where they stand (a Rooted Charge strikes only if already in reach). Forced movement (Shove, stretch) still moves a Rooted target.
 
 **At planning** (condition active when the planning phase opens):
@@ -209,7 +212,7 @@ Three PRs, in order, each playable in Quick Battle on its own (like 3B.3).
 |---|---|---|---|
 | **1. Framework, hit & damage modifiers** | Catalog, `ActiveCondition` state, `apply_condition`, durations and expiry, refresh, accuracy / dodge / damage dealt / damage taken, Defend → Guarded, chips on tracker and tokens | R2, R3, R7 (catalog), extras | Guarded, Blessed, Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward · Battle Cry, Stoneskin, Mark |
 | **2. Ongoing damage & resistance** | `periodic` at end of round (damage and heal), falling at end of round, `ConditionResist` + resist roll | R1, R7 (resist) | Burning, Poisoned, Regenerating · Firebolt gains Burning, Envenom |
-| **3. Movement, AP & action denial** | `movement`, `ap`, `blocks` (all / move), effective budgets at planning, auto lock-in for the stunned, blocked actions in resolution and playback. Stretch: Shove | R4, R5, R6 | Slowed, Hasted, Rooted, Weakened, Stunned · Hamstring, Haste, Entangle, Shield Bash, Sap (stretch: Shove) |
+| **3. Movement, AP & action denial** | `movement`, `ap`, `blocks` (all / move), effective budgets at planning, auto lock-in for the stunned, blocked actions in resolution and playback. Stretch: Shove | R4, R5, R6 | Slowed, Hasted, Rooted, Weakened, Stunned · Hamstring, Haste, Entangle, Shield Bash, Sap, Hex (stretch: Shove) |
 
 Follow the design loop for each PR: rules + scenarios first (`dotnet test server/tests/RpgGame.Rules.Tests`), then server, then client, then E2E.
 
@@ -384,7 +387,7 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 - `PlanningService` passes conditions to `PlanValidator`; `contracts/plan-validation-cases.json` gains rows (Slowed shrinks the budget, Hasted extends it, Weakened over-budget, Stunned rejects any plan, Rooted rejects a move and a Dash but allows an attack) with the server's exact messages.
 - **`RoundOrchestrator.StartPlanningPhaseAsync`**: after AI planning, auto-lock-in every combatant that can't act (C8) with an empty plan, one `PlayerLockedIn` each. `PlanningService` "all living combatants locked in" logic must treat them as locked (they are, in the set). `LockIn` for a user whose combatants are all stunned is a no-op, not an error. Timer expiry doesn't default them to defend.
 - `PlanningCombatantDto`: `maxAp` / `movementRange` become **effective** values; add `baseMaxAp`, `baseMovementRange`, `blocks`.
-- Feed: "Brakka is Stunned and can't act" (once per blocked combatant per tick), "Goblin is Rooted and can't move", round start: nothing extra (the chips say it).
+- Feed: on application, "Brakka is Stunned until the end of the round" / "… until the end of next round" (C5 wording); "Brakka is Stunned and can't act" (once per blocked combatant per tick), "Goblin is Rooted and can't move"; round start: nothing extra (the chips say it).
 
 ### Client
 - `plan-queue.ts`: mirror the effective budgets and block rules (`validatePlan` takes conditions or the effective values from the DTO; prefer the DTO values so the client doesn't recompute modifiers). Shared-case spec passes the new rows.
@@ -402,19 +405,20 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 | `haste` | 2 | 3 | combatant / ally / range 3 / includeSelf | apply Hasted, duration 1 |
 | `entangle` | 2 | 3 | combatant / enemy / range 6 | apply Rooted, duration 1 (no attack) |
 | `sap` | 2 | 2 | combatant / enemy / range 6 | apply Weakened, duration 1 (no attack) |
-| `shield_bash` | 3 | 3 | combatant / enemy / range 1 | melee attack, d4; on hit Stunned, duration 1 |
+| `shield_bash` | 3 | 3 | combatant / enemy / range 1 | melee attack, d4; on hit Stunned, duration 0 (the rest of this round) |
+| `hex` | 3 | 4 | combatant / enemy / range 6 | apply Stunned, duration 1 (no attack; resistible) |
 
-  Stunned duration 1 voids the rest of the round it lands in **and** the whole next round (C5, C6). That's a lot; `shield_bash` pays for it with 3 AP, a 3-round cooldown, a hit roll and the target's resist. Watch it in playtesting (see Risks).
-- Conditions preset: Bruiser gets Shield Bash, Skirmisher Haste, Scout Entangle; Grunts get Hamstring, the Goblin Shaman Sap.
+  Shield Bash's stun only costs the target the rest of the round it lands in, so it's worth more early in the queue (it lands in tick 1 and voids the target's later ticks). A longer stun is the same condition with `duration ≥ 1` (it also skips the target's next round); `hex` (below) is that version, so both lengths can be tried in the Conditions preset.
+- Conditions preset: Bruiser gets Shield Bash, Skirmisher Haste, Scout Entangle; Grunts get Hamstring, the Goblin Shaman Sap and Hex.
 
 ### Tests
-- Scenarios: `condition-slowed-cuts-move.json`, `condition-slowed-mid-round-no-effect-this-round.json` (Hamstring in tick 1, the target's tick 3 move still uses its full budget; next round's budget is 2 smaller), `condition-hasted-extends-move.json`, `condition-hasted-mid-round-no-effect-this-round.json`, `condition-rooted-blocks-move-and-dash.json`, `condition-rooted-charge-strikes-if-adjacent.json`, `condition-stunned-tick1-voids-rest.json` (and no cooldown for a blocked ability), `rounds-stunned-skips-next-round.json`, `condition-weakened-queue-cut.json` (resolver guard), `ai-rooted-attacks-or-defends.json`, `ai-plans-with-reduced-ap.json`, `ai-uses-hamstring.json`; stretch: `ability-shove-blocked.json`, `ability-shove-moves-rooted.json`.
+- Scenarios: `condition-slowed-cuts-move.json`, `condition-slowed-mid-round-no-effect-this-round.json` (Hamstring in tick 1, the target's tick 3 move still uses its full budget; next round's budget is 2 smaller), `condition-hasted-extends-move.json`, `condition-hasted-mid-round-no-effect-this-round.json`, `condition-rooted-blocks-move-and-dash.json`, `condition-rooted-charge-strikes-if-adjacent.json`, `condition-stunned-tick1-voids-rest.json` (and no cooldown for a blocked ability), `rounds-stunned-duration0-acts-next-round.json` (stunned in tick 1 with duration 0: rest of the round voided, plans and acts normally next round), `rounds-stunned-duration1-skips-next-round.json`, `condition-weakened-queue-cut.json` (resolver guard), `ai-rooted-attacks-or-defends.json`, `ai-plans-with-reduced-ap.json`, `ai-uses-hamstring.json`; stretch: `ability-shove-blocked.json`, `ability-shove-moves-rooted.json`.
 - `PlanValidator` tests + shared cases.
 - Api: `PlanningServiceTests` (stunned rejected, auto-locked, Rooted move rejected), `RoundOrchestrator` / hub integration test: a round where the only human combatant is stunned resolves without input after the AI locks in.
 - Client: `plan-queue` specs, action bar stunned/rooted states, playback blocked cue.
-- E2E: Shield Bash a Grunt until it's stunned (seeded dice: `seeded-dice.spec.ts` can pin a hit) and check its next round shows no action; Slowed shrinks a hero's highlighted move range.
+- E2E: Shield Bash a Grunt (seeded dice: `seeded-dice.spec.ts` can pin a hit), see "Stunned until the end of the round" in the feed and no action from it in the later ticks; Slowed shrinks a hero's highlighted move range.
 
-**Done when:** a Slowed hero's move highlight is 2 cells shorter, Haste adds a cell budget and an AP, a Weakened hero's AP counter shows one less, a Stunned Grunt loses the rest of its round and the next, a Rooted Brute can't walk, and the AI plans sensibly under all of them.
+**Done when:** a Slowed hero's move highlight is 2 cells shorter, Haste adds a cell budget and an AP, a Weakened hero's AP counter shows one less, a Grunt stunned by Shield Bash loses the rest of the round and acts again the next one, a longer stun skips the next round with the action bar saying so, a Rooted Brute can't walk, and the AI plans sensibly under all of them.
 
 ---
 
@@ -449,7 +453,7 @@ At the end of each PR, as the feature lands:
 
 - **Characterization tests pin feed text and dice order.** Defend → Guarded changes outcomes in any scripted test where a defender is attacked after its Defend. Run `ResolutionServiceCharacterizationTests` and the scenarios right after adding Guarded, before anything else, and decide case by case (update the expectation with a comment, or move the Defend so the test still pins what it was written for). Don't touch existing strings.
 - **Dice order.** Resist rolls (only when resist > 0) come in the Effects phase after the tick's attack and heal rolls; periodic dice at end of round, before nothing else rolls. Write it in the Scenarios README; ScriptedDice tests depend on it.
-- **Stun is strong.** With C5 + C6, Stunned duration 1 can cost a target most of two rounds. If it dominates in playtesting, ship Shield Bash with duration 0 (rest of the round only, rewarding an early queue slot), or make Stunned "skip the next planning phase" only. Both are content changes, not engine changes.
+- **Long stuns are strong.** With C5 + C6, a Stunned with duration 1 that lands in tick 1 costs the target most of two rounds. Shield Bash uses duration 0 for that reason; keep `duration ≥ 1` stuns rare and expensive (cooldown, AP, no-attack abilities that the target can resist), and retune in playtesting. It's a content change, not an engine change.
 - **AP and movement at planning vs resolution.** The client must use the server's effective values (from the DTO), not recompute them, or the UI will accept plans the server rejects. Every new plan rule goes into `contracts/plan-validation-cases.json` first.
 - **Auto lock-in for stunned combatants** touches the "everyone locked in" logic, which several paths share (lock-in, timer expiry, `ForceResolve`, mid-fight `AddMonster`). Grep for every reader of the locked-in set before PR 3, as 3B.3 did for the defeated set.
 - **End-of-round falls** are new: before this slice nobody could fall outside a tick. Check `DefeatedThisRound`, `CombatantDefeated` broadcasts, the playback end-of-round beat and `EncounterEndCheck` all handle a fall that happens after the last tick.
