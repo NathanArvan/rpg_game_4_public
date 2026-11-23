@@ -119,19 +119,21 @@ die + statModifier + weaponBonus + abilityModifier + conditionModifier (attacker
 
 *Alternative considered:* count the application round (duration 1 = rest of this round only). Rejected: round-level modifiers (AP, movement, stun at planning) would then need duration 2 to do anything, which reads wrong in tooltips.
 
-### C6. When modifiers take effect — to confirm
+### C6. When modifiers take effect ✅ Decided
 
-The tick model already says effects applied in tick *i* matter from tick *i+1* (`TICK_RESOLUTION.md`, "If a condition applied in Tick 1 blocks movement, their Tick 2 move fails").
+The tick model already says effects applied in tick *i* matter from tick *i+1* (`TICK_RESOLUTION.md`, "If a condition applied in Tick 1 blocks movement, their Tick 2 move fails"). **Decided 2026-11-23:** the round's **budgets** (AP and movement) only change at the next planning phase, so a condition never shrinks or grows a plan that's already locked in. Slowed and Hasted are even-handed: neither one wastes nor invalidates the current plan. Stunned and Rooted do take effect from the next tick: they're the deliberate way to disrupt a plan in progress.
 
 | Modifier | Takes effect | Why |
 |---|---|---|
 | `accuracy`, `dodge`, `damageDealt`, `damageTaken` | From the **next tick** after it's applied (it was applied in the Effects phase, after this tick's attacks) | Per roll; no planning involved |
 | `blocks` | From the **next tick**: remaining queued actions are blocked (C8) | Matches the tick doc |
-| `movement` | **At once** for the resolver (the remaining budget is recomputed for each move), and at planning from the next planning phase | The resolver already caps every move at the budget left, so a Slowed applied in tick 1 cuts a tick 3 move |
+| `movement` | From the **next planning phase** only | Like AP, it's a budget the plan was checked against. Changing it mid-round could only hurt (Slowed cuts a planned move), never help (Hasted's extra cells can't be used by a locked-in plan) |
 | `ap` | From the **next planning phase** only | AP is spent at planning (3B.2: no `currentAp`). Cutting a queue mid-round is what Stunned is for |
 | `periodic` | End of round (C11) | One place, one batch |
 
-At planning, the Api uses the conditions active **at the start of the planning phase**: these are the effective `MaxAp`, `MovementRange` and blocks sent to the client and checked by `PlanValidator`.
+At planning, the Api uses the conditions active **at the start of the planning phase**: these are the effective `MaxAp`, `MovementRange` and blocks sent to the client and checked by `PlanValidator`. The resolver uses the same values for the whole round (from the conditions in the `EncounterState` it's given), so planning and resolution always agree on the budgets.
+
+With C5, this means "Slowed, 1 round" applied in round 3 does nothing more in round 3 and gives round 4 two fewer movement cells; then it expires. (Its chip shows from the moment it lands, marked "from next round" until then.)
 
 ### C7. Defend grants Guarded — to confirm
 
@@ -371,7 +373,7 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 ### Rules
 - `ConditionMath.EffectiveMovementRange` / `EffectiveMaxAp` / `IsBlocked`.
 - **Resolver**:
-  - Movement budget: `cellsLeft = EffectiveMovementRange(now) − CellsMoved` for every move (plain moves and budget ability moves). Off-budget moves (Dash) aren't affected by `movement`, only by `blocks: move`.
+  - Movement budget: `cellsLeft = EffectiveMovementRange(round start) − CellsMoved` for every move (plain moves and budget ability moves). The effective range is computed once, in `RoundContext`, from the conditions in the input state; conditions applied during the round don't change it (C6). Off-budget moves (Dash) aren't affected by `movement`, only by `blocks: move`.
   - Queues are still cut to what the combatant could afford with its **effective AP at the start of the round** (the state's conditions), as a guard.
   - **Blocked actions** (C8): before each tick, a combatant with `blocks: all` (from a condition applied in an earlier tick, or at the start of the round) doesn't act; its action at this tick is reported in `TickOutcome.Blocked` (once per action). `blocks: move` blocks plain moves and ability move effects (the rest of the ability resolves). A blocked ability isn't recorded as used, so no cooldown starts.
 - **`PlanValidator.Validate`** takes the combatant's conditions (new optional parameter) and validates against effective AP and movement; rejects any non-empty plan when blocked from acting ("… is Stunned and can't act this round") and moves when Rooted ("… is Rooted and can't move"). Over-budget messages show the effective numbers.
@@ -406,7 +408,7 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 - Conditions preset: Bruiser gets Shield Bash, Skirmisher Haste, Scout Entangle; Grunts get Hamstring, the Goblin Shaman Sap.
 
 ### Tests
-- Scenarios: `condition-slowed-cuts-move.json`, `condition-slowed-mid-round-caps-later-move.json`, `condition-hasted-extends-move.json`, `condition-rooted-blocks-move-and-dash.json`, `condition-rooted-charge-strikes-if-adjacent.json`, `condition-stunned-tick1-voids-rest.json` (and no cooldown for a blocked ability), `rounds-stunned-skips-next-round.json`, `condition-weakened-queue-cut.json` (resolver guard), `ai-rooted-attacks-or-defends.json`, `ai-plans-with-reduced-ap.json`, `ai-uses-hamstring.json`; stretch: `ability-shove-blocked.json`, `ability-shove-moves-rooted.json`.
+- Scenarios: `condition-slowed-cuts-move.json`, `condition-slowed-mid-round-no-effect-this-round.json` (Hamstring in tick 1, the target's tick 3 move still uses its full budget; next round's budget is 2 smaller), `condition-hasted-extends-move.json`, `condition-hasted-mid-round-no-effect-this-round.json`, `condition-rooted-blocks-move-and-dash.json`, `condition-rooted-charge-strikes-if-adjacent.json`, `condition-stunned-tick1-voids-rest.json` (and no cooldown for a blocked ability), `rounds-stunned-skips-next-round.json`, `condition-weakened-queue-cut.json` (resolver guard), `ai-rooted-attacks-or-defends.json`, `ai-plans-with-reduced-ap.json`, `ai-uses-hamstring.json`; stretch: `ability-shove-blocked.json`, `ability-shove-moves-rooted.json`.
 - `PlanValidator` tests + shared cases.
 - Api: `PlanningServiceTests` (stunned rejected, auto-locked, Rooted move rejected), `RoundOrchestrator` / hub integration test: a round where the only human combatant is stunned resolves without input after the AI locks in.
 - Client: `plan-queue` specs, action bar stunned/rooted states, playback blocked cue.
@@ -434,7 +436,7 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 At the end of each PR, as the feature lands:
 - `CLAUDE.md`: Current Status; Rules description (conditions, `ConditionMath`, Defend → Guarded, end-of-round order, `ConditionResist`); Redis key table (`encounter:{encounterId}:conditions`); profile/preset fields (`conditionResist`); hub payload fields; components list (`ConditionChipsComponent`); migrations count; Quick Battle presets (Conditions).
 - `ROADMAP_STRATEGIC.md`: 3B.4 status block; replace the `condition_definitions` table with the JSON catalog (3B.4 database changes); replace "extend `character:live` conditions array" with the per-encounter hash (3B.4 Redis changes); resolution pipeline's end of round (periodic → falls → bleedout → expiry → cooldowns); damage pipeline gains `conditionModifier` and the target's damage taken; Combat Profile Values table (`ConditionResist` done); Design Decisions Log rows for C5, C6, C7, C9, C11.
-- `TICK_RESOLUTION.md`: Decision 2 table: `apply_condition` in Effects, Defend's Guarded at the start of its tick; end-of-round order; note that `movement` applies at once and `ap` from the next planning phase.
+- `TICK_RESOLUTION.md`: Decision 2 table: `apply_condition` in Effects, Defend's Guarded at the start of its tick; end-of-round order; note that `movement` and `ap` apply from the next planning phase (budgets never change mid-round), while blocks apply from the next tick.
 - `ABILITIES.md`: A5 table (`apply_condition` details), quirk 4 resolved, A13 gains the condition step.
 - `DESIGN_SPIKE.md` / `MAGIC_SYSTEM.md`: damage pipeline gains the condition slots.
 - `DEFEAT_AND_INCAPACITATION.md`: falling at end of round from periodic damage; falling clears conditions.
