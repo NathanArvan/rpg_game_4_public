@@ -475,6 +475,37 @@ describe('playback timeline: conditions (3B.4)', () => {
       expect(fired.feed).toContain("w's Brace hits g for 6 damage (HP: 10 → 4)");
     });
 
+    it('cues a Parry on the attacks beat: shield aura, its name, the line first, and the badge off (3B.6 PR 3)', () => {
+      const parry = makeReaction({ reactorId: 'k', triggerId: 'g', kind: 'prepared', abilityId: 'parry', abilityName: 'Parry', step: 0,
+        attack: null, feedText: 'k parries (+4 Dodge)' });
+      const [, beat] = buildTimeline(payload(tick(0, {
+        watching: [makeWatching({ combatantId: 'k', abilityName: 'Parry' })],
+        movements: [move('x', [[0, 0], [1, 0]])],
+        reactions: [parry],
+        attacks: [attack('g', 'k', false)],
+      })));
+      expect(beat.phase).toBe('attacks');
+      expect(beat.auras).toContain({ combatantId: 'k', kind: 'buff' });
+      expect(beat.floats).toContain({ combatantId: 'k', text: '⚡ PARRY', kind: 'reaction' });
+      expect(beat.floats).toContain({ combatantId: 'k', text: 'MISS', kind: 'miss' });
+      expect(beat.watching).toEqual({ k: null });
+      expect(beat.feed).toEqual(['k parries (+4 Dodge)', 'g → k']);
+    });
+
+    it('cues an Intercept on the interceptor, who takes the hit (3B.6 PR 3)', () => {
+      const intercept = makeReaction({ reactorId: 'b', triggerId: 'g', kind: 'prepared', abilityId: 'intercept', abilityName: 'Intercept',
+        step: 0, attack: null, feedText: "b intercepts g's attack on m" });
+      const [beat] = buildTimeline(payload(tick(0, {
+        reactions: [intercept],
+        attacks: [attack('g', 'b', true, 5, 15, { interceptedFromId: 'm' })],
+      })));
+      expect(beat.floats).toContain({ combatantId: 'b', text: '⚡ INTERCEPT', kind: 'reaction' });
+      expect(beat.floats).toContain({ combatantId: 'b', text: '-5', kind: 'damage' });
+      expect(beat.auras).not.toContain({ combatantId: 'b', kind: 'buff' });
+      expect(beat.hp).toEqual({ b: 15 });
+      expect(beat.feed).toEqual(['— Round 1 Resolution —', "b intercepts g's attack on m", 'g → b']);
+    });
+
     it('ends with an unused note that takes the badge off', () => {
       const beats = buildTimeline(makePayload({
         ticks: [tick(0, { watching: [makeWatching({ combatantId: 'w', abilityName: 'Overwatch' })] })],

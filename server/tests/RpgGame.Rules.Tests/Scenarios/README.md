@@ -119,6 +119,16 @@ falls, or from the tick after it's Stunned. One still watching at the end of the
 never set off other reactions. An `"ai"` combatant ends its queue with a ready prepared reaction (instead of a lone
 Defend or leftover AP) when an enemy could set it off this round.
 
+**Attack triggers (3B.6 PR 3).** Checked once per tick, after all movement and before any Attack-phase roll, on the
+tick's attacks after their reach checks (a wasted attack, e.g. out of reach or on someone already down, triggers
+nothing). Watchers in the order the scenario lists combatants. First `ally_attacked` (library: `intercept`, effect
+`{ "kind": "redirect" }`, `range` default melee reach): the first single-target attack (a basic attack, or a `combatant`
+ability) in plan order by an enemy on an ally within `range` of the watcher is made on the watcher instead, with the
+attacker's reach waived; the watcher's own Dodge and conditions apply, and the ability's conditions follow the attack.
+Multi-target and `auto` attacks aren't taken, and a redirected attack isn't taken again. Then `attacked` (library:
+`parry`, `attackKind: "melee"`, effect `{ "kind": "modify_incoming", "dodge": 4 }`), on the final targets: the watcher
+gets the extra Dodge against every matching attack on it this tick. Neither rolls dice. Both target `"self"`.
+
 Within each tick, all movement happens first, then all attacks, then effects. Damage
 within a tick is simultaneous, so two combatants can kill each other. Anyone who falls in
 a tick loses the rest of their queue. At 0 HP a combatant with `downs` goes **Downed**
@@ -133,7 +143,7 @@ stops; plan order then only decides who each one reports as its blocker.
 ### `abilities` (optional, 3B.3)
 
 A combatant's `abilities` list names abilities by id. They come from the **shared library**,
-[`library/abilities.json`](library/abilities.json) (Brace and Overwatch (prepared, 3B.6), Power Strike, Cleave, Twin Shot, Mend,
+[`library/abilities.json`](library/abilities.json) (Brace, Overwatch, Parry and Intercept (prepared, 3B.6), Power Strike, Cleave, Twin Shot, Mend,
 Charge, Dash, Firebolt), so most scenarios don't need an `abilities` block at all. The library holds test
 versions of the shipped abilities, owned by these tests: retuning the server's `abilities.json`
 doesn't change them, so scenarios keep testing mechanics rather than current balance.
@@ -305,13 +315,14 @@ When a check fails, the test lists every mismatch, for example
 The runner writes down everything a round did, one line per event. `expect.events` checks lines
 of it, and a failing scenario prints all of it, so a quick way to write expectations is to run
 the scenario once and copy the lines you care about. Within each tick (`t1`, `t2`, …) the order is:
-blocked actions, ability uses, prepared reactions starting to watch (3B.6), Defend's Guarded, moves, reactions (3B.6), falls mid-move, attacks, heals, effects, conditions from abilities; then the end of round (unused prepared reactions last).
+blocked actions, ability uses, prepared reactions starting to watch (3B.6), Defend's Guarded, moves, reactions at movement steps (3B.6), falls mid-move, attack triggers (3B.6 PR 3), attacks, heals, effects, conditions from abilities; then the end of round (unused prepared reactions last).
 
 | Event | Line |
 |---|---|
 | Ability use | `t1 Bruiser uses cleave on G1,G2`, `t1 Bruiser uses cleave (no_targets)`, `t2 Bruiser uses power_strike on G1 (on_cooldown)` |
 | Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2`; a move made by an ability adds its id: `t1 Scout moves to 9,5 (dash)`, `t1 Kestrel moves to 5,7 (charge) (blocked by Runner)`; a Disengage: `t1 Hero moves to 3,5 (disengage)` |
 | Reaction (3B.6) | `t1 s2 Goblin opportunity Hero: hit 4`, `t1 s1 Goblin opportunity Hero: miss`, `t1 s1 Goblin opportunity Hero: hit 5, Hero downed` (`s2` = movement step 2); a prepared one names its ability: `t1 s2 Bruiser brace Grunt: hit 6`; a mover it dropped: `t1 s1 Hero falls` |
+| Attack trigger (3B.6 PR 3) | Before the tick's attacks, no step: `t1 Kestrel parry Goblin: +4 dodge` (the first attacker), `t1 Brakka intercept Goblin: takes the attack on Mira`; the attack it took: `t1 Goblin melee Brakka (meant for Mira): hit 5` |
 | Prepared (3B.6 PR 2) | Watching starts (after the tick's ability uses): `t2 Bruiser prepares brace`; never fired (last line of the round): `end Scout: overwatch unused` |
 | Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`, `t1 A melee B: hit 3 (-4 conditions)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
 | Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |

@@ -518,7 +518,8 @@ public static class RoundResolver
             FinishingBlow: a.Finishing,
             AbilityId: a.AbilityId,
             MoveBonus: a.MoveBonus,
-            ConditionDamage: a.ConditionDamage);
+            ConditionDamage: a.ConditionDamage,
+            InterceptedFromId: a.InterceptedFromId);
 
     /// <summary>
     /// The mover for an ability's move effect (ABILITIES.md A5, A7), or null if it has none or the
@@ -589,7 +590,11 @@ public static class RoundResolver
 
     private sealed record PendingAttack(
         string AttackerId, string TargetId, ActionType Type, WastedReason Wasted, bool Hit, int Damage, bool IsCrit,
-        AttackRoll? Roll, bool Finishing, string? AbilityId, int MoveBonus, int ConditionDamage);
+        AttackRoll? Roll, bool Finishing, string? AbilityId, int MoveBonus, int ConditionDamage)
+    {
+        /// <summary>An Intercept made this attack on <see cref="TargetId"/> instead of this ally (3B.6 PR 3).</summary>
+        public string? InterceptedFromId { get; init; }
+    }
 
     private sealed record PendingHeal(
         string HealerId, string TargetId, string AbilityId, WastedReason Reason, int Amount, bool CanRevive)
@@ -598,15 +603,31 @@ public static class RoundResolver
     }
 
     /// <summary>
-    /// Attacks and heals (ABILITIES.md A8) are one batch: dice are rolled in plan order (then effect
-    /// order, then target order within an ability), and all damage and healing is netted together
-    /// before anyone falls or gets back up.
+    /// One attack of the tick's Attack phase, collected (with its reach check) before anything is rolled, so attack
+    /// triggers can change it first (3B.6 PR 3, SPRINT_3B6 X13).
+    /// </summary>
+    /// <param name="SingleTarget">A basic attack or a <see cref="TargetKind.Combatant"/> ability: Intercept can take it.</param>
+    private sealed record AttackIntent(
+        string AttackerId, string TargetId, ActionType Type, AttackKind Kind, DamageSpec Damage, int AccuracyBonus,
+        WastedReason Wasted, AbilityDefinition? Ability, int CellsMoved, bool SingleTarget)
+    {
+        public string? InterceptedFromId { get; init; }
+        public int ReactionDodge { get; init; }
+    }
+
+    /// <summary>One heal of the tick's Attack phase, collected before anything is rolled (rolls keep plan order).</summary>
+    private sealed record HealIntent(string HealerId, string TargetId, HealEffect Heal, WastedReason Wasted, string AbilityId);
+
+    /// <summary>
+    /// Attacks and heals (ABILITIES.md A8) are one batch: every attack and heal is collected first, with its reach
+    /// check, in plan order (then effect order, then target order within an ability); attack triggers run on that list
+    /// (3B.6 PR 3: Intercept, then Parry); then dice are rolled in the same order, and all damage and healing is netted
+    /// together before anyone falls or gets back up.
     /// </summary>
     private static (List<AttackOutcome>, List<HealOutcome>) ResolveAttackPhase(RoundContext round, int tick)
     {
-        var pending = new List<PendingAttack>();
-        var heals = new List<PendingHeal>();
-        var hpDeltas = new Dictionary<string, int>(); // targetId → net delta (negative = damage)
+        var items = new List<object>(); // AttackIntent | HealIntent, in roll order
+        round.TickRedirects.Clear();
 
         foreach (var (attackerId, queue) in round.Plans)
         {
@@ -621,8 +642,8 @@ public static class RoundResolver
                     // Ranged attacks have unlimited range in 3A; melee needs reach after movement.
                     var wasted = CheckAttackTarget(round, attackerId, action.TargetCombatantId ?? "",
                         targeting: null, range: melee ? round.Config.MeleeReach : null, WastedReason.OutOfMeleeReach);
-                    pending.Add(RollAttack(round, hpDeltas, attackerId, action.TargetCombatantId ?? "", action.Type,
-                        melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, accuracyBonus: 0, wasted, ability: null));
+                    items.Add(new AttackIntent(attackerId, action.TargetCombatantId ?? "", action.Type,
+                        melee ? AttackKind.Melee : AttackKind.Ranged, DamageSpec.Weapon, 0, wasted, null, 0, SingleTarget: true));
                     break;
                 }
                 case ActionType.Ability when round.TickAbilities.TryGetValue(attackerId, out var active):
@@ -646,25 +667,41 @@ public static class RoundResolver
                                 {
                                     var wasted = CheckAttackTarget(round, attackerId, targetId,
                                         ability.Targeting, reach, WastedReason.OutOfRange);
-                                    var rolled = RollAttack(round, hpDeltas, attackerId, targetId, type,
-                                        attack.Roll, attack.Damage, attack.AccuracyBonus, wasted, ability, moved);
-                                    pending.Add(rolled);
-                                    if (rolled.Hit)
-                                        (round.TickHits.TryGetValue(attackerId, out var hits) ? hits : round.TickHits[attackerId] = []).Add(targetId);
+                                    items.Add(new AttackIntent(attackerId, targetId, type, attack.Roll, attack.Damage,
+                                        attack.AccuracyBonus, wasted, ability, moved,
+                                        SingleTarget: ability.Targeting.Kind == TargetKind.Combatant));
                                 }
                                 break;
                             case HealEffect heal:
                                 foreach (var targetId in targets)
-                                {
-                                    var wasted = CheckHealTarget(round, attackerId, targetId, ability.Targeting, heal);
-                                    heals.Add(RollHeal(round, hpDeltas, attackerId, targetId, heal, wasted, ability.Id));
-                                }
+                                    items.Add(new HealIntent(attackerId, targetId, heal,
+                                        CheckHealTarget(round, attackerId, targetId, ability.Targeting, heal), ability.Id));
                                 break;
                         }
                     }
                     break;
                 }
             }
+        }
+
+        ResolveAttackTriggers(round, items);
+
+        var pending = new List<PendingAttack>();
+        var heals = new List<PendingHeal>();
+        var hpDeltas = new Dictionary<string, int>(); // targetId → net delta (negative = damage)
+        foreach (var item in items)
+        {
+            if (item is HealIntent h)
+            {
+                heals.Add(RollHeal(round, hpDeltas, h.HealerId, h.TargetId, h.Heal, h.Wasted, h.AbilityId));
+                continue;
+            }
+            var a = (AttackIntent)item;
+            var rolled = RollAttack(round, hpDeltas, a.AttackerId, a.TargetId, a.Type, a.Kind, a.Damage, a.AccuracyBonus,
+                a.Wasted, a.Ability, a.CellsMoved, reactionDodge: a.ReactionDodge) with { InterceptedFromId = a.InterceptedFromId };
+            pending.Add(rolled);
+            if (a.Ability is not null && rolled.Hit)
+                (round.TickHits.TryGetValue(a.AttackerId, out var hits) ? hits : round.TickHits[a.AttackerId] = []).Add(a.TargetId);
         }
 
         // Snapshot, then apply all deltas as one netted batch (DESIGN_SPIKE Decision 3). Anyone
@@ -719,6 +756,78 @@ public static class RoundResolver
             TargetStatus: round.Status.GetValueOrDefault(h.TargetId, CombatantStatus.Standing))).ToList();
 
         return (attackOutcomes, healOutcomes);
+    }
+
+    /// <summary>
+    /// Attack triggers (3B.6 PR 3, SPRINT_3B6 X13), after the tick's movement and before any Attack-phase roll, on the
+    /// collected attacks (a wasted one, e.g. out of reach, triggers nothing). Watchers in combatant order.
+    /// <list type="number">
+    /// <item><see cref="TriggerKind.AllyAttacked"/> with a <see cref="RedirectEffect"/> (Intercept): the first
+    /// single-target attack in plan order by an enemy on an ally within the trigger's range is made on the watcher instead
+    /// (reach waived). A redirected attack is no longer aimed at an ally, so no second Intercept takes it. An ability
+    /// attack's targets for the Effects phase follow it.</item>
+    /// <item><see cref="TriggerKind.Attacked"/> with a <see cref="ModifyIncomingEffect"/> (Parry), on the final targets:
+    /// the watcher gets the extra Dodge against every matching attack on it this tick.</item>
+    /// </list>
+    /// A watcher that fires stops watching (X9) and is reported with step 0 and no attack.
+    /// </summary>
+    private static void ResolveAttackTriggers(RoundContext round, List<object> items)
+    {
+        if (round.Watching.Count == 0) return;
+        var watchers = round.State.Combatants.Where(c => round.Watching.ContainsKey(c.Id)).ToList();
+
+        foreach (var watcher in watchers)
+        {
+            var watch = round.Watching[watcher.Id];
+            if (watch.Trigger is not { Kind: TriggerKind.AllyAttacked } trigger || !watch.Effects.OfType<RedirectEffect>().Any())
+                continue;
+            int range = trigger.Range ?? round.Config.MeleeReach;
+            int index = items.FindIndex(i => i is AttackIntent
+            {
+                Wasted: WastedReason.None, SingleTarget: true, InterceptedFromId: null,
+            } a
+                && a.TargetId != watcher.Id
+                && Relations.Between(watcher, round.Combatants[a.TargetId]) == Relation.Ally
+                && Relations.Between(watcher, round.Combatants[a.AttackerId]) == Relation.Enemy
+                && round.WithinRange(watcher.Id, a.TargetId, range));
+            if (index < 0) continue;
+
+            var attack = (AttackIntent)items[index];
+            items[index] = attack with { TargetId = watcher.Id, InterceptedFromId = attack.TargetId };
+            if (attack.Ability is not null)
+            {
+                // The ability's other effects (a condition on a hit) follow the attack to the interceptor.
+                round.TickTargets[attack.AttackerId] = [watcher.Id];
+                round.TickRedirects[attack.AttackerId] = watcher.Id;
+            }
+            round.Watching.Remove(watcher.Id);
+            round.TickReactions.Add(new ReactionOutcome(watcher.Id, attack.AttackerId, ReactionKind.Prepared, watch.Id, 0, null)
+            {
+                InterceptedFromId = attack.TargetId,
+            });
+        }
+
+        foreach (var watcher in watchers)
+        {
+            if (!round.Watching.TryGetValue(watcher.Id, out var watch)
+                || watch.Trigger is not { Kind: TriggerKind.Attacked } trigger)
+                continue;
+            int dodge = watch.Effects.OfType<ModifyIncomingEffect>().Sum(e => e.Dodge);
+            var matching = items
+                .Select((item, i) => (Item: item as AttackIntent, Index: i))
+                .Where(x => x.Item is { Wasted: WastedReason.None } a && a.TargetId == watcher.Id
+                            && (trigger.AttackKind is null || a.Kind == trigger.AttackKind))
+                .ToList();
+            if (matching.Count == 0) continue;
+
+            foreach (var (a, i) in matching)
+                items[i] = a! with { ReactionDodge = a.ReactionDodge + dodge };
+            round.Watching.Remove(watcher.Id);
+            round.TickReactions.Add(new ReactionOutcome(watcher.Id, matching[0].Item!.AttackerId, ReactionKind.Prepared, watch.Id, 0, null)
+            {
+                ReactionDodge = dodge,
+            });
+        }
     }
 
     /// <summary>
@@ -826,10 +935,11 @@ public static class RoundResolver
     /// <param name="cellsMoved">Cells the same activation's move effect covered this tick (for <see cref="DamageSpec.BonusIfMoved"/>).</param>
     /// <param name="ability">The ability making the attack, or null for a basic attack (its tags filter damage-taken modifiers).</param>
     /// <param name="tags">Source tags to use instead of the ability's or the attack kind's (opportunity attacks).</param>
+    /// <param name="reactionDodge">Extra Dodge for the target from its prepared reaction (Parry, 3B.6 PR 3).</param>
     private static PendingAttack RollAttack(
         RoundContext round, Dictionary<string, int> hpDeltas, string attackerId, string targetId, ActionType type,
         AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, AbilityDefinition? ability, int cellsMoved = 0,
-        IReadOnlyCollection<string>? tags = null)
+        IReadOnlyCollection<string>? tags = null, int reactionDodge = 0)
     {
         bool hit = false, isCrit = false, finishing = false;
         int amount = 0, moveBonus = 0, conditionDamage = 0;
@@ -844,7 +954,7 @@ public static class RoundResolver
                 round.Conditions[attackerId], round.Conditions[targetId], tags ?? ConditionMath.AttackTags(ability, kind));
             (hit, amount, isCrit, roll, moveBonus, conditionDamage) = ComputeAttack(
                 round.Combatants[attackerId], round.Combatants[targetId], kind, damage, accuracyBonus, round.Dice,
-                mods, rollDamage: !finishing, cellsMoved);
+                mods, rollDamage: !finishing, cellsMoved, reactionDodge);
             if (hit && !finishing)
                 hpDeltas[targetId] = hpDeltas.GetValueOrDefault(targetId, 0) - amount;
         }
@@ -864,7 +974,7 @@ public static class RoundResolver
     /// ConditionDamage is how much conditions changed the damage, signed (SPRINT_3B4 C4).</returns>
     private static (bool Hit, int Damage, bool IsCrit, AttackRoll? Roll, int MoveBonus, int ConditionDamage) ComputeAttack(
         CombatantState attacker, CombatantState target, AttackKind kind, DamageSpec spec, int accuracyBonus,
-        IDiceRoller dice, AttackConditions conditions, bool rollDamage = true, int cellsMoved = 0)
+        IDiceRoller dice, AttackConditions conditions, bool rollDamage = true, int cellsMoved = 0, int reactionDodge = 0)
     {
         AttackRoll? roll = null;
         if (kind != AttackKind.None)
@@ -873,10 +983,11 @@ public static class RoundResolver
             int conditionDodge = ConditionMath.DodgeBonus(conditions.Target, kind);
             int accuracy = (kind == AttackKind.Melee ? attacker.Profile.MeleeAccuracy : attacker.Profile.RangedAccuracy)
                 + accuracyBonus + conditionAccuracy;
-            roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge + conditionDodge)
+            roll = new AttackRoll(dice.RollD20(), accuracy, target.Profile.Dodge + conditionDodge + reactionDodge)
             {
                 ConditionAccuracy = conditionAccuracy,
                 ConditionDodge = conditionDodge,
+                ReactionDodge = reactionDodge,
             };
             if (roll.Total < roll.TargetDodge)
                 return (false, 0, false, roll, 0, 0);
@@ -946,7 +1057,9 @@ public static class RoundResolver
         {
             foreach (var targetId in targets)
             {
-                var wasted = CheckConditionTarget(round, casterId, targetId, ability.Targeting);
+                // An attack an Intercept took (3B.6 PR 3): its condition follows it, with the range waived like the attack's.
+                bool intercepted = round.TickRedirects.GetValueOrDefault(casterId) == targetId;
+                var wasted = CheckConditionTarget(round, casterId, targetId, ability.Targeting, waiveRange: intercepted);
                 if (wasted == WastedReason.None && effect.RequiresHit && hits?.Contains(targetId) != true)
                     wasted = WastedReason.Missed;
                 if (wasted != WastedReason.None)
@@ -981,7 +1094,8 @@ public static class RoundResolver
     /// the target exists → it's on the side the targeting allows → it's standing (conditions never go on
     /// someone who is down, SPRINT_3B4 C10) → it's within range of the caster (the caster itself always is).
     /// </summary>
-    private static WastedReason CheckConditionTarget(RoundContext round, string casterId, string targetId, Targeting targeting)
+    private static WastedReason CheckConditionTarget(
+        RoundContext round, string casterId, string targetId, Targeting targeting, bool waiveRange = false)
     {
         if (!round.Combatants.TryGetValue(targetId, out var target))
             return WastedReason.InvalidTarget;
@@ -991,7 +1105,7 @@ public static class RoundResolver
             return WastedReason.InvalidTargetType;
         if (round.IsOut(targetId))
             return WastedReason.TargetDefeated;
-        if (!round.WithinRange(casterId, targetId, targeting.Range))
+        if (!waiveRange && !round.WithinRange(casterId, targetId, targeting.Range))
             return WastedReason.OutOfRange;
         return WastedReason.None;
     }
@@ -1273,6 +1387,9 @@ public static class RoundResolver
 
         /// <summary>The targets each ability found in the current tick's Attack phase, by caster.</summary>
         public Dictionary<string, IReadOnlyList<string>> TickTargets { get; } = [];
+
+        /// <summary>Abilities whose attack an Intercept took in the current tick: caster → the interceptor (3B.6 PR 3).</summary>
+        public Dictionary<string, string> TickRedirects { get; } = [];
 
         /// <summary>The targets each ability's attacks hit in the current tick, by caster (for conditions that need a hit).</summary>
         public Dictionary<string, HashSet<string>> TickHits { get; } = [];

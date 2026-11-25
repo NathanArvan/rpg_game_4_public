@@ -142,19 +142,22 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
-    public async Task Start_ReactionsPreset_GivesOutBraceAndOverwatch()
+    public async Task Start_ReactionsPreset_GivesOutPreparedReactions()
     {
         // 3B.6 PR 2: the Bruiser and the Brute Brace, the Scout and the Goblin Archer Overwatch; snapshots carry the trigger.
+        // PR 3: the Bruiser also Intercepts, the Skirmisher and the Brute Parry.
         await Service().StartAsync("user-1", "reactions");
 
         var combatants = await _db.EncounterCombatants.ToListAsync();
         string[] Prepared(string name) => combatants.Single(c => c.CharacterName == name).Profile!.Abilities
             .Where(a => a.Activation == "prepared").Select(a => a.Id).ToArray();
-        Assert.Equal(["brace"], Prepared("Bruiser"));
-        Assert.Equal(["brace"], Prepared("Brute"));
+        Assert.Equal(["brace", "intercept"], Prepared("Bruiser"));
+        Assert.Equal(["brace", "parry"], Prepared("Brute"));
         Assert.Equal(["overwatch"], Prepared("Scout"));
         Assert.Equal(["overwatch"], Prepared("Goblin Archer"));
-        Assert.Empty(Prepared("Skirmisher"));
+        Assert.Equal(["parry"], Prepared("Skirmisher"));
+        var parry = combatants.Single(c => c.CharacterName == "Skirmisher").Profile!.Abilities.Single(a => a.Id == "parry");
+        Assert.Equal(("attacked", "melee", 4), (parry.Trigger!.Kind, parry.Trigger.AttackKind, parry.Effects.Single().Dodge));
         var overwatch = combatants.Single(c => c.CharacterName == "Scout").Profile!.Abilities.Single(a => a.Id == "overwatch");
         Assert.Equal(("enemy_moves_within", 6), (overwatch.Trigger!.Kind, overwatch.Trigger.Range));
         Assert.Equal(2, combatants.Single(c => c.CharacterName == "Goblin Archer").Profile!.RangedAccuracy);

@@ -330,6 +330,8 @@ public partial class ScenarioTests
                 e.Duration ?? 0,
                 // Like the server's catalog: needs a hit when the ability also attacks.
                 e.RequiresHit ?? (a.Effects ?? []).Any(x => x.Kind == "attack")),
+            "modify_incoming" => new ModifyIncomingEffect(e.Dodge ?? 0),
+            "redirect" => new RedirectEffect(),
             _ => throw new InvalidDataException($"{where}: unknown effect kind '{e.Kind}'"),
         }).ToList();
         var activation = Enum.Parse<AbilityActivation>(a.Activation ?? "active", ignoreCase: true);
@@ -525,7 +527,15 @@ public partial class ScenarioTests
                     : m.Path.Count <= 1 ? $"{at} {m.CombatantId} stays at {end}{by}"
                     : $"{at} {m.CombatantId} moves to {end}{by}");
             }
-            foreach (var r in t.Reactions)
+            foreach (var r in t.Reactions.Where(r => r.Step == 0))
+            {
+                // Attack triggers (3B.6 PR 3) fire before the Attack phase rolls: no step, no attack of their own.
+                var result = r.InterceptedFromId is { } from ? $"takes the attack on {from}"
+                    : r.ReactionDodge != 0 ? $"+{r.ReactionDodge} dodge"
+                    : "fires";
+                log.Add($"{at} {r.ReactorId} {r.AbilityId} {r.TriggerId}: {result}");
+            }
+            foreach (var r in t.Reactions.Where(r => r.Step > 0))
             {
                 var what = r.Kind == ReactionKind.Opportunity ? "opportunity" : r.AbilityId;
                 var a = r.Attack;
@@ -540,7 +550,8 @@ public partial class ScenarioTests
                 var what = a.AbilityId ?? (a.AttackType == ActionType.RangedAttack ? "ranged" : "melee");
                 var result = AttackResult(a);
                 var fell = a.TargetDefeated ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
-                log.Add($"{at} {a.AttackerId} {what} {a.TargetId}: {result}{fell}");
+                var meant = a.InterceptedFromId is { } from ? $" (meant for {from})" : "";
+                log.Add($"{at} {a.AttackerId} {what} {a.TargetId}{meant}: {result}{fell}");
             }
             foreach (var h in t.Heals)
             {
@@ -739,6 +750,8 @@ public partial class ScenarioTests
         public string? Condition { get; set; }
         public int? Duration { get; set; }
         public bool? RequiresHit { get; set; }
+        /// <summary>modify_incoming: extra Dodge against the attacks that set it off (3B.6 PR 3, Parry).</summary>
+        public int? Dodge { get; set; }
     }
 
     private sealed class MovedBonusDto

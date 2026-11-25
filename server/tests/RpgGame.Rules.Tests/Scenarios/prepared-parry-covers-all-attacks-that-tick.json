@@ -1,0 +1,22 @@
+{
+  // SPRINT_3B6 X13: Parry fires once and covers every melee attack on the watcher in that tick (they're simultaneous),
+  // but it's spent: the goblin's second swing, in tick 2, faces the plain Dodge 10.
+  "description": "Parry covers both goblins' swings in its tick, not the next tick's",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [5, 5], "abilities": ["parry"] },
+    { "id": "G1",      "side": "enemy", "at": [6, 5] },
+    { "id": "G2",      "side": "enemy", "at": [6, 6] }
+  ],
+  "plans": { "Kestrel": ["ability parry"], "G1": ["melee Kestrel", "melee Kestrel"], "G2": ["melee Kestrel"] },
+  "dice": [12, 13, 12, 5],               // tick 1: 12 and 13 miss Dodge 14; tick 2: 12 hits Dodge 10, 5 damage
+  "expect": {
+    "hp": { "Kestrel": 15 },
+    "hits": [{ "tick": 2, "attacker": "G1" }],
+    "events": [
+      "t1 Kestrel parry G1: +4 dodge",
+      "t1 G1 melee Kestrel: miss",
+      "t1 G2 melee Kestrel: miss",
+      "t2 G1 melee Kestrel: hit 5"
+    ]
+  }
+}

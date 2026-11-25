@@ -137,6 +137,19 @@
       "trigger": { "kind": "enemy_moves_within", "range": 6 },
       "target": { "kind": "trigger" },
       "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
+    },
+    {
+      // Attack triggers (3B.6 PR 3): checked after the tick's movement, before any Attack-phase roll.
+      "id": "parry", "name": "Parry", "activation": "prepared", "ap": 1, "cooldown": 1, "tags": ["melee"],
+      "trigger": { "kind": "attacked", "attackKind": "melee" },
+      "target": { "kind": "self" },
+      "effects": [ { "kind": "modify_incoming", "dodge": 4 } ]
+    },
+    {
+      "id": "intercept", "name": "Intercept", "activation": "prepared", "ap": 1, "cooldown": 2, "tags": ["melee"],
+      "trigger": { "kind": "ally_attacked", "range": 1 },
+      "target": { "kind": "self" },
+      "effects": [ { "kind": "redirect" } ]
     }
   ]
 }

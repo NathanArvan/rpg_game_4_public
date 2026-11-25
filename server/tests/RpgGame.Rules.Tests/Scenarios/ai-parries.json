@@ -1,0 +1,16 @@
+{
+  // SPRINT_3B6 X15 (PR 3): an AI next to an enemy attacks with what its AP covers and ends its queue with a ready Parry
+  // instead of leaving AP unused. The hero's swing in tick 2 meets Dodge 10 + 4.
+  "description": "AI: a Brute in melee attacks, then parries",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "maxAp": 3, "at": [6, 5], "abilities": ["parry"] }
+  ],
+  "plans": { "Hero": ["defend", "melee Brute"], "Brute": ["ai"] },
+  "dice": [5, 11],                       // tick 1: the Brute misses Dodge 13; tick 2: 11 misses Dodge 14
+  "expect": {
+    "plans": { "Brute": ["melee Hero", "ability parry"] },
+    "hp": { "Brute": 20 },
+    "events": ["t2 Brute prepares parry", "t2 Brute parry Hero: +4 dodge", "t2 Hero melee Brute: miss"]
+  }
+}

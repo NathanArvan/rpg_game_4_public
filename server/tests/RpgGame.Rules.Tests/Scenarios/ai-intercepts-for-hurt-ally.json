@@ -1,0 +1,21 @@
+{
+  // SPRINT_3B6 X15 (PR 3): an AI ends its queue with Intercept when an ally next to where it ends up is below half HP and
+  // has an enemy next to it. The Guard walks up to the hero, swings, and then takes the hero's blow meant for the Shaman.
+  "description": "AI: a Guard intercepts for a hurt Shaman",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [7, 5] },
+    { "id": "Guard",  "side": "enemy", "at": [5, 5], "abilities": ["intercept"] },
+    { "id": "Shaman", "side": "enemy", "hp": 5, "maxHp": 20, "at": [6, 5] }
+  ],
+  "plans": { "Hero": ["defend", "defend", "melee Shaman"], "Guard": ["ai"] },
+  "dice": [5, 12, 4],                    // tick 2: the Guard misses Dodge 13; tick 3: the hero hits the Guard for 4
+  "expect": {
+    "plans": { "Guard": ["move 7,4", "melee Hero", "ability intercept"] },
+    "hp": { "Guard": 16, "Shaman": 5 },
+    "events": [
+      "t3 Guard prepares intercept",
+      "t3 Guard intercept Hero: takes the attack on Shaman",
+      "t3 Hero melee Guard (meant for Shaman): hit 4"
+    ]
+  }
+}

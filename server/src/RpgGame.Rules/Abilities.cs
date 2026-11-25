@@ -70,9 +70,12 @@ public enum TriggerKind
     EnemyEntersReach,
     /// <summary>An enemy takes a movement step that ends within <see cref="ReactionTrigger.Range"/> of the watcher (Overwatch).</summary>
     EnemyMovesWithin,
-    /// <summary>The watcher is the target of an attack this tick (Parry; acted on from 3B.6 PR 3).</summary>
+    /// <summary>The watcher is the target of an attack this tick, checked before the Attack phase rolls (Parry, 3B.6 PR 3).</summary>
     Attacked,
-    /// <summary>An ally within <see cref="ReactionTrigger.Range"/> is the target of an attack (Intercept; acted on from 3B.6 PR 3).</summary>
+    /// <summary>
+    /// An ally within <see cref="ReactionTrigger.Range"/> (default melee reach) is the target of a single-target attack by an
+    /// enemy, checked before the Attack phase rolls (Intercept, 3B.6 PR 3).
+    /// </summary>
     AllyAttacked,
 }
 
@@ -178,6 +181,21 @@ public sealed record MoveEffect(
 /// <param name="Duration">Full rounds it lasts after the current one (C5): 0 = until the end of this round.</param>
 /// <param name="RequiresHit">Only targets that the same activation's attack hit get it.</param>
 public sealed record ApplyConditionEffect(ConditionDefinition Condition, int Duration, bool RequiresHit) : AbilityEffect;
+
+/// <summary>
+/// A prepared reaction's defence against the attacks that set it off (3B.6 PR 3, SPRINT_3B6 X13, Parry): once its
+/// <see cref="TriggerKind.Attacked"/> trigger fires, the watcher's Dodge is raised by <paramref name="Dodge"/> against every
+/// matching attack on it in that tick's Attack phase (they're simultaneous, so it covers the whole batch).
+/// </summary>
+public sealed record ModifyIncomingEffect(int Dodge) : AbilityEffect;
+
+/// <summary>
+/// A prepared reaction that takes an attack meant for an ally (3B.6 PR 3, SPRINT_3B6 X13, Intercept): once its
+/// <see cref="TriggerKind.AllyAttacked"/> trigger fires, the first single-target attack on an ally in range is made
+/// against the watcher instead. The attacker's reach and range checks are waived; the watcher's own Dodge and
+/// conditions apply.
+/// </summary>
+public sealed record RedirectEffect : AbilityEffect;
 
 /// <param name="Cooldown">Rounds the ability can't be planned after the round it was used (0 = none).</param>
 /// <param name="Tags">Mechanic tags (melee, ranged, spell, …) and resonance tags (flame, holy, …).</param>

@@ -316,3 +316,30 @@ test('Reactions: Brace ends the queue and goes unused; Overwatch shoots the Gobl
   await expect(actionBar.locator('.ability-btn', { hasText: 'Brace' })).toBeDisabled();
 });
 
+
+test('Reactions (3B.6 PR 3): the Bruiser intercepts the swing meant for the Skirmisher; the Brute readies Parry', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Reactions');
+
+  // The Bruiser (9,10) prepares Intercept: an attack trigger, queued at once like Brace.
+  const actionBar = page.locator('.action-bar');
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  const intercept = actionBar.locator('.ability-btn', { hasText: 'Intercept' });
+  await expect(intercept).toHaveAttribute('title', /Reacts when an ally within 1 cell is attacked/);
+  await intercept.click();
+  await expect(page.locator('.planned-action-display')).toContainText('Intercept');
+
+  // The Skirmisher steps from (11,10) to (10,10), next to the Bruiser and still next to Goblin 1 (no opportunity attack).
+  // Goblin 1's swing at her in tick 1 is the first attack on an ally next to the Bruiser, so he takes it.
+  await tokenAt(page, 11, 10).click();
+  await expect(actionBar).toContainText('Planning for Skirmisher');
+  await cell(page, 10, 10).click();
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  for (const line of ['Bruiser prepares Intercept', "Bruiser intercepts Goblin 1's attack on Skirmisher", 'Brute prepares Parry'])
+    await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1, { timeout: 20_000 });
+  // The intercepted attack names the Bruiser as its target.
+  await expect(feedEntries(page).filter({ hasText: /Goblin 1 (strikes|swings at) Bruiser/ }).first()).toBeVisible();
+  await expect(feedEntries(page).filter({ hasText: /Goblin 1 (strikes|swings at) Skirmisher/ })).toHaveCount(1); // only its 2nd swing
+  await expectPlanningRound(page, 2, 20_000);
+});

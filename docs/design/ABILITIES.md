@@ -81,7 +81,7 @@ AbilityDefinition
   effects[]         ordered list of Effect (A5)
 ```
 
-> 3B.6 PR 2 (`SPRINT_3B6.md` X6–X9): a **prepared** ability is queued as the last action of a queue, with no target. From the start of its tick to the end of the round it watches for its `trigger` and resolves its effects (only `attack` so far) on whoever set it off, the moment that happens; its cooldown starts when its tick is reached, whether or not it fires. Shipped: Brace, Overwatch.
+> 3B.6 PR 2 (`SPRINT_3B6.md` X6–X9): a **prepared** ability is queued as the last action of a queue, with no target. From the start of its tick to the end of the round it watches for its `trigger` and resolves its effects on whoever set it off, the moment that happens; its cooldown starts when its tick is reached, whether or not it fires. Shipped: Brace, Overwatch. PR 3: attack triggers (`attacked`, optional `attackKind`; `ally_attacked`, `range` default melee reach) target `"self"` and resolve one `modify_incoming` (Parry) or `redirect` (Intercept) effect after the tick's movement and before any attack rolls; movement triggers resolve `attack` effects only.
 
 In Rules these are immutable records. `AbilityEffect` is an abstract record with one sealed subtype per effect kind (`MoveEffect`, `AttackEffect`, `HealEffect`, `StabilizeEffect`, later `ApplyConditionEffect`, `PushEffect`, …). In JSON the effect kind is a `"kind"` field. Parsing lives in the Api, like profiles: Rules has no serialization.
 
@@ -133,6 +133,8 @@ Each effect kind has a fixed phase:
 | `heal` | Attacks | Positive HP delta in the same netting batch as damage (A8) |
 | `stabilize` | Effects | Same as the Stabilize action (3B.5) |
 | `push` (stretch) | Attacks, after damage | Pushes the target `cells` straight away from the caster. Stops at the first blocked or off-grid cell. Resolved in plan order after the tick's HP is applied |
+| `modify_incoming` (3B.6 PR 3) | Before the Attack phase rolls | Prepared `attacked` reactions only (Parry): `dodge` added to the watcher's Dodge against every matching attack on it in the tick it fires (`AttackRoll.ReactionDodge`) |
+| `redirect` (3B.6 PR 3) | Before the Attack phase rolls | Prepared `ally_attacked` reactions only (Intercept): the first single-target attack by an enemy on an ally in range is made on the watcher instead (reach waived; the ability's conditions follow it) |
 | `apply_condition` (3B.4) | Effects | Puts a condition (copied from `conditions.json`) on each target for `duration` full rounds after the current one; `requiresHit` (default: the ability attacks) limits it to targets the same activation hit. Counts from the next tick. See `SPRINT_3B4.md` |
 
 When an ability is at queue position *i*, its effects all run in **tick *i***, each in its own phase. A Charge (`move` to target + `attack`) moves in tick *i*'s Movement phase together with everyone else's moves (lockstep, Speed tiebreaks), then attacks in tick *i*'s Attack phase against post-movement positions. If the target ran out of reach, the attack is wasted (same as melee today). This is the "single action with multi-phase resolution" that TICK_RESOLUTION D2 and its summary call for.

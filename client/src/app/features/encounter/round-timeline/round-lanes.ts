@@ -262,6 +262,7 @@ function withWatching(payload: ResolutionPayload, combatantId: string, slots: La
       next.reacted = true;
       next.detail = `${s.detail} ⚡ ` + fired.map(r => r.attack
         ? `${watch.abilityName} (step ${r.step}): ${attackDetail(r.reactorName, r.attack)}`
+        : r.step === 0 ? `${r.feedText}.` // an attack trigger (3B.6 PR 3): before the attacks roll
         : `${watch.abilityName} fires (step ${r.step}).`).join(' ');
     } else if (i > start && s.kind === 'idle') {
       next.detail = `${s.detail.replace(/ \(queue used up\)\.$/, '.')} 👁 Still watching with ${watch.abilityName}.`;
@@ -273,7 +274,10 @@ function withWatching(payload: ResolutionPayload, combatantId: string, slots: La
 
 /** Marks a slot whose combatant drew reactions this tick (3B.6) and adds their lines, with the rolls, to its detail. */
 function withReactions(reactions: ReactionResult[], combatantId: string, s: LaneSlot): LaneSlot {
-  const mine = reactions.filter(r => r.triggerId === combatantId);
+  // An attack trigger (3B.6 PR 3, step 0) answered this combatant's attack: said in the detail, but its move drew nothing.
+  const answered = reactions.filter(r => r.triggerId === combatantId && r.step === 0);
+  if (answered.length > 0) s = { ...s, detail: `${s.detail} ${answered.map(r => `${r.feedText}.`).join(' ')}` };
+  const mine = reactions.filter(r => r.triggerId === combatantId && r.step > 0);
   if (mine.length === 0) return s;
   const lines = mine.map(r => {
     const what = r.kind === 'opportunity' ? 'Opportunity attack' : r.abilityName ?? 'Reaction';
@@ -321,6 +325,8 @@ export function conditionDetail(c: ConditionResult): string {
 }
 
 const fromConditions = (n: number) => n === 0 ? '' : ` (${n > 0 ? '+' : ''}${n} from conditions)`;
+/** The part of a target's dodge from a prepared reaction (3B.6 PR 3): " (+4 Parry)". */
+const fromParry = (n: number) => n === 0 ? '' : ` (+${n} Parry)`;
 
 /**
  * "Zara Forge → Goblin 1: rolled 13 + 3 = 16 vs dodge 12, hit for 5 (Goblin 1 now 12 HP)." Parts that
@@ -329,14 +335,16 @@ const fromConditions = (n: number) => n === 0 ? '' : ` (${n > 0 ? '+' : ''}${n} 
 export function attackDetail(name: string, a: AttackResult): string {
   const r = a.roll;
   const roll = r
-    ? `rolled ${r.d20} + ${r.accuracy}${fromConditions(r.conditionAccuracy ?? 0)} = ${r.d20 + r.accuracy} vs dodge ${r.targetDodge}${fromConditions(r.conditionDodge ?? 0)}, `
+    ? `rolled ${r.d20} + ${r.accuracy}${fromConditions(r.conditionAccuracy ?? 0)} = ${r.d20 + r.accuracy} vs dodge ${r.targetDodge}${fromConditions(r.conditionDodge ?? 0)}${fromParry(r.reactionDodge ?? 0)}, `
     : '';
-  if (!a.hit) return `${name} → ${a.targetName}: ${roll}miss.`;
-  if (a.finishingBlow) return `${name} → ${a.targetName}: ${roll}hit, finishing them off.`;
+  // An attack an Intercept took (3B.6 PR 3) names the interceptor as its target.
+  const target = a.interceptedFromId ? `${a.targetName} (intercepted)` : a.targetName;
+  if (!a.hit) return `${name} → ${target}: ${roll}miss.`;
+  if (a.finishingBlow) return `${name} → ${target}: ${roll}hit, finishing them off.`;
   const after = !a.targetDefeated ? `${a.targetName} now ${Math.max(0, a.targetNewHp)} HP`
     : a.targetStatus === 'downed' ? `${a.targetName} goes down` : `${a.targetName} is defeated`;
   const condition = a.conditionDamage ?? 0;
   const bonus = (a.moveBonus > 0 ? `, incl. +${a.moveBonus} from moving` : '')
     + (condition !== 0 ? `, incl. ${condition > 0 ? '+' : ''}${condition} from conditions` : '');
-  return `${name} → ${a.targetName}: ${roll}hit for ${a.damage}${bonus} (${after}).`;
+  return `${name} → ${target}: ${roll}hit for ${a.damage}${bonus} (${after}).`;
 }
