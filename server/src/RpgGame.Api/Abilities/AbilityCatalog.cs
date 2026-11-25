@@ -145,7 +145,7 @@ public sealed class AbilityCatalog
         if (filter is "ally" or "downed_ally" && harmful.Count > 0) Fail($"an \"ally\" ability can't apply a harmful condition ('{harmful[0]}')");
         if (filter == "enemy" && helpful.Count > 0) Fail($"an \"enemy\" ability can't apply a beneficial condition ('{helpful[0]}')");
 
-        ValidateResonanceScaling(a.ResonanceScaling, Fail);
+        ValidateResonanceScaling(a.ResonanceScaling, Fail, conditions);
 
         return new AbilityValues
         {
@@ -241,17 +241,30 @@ public sealed class AbilityCatalog
     }
 
     /// <summary>
-    /// "resonanceScaling" (MAGIC_SYSTEM.md) is checked here so abilities can be authored with it now,
-    /// but it isn't stored or applied until 3M.5 (ley points & resonance).
+    /// Threshold effects that aren't conditions (3M.5 / 3D.4 will define them). Every other
+    /// <c>thresholdEffects</c> value must name a condition in the <see cref="ConditionCatalog"/> (3B.4 PR 2).
     /// </summary>
-    private static void ValidateResonanceScaling(Dictionary<string, ResonanceScalingDto>? scaling, Func<string, string> fail)
+    private static readonly HashSet<string> NonConditionThresholdEffects = ["ember"];
+
+    /// <summary>
+    /// "resonanceScaling" (MAGIC_SYSTEM.md) is checked here so abilities can be authored with it now,
+    /// but it isn't stored or applied until 3M.5 (ley points & resonance). A threshold effect must be a
+    /// known condition (or one of the reserved non-condition effects).
+    /// </summary>
+    private static void ValidateResonanceScaling(
+        Dictionary<string, ResonanceScalingDto>? scaling, Func<string, string> fail, ConditionCatalog conditions)
     {
         foreach (var (type, value) in scaling ?? [])
         {
             if (!ResonanceTypes.Contains(type)) fail($"resonanceScaling: '{type}' isn't a resonance type");
-            foreach (var (level, _) in value.ThresholdEffects ?? [])
+            foreach (var (level, effect) in value.ThresholdEffects ?? [])
+            {
                 if (!int.TryParse(level, out var n) || n < 1)
                     fail($"resonanceScaling.{type}.thresholdEffects: '{level}' must be a resonance level (1 or more)");
+                var id = effect?.Trim() ?? "";
+                if (!NonConditionThresholdEffects.Contains(id) && conditions.Find(id) is null)
+                    fail($"resonanceScaling.{type}.thresholdEffects: '{id}' isn't a condition in conditions.json");
+            }
         }
     }
 

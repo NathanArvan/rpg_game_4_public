@@ -1,0 +1,12 @@
+{
+  // 3B.4 PR 2: someone killed in a tick isn't burned at the end of the round (they have no conditions left),
+  // and the periodic batch only touches standing combatants.
+  "description": "Periodic: a combatant killed in a tick doesn't burn at the end of the round",
+  "combatants": [
+    { "id": "A", "side": "party", "at": [2, 2] },
+    { "id": "G", "side": "enemy", "hp": 3, "maxHp": 10, "at": [3, 2], "conditions": [ { "id": "burning", "rounds": 1 } ] }
+  ],
+  "plans": { "A": ["melee G"] },
+  "dice": [15, 5],                    // no Burning roll: G is dead
+  "expect": { "status": { "G": "dead" }, "conditions": { "G": {} } }
+}

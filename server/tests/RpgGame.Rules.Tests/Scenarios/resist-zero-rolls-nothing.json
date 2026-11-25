@@ -1,0 +1,12 @@
+{
+  // 3B.4 PR 2 (C9): with ConditionResist 0 (the default) no d100 is rolled, so dice sequences written before
+  // resistance existed don't change. Leftover or missing dice would fail this scenario.
+  "description": "Resist: no resistance, no resist roll",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [2, 2], "abilities": ["mark"] },
+    { "id": "Goblin",  "side": "enemy", "at": [6, 2] }
+  ],
+  "plans": { "Kestrel": ["ability mark Goblin"] },
+  "dice": [],
+  "expect": { "conditions": { "Goblin": { "marked": 0, "exposed": 0 } } }
+}

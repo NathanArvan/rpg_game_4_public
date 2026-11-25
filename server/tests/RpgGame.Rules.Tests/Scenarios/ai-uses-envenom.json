@@ -1,0 +1,17 @@
+{
+  // 3B.4 PR 2: Envenom is a melee attack with a condition on hit, so the AI uses it through the existing
+  // melee-ability step (one that adds a new condition to the target comes first).
+  "description": "AI: a Grunt with Envenom opens with it on an adjacent hero",
+  "combatants": [
+    { "id": "Grunt", "side": "enemy", "at": [5, 5], "abilities": ["envenom"] },
+    { "id": "Hero",  "side": "party", "hp": 30, "at": [5, 6] }
+  ],
+  "plans": { "Grunt": ["ai"] },
+  "dice": [15, 4, 15, 3],              // envenom hit 4, melee hit 3; no d4: Poisoned deals a flat 2
+  "expect": {
+    "plans": { "Grunt": ["ability envenom Hero", "melee Hero"] },
+    "hp": { "Hero": 21 },
+    "conditions": { "Hero": { "poisoned": 1 } },
+    "events": ["t1 Grunt envenom Hero: poisoned applied (2)", "end Hero poisoned: -2"]
+  }
+}

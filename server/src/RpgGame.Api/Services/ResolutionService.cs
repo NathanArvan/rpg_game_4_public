@@ -79,6 +79,14 @@ public class ResolutionService(
 
         // Write GameEvents to DB BEFORE Redis mutations
         var events = BuildGameEvents(encounterId, tickResults);
+        events.AddRange(outcome.PeriodicEffects.Select(p => new GameEvent
+        {
+            Id = Guid.NewGuid(),
+            EncounterId = encounterId,
+            OccurredAt = DateTimeOffset.UtcNow,
+            EventType = p.Kind == PeriodicKind.Heal ? "periodic_heal" : "periodic_damage",
+            Payload = JsonSerializer.Serialize(new { p.CombatantId, p.ConditionId, p.Amount, NewHp = p.HpAfter }, _jsonOptions),
+        }));
         logger.LogInformation("ResolveRound: writing {EventCount} GameEvents to DB", events.Count);
         if (events.Count > 0)
         {
@@ -157,6 +165,18 @@ public class ResolutionService(
             return new BleedoutResultDto(b.CombatantId, name, b.RoundsLeft, b.Died, ResolutionFeedFormatter.Bleedout(b, name));
         }).ToList();
 
+        var periodic = outcome.PeriodicEffects.Select((p, i) =>
+        {
+            var name = records.TryGetValue(p.CombatantId, out var r) ? r.State.Name : "Unknown";
+            var condition = conditionLookup.GetValueOrDefault(p.ConditionId);
+            var conditionName = condition?.Name ?? p.ConditionId;
+            bool last = i == outcome.PeriodicEffects.Count - 1 || outcome.PeriodicEffects[i + 1].CombatantId != p.CombatantId;
+            return new PeriodicResultDto(p.CombatantId, name, p.ConditionId, conditionName, condition?.Harmful ?? false,
+                condition?.Tags ?? [], p.Kind == PeriodicKind.Heal ? "heal" : "damage", p.Amount, p.ConditionDamage,
+                p.HpAfter, RulesWireMapping.ToWire(p.Status), p.Fell,
+                ResolutionFeedFormatter.Periodic(p, name, conditionName, last));
+        }).ToList();
+
         var expired = outcome.ExpiredConditions.Select(x =>
         {
             var name = records.TryGetValue(x.CombatantId, out var r) ? r.State.Name : "Unknown";
@@ -166,7 +186,7 @@ public class ResolutionService(
         }).ToList();
 
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired);
+            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired, periodic);
     }
 
     // ----- Inbound mapping -----

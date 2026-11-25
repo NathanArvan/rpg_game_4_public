@@ -57,6 +57,21 @@
       "id": "flame_ward", "name": "Flame Ward", "harmful": false,
       "description": "Takes half damage from flame.",
       "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } }
+    },
+    {
+      "id": "burning", "name": "Burning", "harmful": true, "tags": ["flame"],
+      "description": "Takes d4 flame damage at the end of every round.",
+      "modifiers": { "periodic": { "kind": "damage", "die": "d4" } }
+    },
+    {
+      "id": "poisoned", "name": "Poisoned", "harmful": true, "tags": ["poison"],
+      "description": "Takes 2 poison damage at the end of every round.",
+      "modifiers": { "periodic": { "kind": "damage", "bonus": 2 } }
+    },
+    {
+      "id": "regenerating", "name": "Regenerating", "harmful": false,
+      "description": "Heals d4 HP at the end of every round.",
+      "modifiers": { "periodic": { "kind": "heal", "die": "d4" } }
     }
   ]
 }

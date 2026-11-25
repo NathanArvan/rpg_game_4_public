@@ -1,0 +1,15 @@
+{
+  // 3B.4 PR 2 (SPRINT_3B4 C9): a harmful condition from an enemy rolls d100 against the target's
+  // ConditionResist; at or under it, the condition is resisted. One roll per condition, in effect order.
+  "description": "Resist: a d100 at or under ConditionResist shrugs off a condition",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [2, 2], "abilities": ["mark"] },
+    { "id": "Brute",   "side": "enemy", "at": [6, 2], "conditionResist": 25 }
+  ],
+  "plans": { "Kestrel": ["ability mark Brute"] },
+  "dice": [25, 26],                   // Marked: 25 ≤ 25 resisted; Exposed: 26 > 25 applied
+  "expect": {
+    "conditions": { "Brute": { "exposed": 0 } },
+    "events": ["t1 Kestrel mark Brute: marked resisted", "t1 Kestrel mark Brute: exposed applied (1)"]
+  }
+}

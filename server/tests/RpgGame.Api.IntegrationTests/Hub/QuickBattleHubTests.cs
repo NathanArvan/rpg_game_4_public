@@ -137,6 +137,33 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Burning_kills_the_last_goblin_at_the_end_of_the_round_and_ends_the_encounter()
+    {
+        var (battle, ids) = await StartAsync("it-burn");
+        var (hero, goblin) = (ids["Hero"], ids["Goblin"]);
+
+        // Firebolt: d20 15 + 1 ≥ 13 (Guarded) hits for d8 1 + 1 = 2 (4 → 2) and sets the Goblin Burning;
+        // at the end of the round Burning's d4 3 drops it after the last tick.
+        api.Dice.Script(15, 1, 3);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Ability("firebolt", goblin)), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+
+        var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
+        Assert.Equal(0, api.Dice.Remaining);
+        Assert.Equal(2, Assert.Single(round1.Ticks.SelectMany(t => t.Attacks)).TargetNewHp);
+        var burn = Assert.Single(round1.Periodic!);
+        Assert.Equal((goblin, "burning", 3, 0, "dead", true), (burn.CombatantId, burn.ConditionId, burn.Amount, burn.NewHp, burn.Status, burn.Fell));
+        Assert.Equal("Goblin takes 3 damage from Burning — defeated!", burn.FeedText);
+        Assert.Equal([goblin], round1.DefeatedCombatantIds);
+        Assert.Equal(goblin, (await _client.NextAsync<CombatantDefeatedPayload>(Events.CombatantDefeated)).CombatantId);
+        var ended = await _client.NextAsync<EncounterEndedPayload>(Events.EncounterEnded);
+        Assert.Equal("party", ended.WinningSide);
+
+        ContractShape.AssertEventsMatch(_client.Events);
+    }
+
+    [Fact]
     public async Task An_ability_on_the_wrong_side_is_rejected_over_the_wire_and_not_stored()
     {
         var (battle, ids) = await StartAsync("it-revive");

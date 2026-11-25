@@ -1,0 +1,17 @@
+{
+  // 3B.4 PR 2 (C9): a harmful condition from an ally isn't rolled against either: only enemies' are.
+  "description": "Resist: a harmful condition from an ally lands without a roll",
+  "conditions": [ { "id": "frenzied", "name": "Frenzied", "harmful": true, "modifiers": { "dodge": -2 } } ],
+  "abilities": [
+    { "id": "frenzy", "name": "Frenzy", "ap": 1, "cooldown": 1, "tags": [],
+      "target": { "kind": "combatant", "filter": "ally", "range": 3 },
+      "effects": [ { "kind": "apply_condition", "condition": "frenzied", "duration": 0 } ] }
+  ],
+  "combatants": [
+    { "id": "Shaman", "side": "enemy", "at": [2, 2], "abilities": ["frenzy"] },
+    { "id": "Brute",  "side": "enemy", "at": [3, 2], "conditionResist": 100 }
+  ],
+  "plans": { "Shaman": ["ability frenzy Brute"] },
+  "dice": [],
+  "expect": { "events": ["t1 Shaman frenzy Brute: frenzied applied (0)"] }
+}

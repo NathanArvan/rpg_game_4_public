@@ -1,0 +1,16 @@
+{
+  // 3B.4 PR 2 (SPRINT_3B4 C11): periodic damage resolves at the start of the end of round, before
+  // bleedout. A hit with Ignite (Firebolt + Burning, duration 1) burns at the end of this round.
+  "description": "Periodic: Burning deals its d4 at the end of the round it lands in",
+  "combatants": [
+    { "id": "A", "side": "party", "at": [2, 2], "abilities": ["ignite"] },
+    { "id": "G", "side": "enemy", "at": [6, 2] }
+  ],
+  "plans": { "A": ["ability ignite G"] },
+  "dice": [15, 5, 3],                 // d20 15 hits; d8 5 + 1 = 6; Burning d4 3 at end of round
+  "expect": {
+    "hp": { "G": 11 },
+    "conditions": { "G": { "burning": 0 } },
+    "events": ["t1 A ignite G: hit 6", "t1 A ignite G: burning applied (1)", "end G burning: -3"]
+  }
+}

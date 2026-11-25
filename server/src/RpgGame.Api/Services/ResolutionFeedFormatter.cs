@@ -83,6 +83,24 @@ internal static class ResolutionFeedFormatter
         };
     }
 
+    /// <summary>
+    /// End-of-round periodic damage or healing (3B.4 PR 2): "Goblin takes 3 damage from Burning", "Mira heals 2
+    /// from Regenerating". A combatant's effects are netted together, so only its <paramref name="last"/> line
+    /// shows the HP afterwards, or that it fell (in the same words as a tick: goes down / defeated).
+    /// </summary>
+    public static string Periodic(PeriodicOutcome periodic, string name, string conditionName, bool last)
+    {
+        var line = periodic.Kind == PeriodicKind.Heal
+            ? $"{name} heals {periodic.Amount} from {conditionName}"
+            : $"{name} takes {periodic.Amount} damage from {conditionName}"
+              + (periodic.ConditionDamage > 0 ? $" (+{periodic.ConditionDamage} from conditions)"
+                 : periodic.ConditionDamage < 0 ? $" ({periodic.ConditionDamage} from conditions)" : "");
+        if (!last) return line;
+        if (periodic.Fell)
+            return periodic.Status == CombatantStatus.Downed ? $"{line} — goes down!" : $"{line} — defeated!";
+        return $"{line} (HP: {periodic.HpBefore} → {periodic.HpAfter})";
+    }
+
     /// <summary>End-of-round line for a condition that ran out (3B.4).</summary>
     public static string ConditionExpired(string combatantName, string conditionName) =>
         $"{combatantName} is no longer {conditionName}";

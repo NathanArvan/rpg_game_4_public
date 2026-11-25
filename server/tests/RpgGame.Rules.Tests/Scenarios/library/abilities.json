@@ -71,6 +71,23 @@
         { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
         { "kind": "apply_condition", "condition": "dazzled", "duration": 1 }
       ]
+    },
+    {
+      // Firebolt as shipped from 3B.4 PR 2 (the library's firebolt above stays without Burning, so older scenarios keep their dice).
+      "id": "ignite", "name": "Ignite", "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
+      "effects": [
+        { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } },
+        { "kind": "apply_condition", "condition": "burning", "duration": 1 }
+      ]
+    },
+    {
+      "id": "envenom", "name": "Envenom", "ap": 2, "cooldown": 2, "tags": ["melee", "poison"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
+        { "kind": "apply_condition", "condition": "poisoned", "duration": 2 }
+      ]
     }
   ]
 }

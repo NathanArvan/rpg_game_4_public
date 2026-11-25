@@ -1,0 +1,14 @@
+{
+  // 3B.4 PR 2 (C9): beneficial conditions, and conditions from allies or yourself, are never rolled against,
+  // however high the resistance.
+  "description": "Resist: an ally's buff is never resisted",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [2, 2], "abilities": ["battle_cry"], "conditionResist": 100 },
+    { "id": "Brute",   "side": "party", "at": [3, 2], "conditionResist": 100 }
+  ],
+  "plans": { "Bruiser": ["ability battle_cry"] },
+  "dice": [],
+  "expect": {
+    "conditions": { "Bruiser": { "emboldened": 0 }, "Brute": { "emboldened": 0 } }
+  }
+}

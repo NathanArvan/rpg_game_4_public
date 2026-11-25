@@ -13,6 +13,8 @@
   //                   ranged 2, defend 1. All of a round's moves share the "move" cells
   //   side            "party" | "enemy" | "any" — only orders the pick lists
   //   abilities       optional list of ability ids from Abilities/abilities.json (3B.3): the loadout
+  //   conditionResist optional percent chance (0-100, default 0) to shrug off a harmful condition an
+  //                   enemy puts on it (3B.4): a d100 at or under it resists
   //
   // Keep values on a consistent scale: if core stats are adopted later, a stats → profile
   // function will be calibrated against these.
@@ -44,7 +46,8 @@
       "id": "brute", "name": "Brute", "side": "enemy",
       "description": "Big, slow and dangerous in melee.",
       "hp": 28, "move": 4, "speed": 6, "meleeAccuracy": 1, "rangedAccuracy": -2, "dodge": 8, "damage": "d10", "ap": 4,
-      "abilities": ["power_strike", "charge"]
+      "abilities": ["power_strike", "charge"],
+      "conditionResist": 25
     }
   ]
 }

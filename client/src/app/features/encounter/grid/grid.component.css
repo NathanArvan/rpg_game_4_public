@@ -259,6 +259,8 @@
 .float-ability { color: #6a1b9a; font-size: 11px; white-space: nowrap; }
 .float-buff { color: #1565c0; font-size: 11px; white-space: nowrap; }
 .float-debuff { color: #7b1fa2; font-size: 11px; white-space: nowrap; }
+/* End-of-round damage from a condition, e.g. 🔥-3 (3B.4 PR 2). */
+.float-periodic { color: #e65100; white-space: nowrap; }
 @keyframes float-up {
   0%   { opacity: 0; }
   8%   { opacity: 1; }

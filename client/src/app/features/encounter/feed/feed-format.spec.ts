@@ -119,6 +119,16 @@ describe('formatFeedLine conditions (3B.4)', () => {
       .toEqual(['[party]Kestrel', ' strikes ', '[enemy]Goblin 1', ' ', '[damage]for 3 damage (-4 from conditions) (HP: 20 → 17)']);
   });
 
+  it('highlights end-of-round periodic lines (3B.4 PR 2)', () => {
+    expect(show(formatFeedLine('Goblin 1 takes 3 damage from Burning (HP: 7 → 4)', sides).segments))
+      .toEqual(['[enemy]Goblin 1', ' ', '[damage]takes 3 damage', ' from ', '[condition]Burning', ' (HP: 7 → 4)']);
+    expect(show(formatFeedLine('Goblin 1 takes 1 damage from Burning (-2 from conditions) — defeated!', sides).segments))
+      .toEqual(['[enemy]Goblin 1', ' ', '[damage]takes 1 damage', ' from ', '[condition]Burning', ' ',
+        '[damage](-2 from conditions)', ' ', '[damage]— defeated!']);
+    expect(show(formatFeedLine('Kestrel heals 2 from Regenerating (HP: 5 → 7)', sides).segments))
+      .toEqual(['[party]Kestrel', ' ', '[save]heals 2', ' from ', '[condition]Regenerating', ' (HP: 5 → 7)']);
+  });
+
   it('leaves bleeding out alone (lower-case words are not condition names)', () => {
     expect(show(formatFeedLine('Kestrel is bleeding out — 2 rounds left', sides).segments))
       .toEqual(['[party]Kestrel', ' ', '[damage]is bleeding out — 2 rounds left']);

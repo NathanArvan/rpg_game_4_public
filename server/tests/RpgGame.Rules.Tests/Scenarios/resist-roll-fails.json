@@ -1,0 +1,16 @@
+{
+  // 3B.4 PR 2 (C9): dice order. The resist roll comes in the Effects phase, after the tick's attack rolls;
+  // the Burning it lets through rolls at the end of the round.
+  "description": "Resist: a failed resist roll lets Burning through",
+  "combatants": [
+    { "id": "A",     "side": "party", "at": [2, 2], "abilities": ["ignite"] },
+    { "id": "Brute", "side": "enemy", "at": [6, 2], "conditionResist": 25 }
+  ],
+  "plans": { "A": ["ability ignite Brute"] },
+  "dice": [15, 5, 80, 2],             // d20, d8 + 1 = 6, resist d100 80 (fails), Burning d4 2
+  "expect": {
+    "hp": { "Brute": 12 },
+    "conditions": { "Brute": { "burning": 0 } },
+    "events": ["t1 A ignite Brute: hit 6", "t1 A ignite Brute: burning applied (1)", "end Brute burning: -2"]
+  }
+}

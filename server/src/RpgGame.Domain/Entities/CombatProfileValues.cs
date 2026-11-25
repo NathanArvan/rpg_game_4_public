@@ -31,6 +31,11 @@ public class CombatProfileValues
     /// before 3B.3: no abilities.
     /// </summary>
     public List<AbilityValues>? Abilities { get; set; }
+    /// <summary>
+    /// Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2). Null on rows stored
+    /// before it existed: 0.
+    /// </summary>
+    public int? ConditionResist { get; set; }
 
     /// <summary>A deep copy (each combatant row needs its own instance). Copies every field, so keep it in step with them.</summary>
     public CombatProfileValues Copy() => new()
@@ -47,5 +52,6 @@ public class CombatProfileValues
         MaxAp = MaxAp,
         CanBeDowned = CanBeDowned,
         Abilities = Abilities?.Select(a => a.Copy()).ToList(),
+        ConditionResist = ConditionResist,
     };
 }

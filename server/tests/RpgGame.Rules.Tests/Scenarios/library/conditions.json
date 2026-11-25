@@ -13,6 +13,9 @@
     { "id": "emboldened", "name": "Emboldened", "harmful": false, "modifiers": { "damageDealt": 2 } },
     { "id": "fortified",  "name": "Fortified",  "harmful": false, "modifiers": { "damageTaken": { "percent": -50 } } },
     { "id": "marked",     "name": "Marked",     "harmful": true,  "modifiers": { "damageTaken": { "flat": 2 } } },
-    { "id": "flame_ward", "name": "Flame Ward", "harmful": false, "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } } }
+    { "id": "flame_ward", "name": "Flame Ward", "harmful": false, "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } } },
+    { "id": "burning",      "name": "Burning",      "harmful": true,  "tags": ["flame"], "modifiers": { "periodic": { "kind": "damage", "die": "d4" } } },
+    { "id": "poisoned",     "name": "Poisoned",     "harmful": true,  "tags": ["poison"], "modifiers": { "periodic": { "kind": "damage", "bonus": 2 } } },
+    { "id": "regenerating", "name": "Regenerating", "harmful": false, "modifiers": { "periodic": { "kind": "heal", "die": "d4" } } }
   ]
 }

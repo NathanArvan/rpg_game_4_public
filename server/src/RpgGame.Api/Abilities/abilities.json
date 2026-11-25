@@ -86,10 +86,13 @@
     },
     {
       "id": "firebolt", "name": "Firebolt",
-      "description": "A bolt of flame at a target up to 8 cells away: d8 + 1.",
+      "description": "A bolt of flame at a target up to 8 cells away: d8 + 1, and a hit sets it Burning until the end of next round.",
       "ap": 3, "cooldown": 1, "tags": ["flame", "ranged", "spell"],
       "target": { "kind": "combatant", "filter": "enemy", "range": 8 },
-      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } } ],
+      "effects": [
+        { "kind": "attack", "roll": "ranged", "damage": { "die": "d8", "bonus": 1 } },
+        { "kind": "apply_condition", "condition": "burning", "duration": 1 }
+      ],
       "resonanceScaling": { "flame": { "damagePerLevel": 2, "thresholdEffects": { "2": "ember", "3": "burning" } } }
     },
     {
@@ -114,6 +117,16 @@
       "effects": [
         { "kind": "apply_condition", "condition": "marked", "duration": 1 },
         { "kind": "apply_condition", "condition": "exposed", "duration": 1 }
+      ]
+    },
+    {
+      "id": "envenom", "name": "Envenom",
+      "description": "A poisoned strike with your weapon: a hit leaves the target Poisoned (2 damage at the end of every round) for this round and the next two.",
+      "ap": 2, "cooldown": 2, "tags": ["melee", "poison"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
+        { "kind": "apply_condition", "condition": "poisoned", "duration": 2 }
       ]
     }
   ]

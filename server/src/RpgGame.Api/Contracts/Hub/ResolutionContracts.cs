@@ -5,6 +5,8 @@ namespace RpgGame.Api.Contracts.Hub;
 /// They plan and lock in from the next round.
 /// </param>
 /// <param name="ExpiredConditions">Conditions that ran out at the end of the round (3B.4).</param>
+/// <param name="Periodic">Periodic damage and healing at the end of the round, before bleedout (3B.4 PR 2):
+/// combatant order, then the order the conditions were applied.</param>
 public record ResolutionPayload(
     IReadOnlyList<TickResult> Ticks,
     int NewRoundNumber,
@@ -13,7 +15,8 @@ public record ResolutionPayload(
     IReadOnlyList<CombatantQueueDto> Queues,
     IReadOnlyList<BleedoutResultDto> EndOfRound,
     IReadOnlyList<string>? RevivedCombatantIds = null,
-    IReadOnlyList<ExpiredConditionDto>? ExpiredConditions = null);
+    IReadOnlyList<ExpiredConditionDto>? ExpiredConditions = null,
+    IReadOnlyList<PeriodicResultDto>? Periodic = null);
 
 /// <summary>
 /// End of round for a combatant who was already downed when it started (3B.5): one bleedout
