@@ -8,7 +8,9 @@ import { ArmAbility, DisarmAbility, GmClearEnemyPlan, GmSelectEnemy, GmSetEnemyP
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
-import { DEFAULT_AP_COSTS, apSpent, canAfford, entry, skipsRoundReason } from '../../../state/encounter/plan-queue';
+import {
+  DEFAULT_AP_COSTS, apSpent, canAfford, canAffordEntry, entry, isPrepared, queuedPrepared, skipsRoundReason,
+} from '../../../state/encounter/plan-queue';
 import { AbilityBarComponent } from '../ability-bar/ability-bar.component';
 
 @Component({
@@ -73,7 +75,7 @@ export class GmEnemyPlannerComponent {
     if (action.type === 'melee_attack') return '⚔ Melee Attack';
     if (action.type === 'ranged_attack') return '🏹 Ranged Attack';
     if (action.type === 'defend') return '🛡 Defend';
-    if (action.type === 'ability') return `✦ ${this.abilityName(action.abilityId)}`;
+    if (action.type === 'ability') return `${this.isPreparedId(action.abilityId) ? '👁' : '✦'} ${this.abilityName(action.abilityId)}`;
     return action.type;
   }
 
@@ -83,8 +85,30 @@ export class GmEnemyPlannerComponent {
     return id ?? 'Ability';
   }
 
-  /** Arms (or disarms) one of the selected monster's abilities; the next grid click picks its target. */
+  private isPreparedId(id: string | null): boolean {
+    return this.store.selectSnapshot(EncounterState.combatants).some(m => m.abilities.some(a => a.id === id && isPrepared(a)));
+  }
+
+  /**
+   * Arms (or disarms) one of the selected monster's abilities; the next grid click picks its target. A prepared
+   * reaction (3B.6) takes no target: it's queued at once and ends the monster's queue.
+   */
   toggleAbility(abilityId: string): void {
+    const selectedId = this.store.selectSnapshot(EncounterState.gmSelectedEnemyId);
+    const enemy = this.store.selectSnapshot(EncounterState.combatants).find(c => c.id === selectedId);
+    const ability = enemy?.abilities.find(a => a.id === abilityId);
+    if (enemy && isPrepared(ability)) {
+      if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
+      const queue = this.getPlan(enemy.id) ?? [];
+      const action = entry('ability', { abilityId });
+      if (skipsRoundReason(enemy) || queuedPrepared(queue, enemy.abilities)) return;
+      if (!canAffordEntry(queue, action, enemy.maxAp, this.apCosts, enemy.abilities)) return;
+      const next = [...queue, action];
+      this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
+      this.hub.planEnemyAction(this.joinCode, enemy.id, { actions: next });
+      this.store.dispatch(new GmSelectEnemy(null)); // nothing can follow it
+      return;
+    }
     this.store.dispatch(this.armedAbilityId === abilityId ? new DisarmAbility() : new ArmAbility(abilityId));
   }
 
@@ -97,7 +121,7 @@ export class GmEnemyPlannerComponent {
   /** Appends a Defend to the monster's queue if its AP allows. */
   onDefend(enemy: Combatant): void {
     const queue = this.getPlan(enemy.id) ?? [];
-    if (skipsRoundReason(enemy)) return;
+    if (skipsRoundReason(enemy) || queuedPrepared(queue, enemy.abilities)) return;
     if (!canAfford(queue, 'defend', enemy.maxAp, this.apCosts, enemy.abilities)) return;
     const next = [...queue, entry('defend')];
     this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));

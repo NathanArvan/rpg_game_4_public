@@ -1,0 +1,16 @@
+{
+  // SPRINT_3B6 X1: reactions don't trigger reactions. The Scout's Overwatch shot at the runner is an attack, not a move,
+  // so the enemy Archer's Overwatch (which the Scout is well within) never sees it and goes unused.
+  "description": "An Overwatch shot doesn't set off the other side's Overwatch",
+  "combatants": [
+    { "id": "Scout",  "side": "party", "at": [0, 5], "abilities": ["overwatch"] },
+    { "id": "Archer", "side": "enemy", "at": [4, 8], "abilities": ["overwatch"] },
+    { "id": "Runner", "side": "enemy", "at": [9, 5] }
+  ],
+  "plans": { "Scout": ["ability overwatch"], "Archer": ["ability overwatch"], "Runner": ["move 6,5"] },
+  "dice": [12, 3],
+  "expect": {
+    "hp": { "Runner": 17, "Scout": 20 },
+    "events": ["t1 s3 Scout overwatch Runner: hit 3", "end Archer: overwatch unused"]
+  }
+}

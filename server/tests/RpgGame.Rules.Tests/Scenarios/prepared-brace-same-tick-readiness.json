@@ -1,0 +1,15 @@
+{
+  // SPRINT_3B6 X8: watching starts at the beginning of the reaction's own tick, before that tick's movement, so an
+  // enemy arriving in the same tick is caught.
+  "description": "Brace queued for tick 2 catches an enemy that steps into reach in tick 2",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 5] }
+  ],
+  "plans": { "Bruiser": ["defend", "ability brace"], "Grunt": ["defend", "move 6,5"] },
+  "dice": [15, 4],                       // 15 beats Dodge 10 + Guarded 3
+  "expect": {
+    "hp": { "Grunt": 14 },
+    "events": ["t2 Bruiser prepares brace", "t2 Grunt moves to 6,5", "t2 s2 Bruiser brace Grunt: hit 6"]
+  }
+}

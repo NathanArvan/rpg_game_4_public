@@ -1,0 +1,17 @@
+{
+  // SPRINT_3B6 X8: a watcher who falls stops watching. The Archer downs the Bruiser in tick 1; the Grunt walks into its
+  // reach in tick 2 untouched, and nothing is reported unused.
+  "description": "A watcher who goes down stops watching",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Archer",  "side": "enemy", "at": [12, 5] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 7] }
+  ],
+  "plans": { "Bruiser": ["ability brace"], "Archer": ["ranged Bruiser"], "Grunt": ["defend", "move 6,6"] },
+  "dice": [12, 5],
+  "expect": {
+    "status": { "Bruiser": "downed" },
+    "hp": { "Grunt": 20 },
+    "events": ["t1 Bruiser prepares brace", "t1 Archer ranged Bruiser: hit 5, Bruiser downed", "t2 Grunt moves to 6,6"]
+  }
+}

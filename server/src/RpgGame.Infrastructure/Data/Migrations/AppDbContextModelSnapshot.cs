@@ -624,6 +624,9 @@ namespace RpgGame.Infrastructure.Data.Migrations
                                     b2.Property<int>("__synthesizedOrdinal")
                                         .ValueGeneratedOnAdd();
 
+                                    b2.Property<string>("Activation")
+                                        .IsRequired();
+
                                     b2.Property<int>("ApCost");
 
                                     b2.Property<int>("Cooldown");
@@ -906,10 +909,33 @@ namespace RpgGame.Infrastructure.Data.Migrations
                                                 .HasForeignKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
                                         });
 
+                                    b2.OwnsOne("RpgGame.Domain.Entities.AbilityTriggerValues", "Trigger", b3 =>
+                                        {
+                                            b3.Property<Guid>("AbilityValuesCombatProfileValuesEncounterCombatantId");
+
+                                            b3.Property<int>("AbilityValues__synthesizedOrdinal");
+
+                                            b3.Property<string>("AttackKind");
+
+                                            b3.Property<string>("Kind")
+                                                .IsRequired();
+
+                                            b3.Property<int?>("Range");
+
+                                            b3.HasKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+
+                                            b3.ToTable("EncounterCombatants");
+
+                                            b3.WithOwner()
+                                                .HasForeignKey("AbilityValuesCombatProfileValuesEncounterCombatantId", "AbilityValues__synthesizedOrdinal");
+                                        });
+
                                     b2.Navigation("Effects");
 
                                     b2.Navigation("Target")
                                         .IsRequired();
+
+                                    b2.Navigation("Trigger");
                                 });
 
                             b1.Navigation("Abilities");

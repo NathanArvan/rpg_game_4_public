@@ -1,6 +1,6 @@
 import { AttackResult, CombatantQueueDto, HealResult, MovementResult, QueuedActionDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import {
-  makeAbilityUse, makeAttack, makeBlocked, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeReaction, makeRoll, makeTick,
+  makeAbilityUse, makeAttack, makeBlocked, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeReaction, makeRoll, makeTick, makeUnusedReaction, makeWatching,
 } from '../../../testing/builders';
 import { buildLanes } from './round-lanes';
 
@@ -240,6 +240,39 @@ describe('buildLanes: movement abilities (3B.3)', () => {
         tick(1)));
       expect(lane.slots.map(s => `${s.kind}:${s.outcome}`)).toEqual(['move:stopped', 'lost:none']);
       expect(lane.slots[0].detail).toContain('A falls at (4, 5) after 1 cell.');
+    });
+  });
+
+  describe('prepared reactions (3B.6 PR 2)', () => {
+    const braceQueue = (id: string) => makeQueue({ combatantId: id, maxAp: 4, actions: [
+      makeQueuedAction({ type: 'defend', apCost: 1 }), makeQueuedAction({ type: 'ability', apCost: 2, abilityId: 'brace' })] });
+
+    it('shows 👁 on the reaction\'s tick and a watching bar until it fires (⚡, with the roll)', () => {
+      const [lane] = buildLanes(payload([braceQueue('W')],
+        tick(0, { effects: [makeEffect({ combatantId: 'W', effectType: 'defend' })] }),
+        tick(1, { watching: [makeWatching({ combatantId: 'W' })] }),
+        tick(2, { reactions: [makeReaction({ reactorId: 'W', reactorName: 'W', triggerId: 'G', triggerName: 'G', kind: 'prepared',
+          abilityId: 'brace', abilityName: 'Brace', step: 2 })] }),
+        tick(3)));
+      expect(lane.slots.map(s => [s.icon, s.outcome, s.watching, s.reacted])).toEqual([
+        ['🛡', 'defended', null, false],
+        ['👁', 'watching', 'start', false],
+        ['·', 'none', 'on', true],
+        ['·', 'none', null, false],
+      ]);
+      expect(lane.slots[1].label).toBe('Brace (2 AP)');
+      expect(lane.slots[1].detail).toBe('W prepares Brace: watching until it fires or the round ends.');
+      expect(lane.slots[2].detail).toContain('⚡ Brace (step 2): W → G: rolled 12 + 0 = 12 vs dodge 10, hit for 3');
+    });
+
+    it('says an unused reaction goes unused on the last tick', () => {
+      const [lane] = buildLanes(makePayload({
+        queues: [braceQueue('W')],
+        ticks: [tick(0), tick(1, { watching: [makeWatching({ combatantId: 'W' })] }), tick(2)],
+        unusedReactions: [makeUnusedReaction({ combatantId: 'W' })],
+      }));
+      expect(lane.slots.map(s => s.watching)).toEqual([null, 'start', 'on']);
+      expect(lane.slots[2].detail).toBe('W has no action left. 👁 Still watching with Brace. Brace goes unused.');
     });
   });
 });

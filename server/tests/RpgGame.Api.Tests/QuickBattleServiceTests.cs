@@ -137,8 +137,27 @@ public class QuickBattleServiceTests
         await Service().StartAsync("user-1", "reactions");
 
         var combatants = await _db.EncounterCombatants.ToListAsync();
-        Assert.Equal(6, combatants.Count);
+        Assert.Equal(7, combatants.Count);
         Assert.All(combatants, c => Assert.Null(c.Profile!.OpportunityAttacks));
+    }
+
+    [Fact]
+    public async Task Start_ReactionsPreset_GivesOutBraceAndOverwatch()
+    {
+        // 3B.6 PR 2: the Bruiser and the Brute Brace, the Scout and the Goblin Archer Overwatch; snapshots carry the trigger.
+        await Service().StartAsync("user-1", "reactions");
+
+        var combatants = await _db.EncounterCombatants.ToListAsync();
+        string[] Prepared(string name) => combatants.Single(c => c.CharacterName == name).Profile!.Abilities
+            .Where(a => a.Activation == "prepared").Select(a => a.Id).ToArray();
+        Assert.Equal(["brace"], Prepared("Bruiser"));
+        Assert.Equal(["brace"], Prepared("Brute"));
+        Assert.Equal(["overwatch"], Prepared("Scout"));
+        Assert.Equal(["overwatch"], Prepared("Goblin Archer"));
+        Assert.Empty(Prepared("Skirmisher"));
+        var overwatch = combatants.Single(c => c.CharacterName == "Scout").Profile!.Abilities.Single(a => a.Id == "overwatch");
+        Assert.Equal(("enemy_moves_within", 6), (overwatch.Trigger!.Kind, overwatch.Trigger.Range));
+        Assert.Equal(2, combatants.Single(c => c.CharacterName == "Goblin Archer").Profile!.RangedAccuracy);
     }
 
     [Fact]

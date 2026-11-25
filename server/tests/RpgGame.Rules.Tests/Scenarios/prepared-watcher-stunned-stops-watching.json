@@ -1,0 +1,19 @@
+{
+  // SPRINT_3B6 X8: a watcher Stunned during the round stops watching from the next tick (the stun lands in tick 1's
+  // Effects phase). The Grunt walks into reach in tick 2 untouched (no dice are scripted, so a strike would fail the
+  // test). Its cooldown had already started.
+  "description": "A watcher stunned mid-round stops watching",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Hexer",   "side": "enemy", "at": [9, 5], "abilities": ["hex"] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 7] }
+  ],
+  "plans": { "Bruiser": ["ability brace"], "Hexer": ["ability hex Bruiser"], "Grunt": ["defend", "move 6,6"] },
+  "dice": [],
+  "expect": {
+    "hp": { "Grunt": 20 },
+    "positions": { "Grunt": [6, 6] },
+    "cooldowns": { "Bruiser": { "brace": 1 }, "Hexer": { "hex": 4 }, "Grunt": {} },
+    "events": ["t1 Bruiser prepares brace", "t1 Hexer hex Bruiser: stunned applied (1)", "t2 Grunt moves to 6,6"]
+  }
+}

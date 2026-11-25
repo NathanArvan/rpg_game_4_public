@@ -17,9 +17,15 @@ public class AbilityValues
     public List<string> Tags { get; set; } = [];
     public AbilityTargetValues Target { get; set; } = new();
     public List<AbilityEffectValues> Effects { get; set; } = [];
+    /// <summary>"active" (resolves at its queue position) or "prepared" (a reaction that watches for its trigger, 3B.6).</summary>
+    public string Activation { get; set; } = "active";
+    /// <summary>What sets off a prepared ability (3B.6); null for an active one.</summary>
+    public AbilityTriggerValues? Trigger { get; set; }
 
     public AbilityValues Copy() => new()
     {
+        Activation = Activation,
+        Trigger = Trigger?.Copy(),
         Id = Id,
         Name = Name,
         Description = Description,
@@ -31,9 +37,22 @@ public class AbilityValues
     };
 }
 
+/// <summary>The trigger of a prepared ability (3B.6, SPRINT_3B6 X6).</summary>
+public class AbilityTriggerValues
+{
+    /// <summary>"enemy_enters_reach", "enemy_moves_within", "attacked" or "ally_attacked".</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>Cells from the watcher ("enemy_moves_within", "ally_attacked").</summary>
+    public int? Range { get; set; }
+    /// <summary>"attacked": only "melee" or "ranged" attacks; null for any.</summary>
+    public string? AttackKind { get; set; }
+
+    public AbilityTriggerValues Copy() => new() { Kind = Kind, Range = Range, AttackKind = AttackKind };
+}
+
 public class AbilityTargetValues
 {
-    /// <summary>"self", "combatant", "combatants", "auto" (and "cell", reserved).</summary>
+    /// <summary>"self", "combatant", "combatants", "auto", "trigger" (prepared reactions, 3B.6) (and "cell", reserved).</summary>
     public string Kind { get; set; } = "combatant";
     /// <summary>"enemy", "ally", "any", "downed_ally".</summary>
     public string Filter { get; set; } = "enemy";

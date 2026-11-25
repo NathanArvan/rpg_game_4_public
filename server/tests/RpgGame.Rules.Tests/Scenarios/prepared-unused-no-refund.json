@@ -1,0 +1,22 @@
+{
+  // SPRINT_3B6 X8, X10: a reaction that never fires is reported unused at the end of the round, and its cooldown has
+  // started all the same: committing is the cost.
+  "description": "An unused Overwatch is reported and still goes on cooldown",
+  "combatants": [
+    { "id": "Scout",  "side": "party", "at": [0, 5], "abilities": ["overwatch"] },
+    { "id": "Goblin", "side": "enemy", "at": [15, 5] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Scout": ["ability overwatch"], "Goblin": ["defend"] },
+      "expect": {
+        "cooldowns": { "Scout": { "overwatch": 1 } },
+        "events": ["t1 Scout prepares overwatch", "end Scout: overwatch unused"]
+      }
+    },
+    {
+      "plans": { "Scout": ["ability overwatch"] },
+      "expect": { "events": ["t1 Scout uses overwatch (on_cooldown)"] }
+    }
+  ]
+}

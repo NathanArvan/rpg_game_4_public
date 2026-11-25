@@ -13,7 +13,9 @@ import { Position } from '../map/map.state.model';
  *    maxCells of where the earlier moves end, a move to a target estimated toward it; cells of a
  *    move that uses the movement budget count toward it;
  *  - a Disengage (3B.6) is a move in every way (budget, route, Rooted) that costs 2 AP and provokes
- *    no opportunity attacks.
+ *    no opportunity attacks;
+ *  - a prepared reaction (3B.6 PR 2: Brace, Overwatch) takes no target and must be the last action
+ *    in the queue: nothing can follow it.
  */
 
 /** A queue entry with every optional field empty, so callers only give what their action uses. */
@@ -125,6 +127,7 @@ export function abilityUnavailableReason(
   costs: Readonly<Record<string, number>>, abilities: readonly AbilityDto[], cooldowns: Readonly<Record<string, number>>,
   blocks: readonly PlanBlock[] = [],
 ): string | null {
+  if (queuedPrepared(queue, abilities)) return 'A prepared reaction ends the queue';
   const root = blockOf(blocks, 'move');
   if (root && ability.move) return `${root.conditionName}: can't move`;
   const block = cooldownBlock(ability, queue, cooldowns);
@@ -132,6 +135,22 @@ export function abilityUnavailableReason(
   if (block?.reason === 'once_per_round') return 'Already queued this round';
   if (apSpent(queue, costs, abilities) + ability.apCost > maxAp) return 'Not enough AP left';
   return null;
+}
+
+/** A prepared reaction (3B.6): it ends its queue and watches for its trigger for the rest of the round. */
+export function isPrepared(ability: AbilityDto | undefined | null): boolean {
+  return ability?.activation === 'prepared';
+}
+
+/** The server's message when anything follows a prepared reaction (SPRINT_3B6 X7). */
+export const PREPARED_NOT_LAST = 'A prepared reaction must be the last action in the queue.';
+
+/** The prepared reaction that ends the queue (nothing more can be queued after it), or undefined. */
+export function queuedPrepared(queue: readonly PlannedActionEntry[], abilities: readonly AbilityDto[]): AbilityDto | undefined {
+  const last = queue[queue.length - 1];
+  if (last?.type !== 'ability') return undefined;
+  const ability = abilities.find(a => a.id === last.abilityId);
+  return isPrepared(ability) ? ability : undefined;
 }
 
 /** The ability is aimed at a cell the player picks: it moves its user there (Dash). */
@@ -153,7 +172,7 @@ export function maxTargets(ability: AbilityDto): number {
 /**
  * Why an ability entry has the wrong target shape for its targeting kind, or null (3B.3; mirrors
  * the server's PlanValidator): one target for "combatant", 1..count distinct ones for
- * "combatants", none for "auto" and "self".
+ * "combatants", none for "auto", "self" and "trigger" (prepared reactions, 3B.6).
  */
 export function targetShapeError(ability: AbilityDto, action: PlannedActionEntry): string | null {
   const hasOne = !!action.targetCombatantId;
@@ -166,6 +185,7 @@ export function targetShapeError(ability: AbilityDto, action: PlannedActionEntry
       return !hasOne || listed > 0 ? `${ability.name} needs one target.` : null;
     case 'self':
     case 'auto':
+    case 'trigger':
       return hasOne || listed > 0 ? `${ability.name} doesn't take a target.` : null;
     case 'combatants':
       if (hasOne || listed === 0) return `${ability.name} needs between 1 and ${count} targets.`;
@@ -343,6 +363,7 @@ export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFa
     const before = queue.slice(0, i);
     const walked = walkQueue(facts.start, before, facts.abilities, movementRange, positions);
     const fail = (error: string): PlanCheck => ({ error, ap, cells: walked.cells });
+    if (queuedPrepared(before, facts.abilities)) return fail(PREPARED_NOT_LAST);
 
     const ability = action.type === 'ability' ? facts.abilities.find(a => a.id === action.abilityId) : undefined;
     if (action.type === 'ability') {

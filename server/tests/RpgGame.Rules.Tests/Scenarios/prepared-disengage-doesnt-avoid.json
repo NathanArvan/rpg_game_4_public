@@ -1,0 +1,14 @@
+{
+  // SPRINT_3B6 X4: Disengage only avoids passive opportunity attacks; prepared movement reactions still see it.
+  "description": "Disengaging into a braced fighter's reach still gets struck",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 5] }
+  ],
+  "plans": { "Bruiser": ["ability brace"], "Grunt": ["disengage 6,5"] },
+  "dice": [12, 4],
+  "expect": {
+    "hp": { "Grunt": 14 },
+    "events": ["t1 Grunt moves to 6,5 (disengage)", "t1 s2 Bruiser brace Grunt: hit 6"]
+  }
+}

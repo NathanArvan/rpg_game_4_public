@@ -71,6 +71,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 p.OwnsMany(v => v.Abilities, a =>
                 {
                     a.OwnsOne(x => x.Target);
+                    a.OwnsOne(x => x.Trigger); // prepared reactions (3B.6)
                     a.OwnsMany(x => x.Effects, ef =>
                     {
                         ef.OwnsOne(d => d.Damage, dm => dm.OwnsOne(x => x.BonusIfMoved));

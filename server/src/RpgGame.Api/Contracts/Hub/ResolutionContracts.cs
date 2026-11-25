@@ -7,7 +7,7 @@ namespace RpgGame.Api.Contracts.Hub;
 /// <param name="ExpiredConditions">Conditions that ran out at the end of the round (3B.4).</param>
 /// <param name="Periodic">Periodic damage and healing at the end of the round, before bleedout (3B.4 PR 2):
 /// combatant order, then the order the conditions were applied.</param>
-/// <param name="UnusedReactions">Prepared reactions that never fired this round (3B.6 PR 2; empty until then).</param>
+/// <param name="UnusedReactions">Prepared reactions still watching at the end of the round: they never fired (3B.6).</param>
 public record ResolutionPayload(
     IReadOnlyList<TickResult> Ticks,
     int NewRoundNumber,
@@ -20,7 +20,7 @@ public record ResolutionPayload(
     IReadOnlyList<PeriodicResultDto>? Periodic = null,
     IReadOnlyList<UnusedReactionDto>? UnusedReactions = null);
 
-/// <summary>A prepared reaction that was watching at the end of the round and never fired (3B.6 PR 2). No AP refund.</summary>
+/// <summary>A prepared reaction that was watching at the end of the round and never fired (3B.6). No AP refund.</summary>
 public record UnusedReactionDto(
     string CombatantId,
     string CombatantName,
@@ -64,7 +64,7 @@ public record QueuedActionDto(
 /// <param name="Conditions">Conditions applied this tick (3B.4): Defend's Guarded at the start of the tick,
 /// then abilities' conditions in the Effects phase.</param>
 /// <param name="Reactions">Reactions this tick (3B.6), in resolution order: by movement step, then mover, then reactor.</param>
-/// <param name="Watching">Combatants whose prepared reaction started watching this tick (3B.6 PR 2; empty until then).</param>
+/// <param name="Watching">Combatants whose prepared reaction started watching at the start of this tick (3B.6).</param>
 public record TickResult(
     int TickIndex,
     IReadOnlyList<MovementResult> Movements,
@@ -97,11 +97,16 @@ public record ReactionResult(
     AttackResult? Attack,
     string FeedText);
 
-/// <summary>A combatant whose prepared reaction started watching this tick (3B.6 PR 2).</summary>
+/// <summary>
+/// A combatant whose prepared reaction started watching at the start of this tick (3B.6): it watches until it fires, the
+/// combatant falls or is Stunned, or the round ends. Its cooldown has started.
+/// </summary>
 public record WatchingResult(
     string CombatantId,
+    string CombatantName,
     string AbilityId,
-    string AbilityName);
+    string AbilityName,
+    string FeedText);
 
 /// <summary>
 /// A queued action a condition stopped this tick (3B.4 PR 3): a Stunned combatant's action, or a Rooted

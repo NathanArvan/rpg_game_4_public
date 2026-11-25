@@ -1,0 +1,16 @@
+{
+  // SPRINT_3B6 X8, X12: an enemy who walks in before watching starts (tick 1, Brace queued for tick 2) doesn't set it
+  // off, and standing still in reach afterwards doesn't either. It goes unused; its cooldown still starts (X10).
+  "description": "Brace doesn't fire for an enemy that arrived before its tick",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 5] }
+  ],
+  "plans": { "Bruiser": ["defend", "ability brace"], "Grunt": ["move 6,5", "defend"] },
+  "dice": [],
+  "expect": {
+    "hp": { "Grunt": 20 },
+    "cooldowns": { "Bruiser": { "brace": 1 } },
+    "events": ["t1 Grunt moves to 6,5", "t2 Bruiser prepares brace", "end Bruiser: brace unused"]
+  }
+}

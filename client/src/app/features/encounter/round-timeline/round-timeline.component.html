@@ -35,6 +35,7 @@
           <span class="icon">{{ slot.icon }}</span>
           <span class="cost" *ngIf="slot.apCost">{{ slot.apCost }}</span>
           <span class="provoked" *ngIf="slot.provoked && revealed(slot)" title="Drew an opportunity attack">⚔</span>
+          <span class="reacted" *ngIf="slot.reacted && revealed(slot)" title="Its prepared reaction fired">⚡</span>
         </td>
       </tr>
     </tbody>

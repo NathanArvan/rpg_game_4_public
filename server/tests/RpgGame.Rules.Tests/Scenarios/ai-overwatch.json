@@ -1,0 +1,16 @@
+{
+  // SPRINT_3B6 X15: an AI with Overwatch ends its walk watching when an enemy could move within its range this round.
+  // The hero steps forward in tick 2, into range 6, and is shot.
+  "description": "AI: a goblin archer walks up and takes up Overwatch",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [2, 5] },
+    { "id": "Archer", "side": "enemy", "at": [15, 5], "abilities": ["overwatch"] }
+  ],
+  "plans": { "Hero": ["defend", "move 4,5"], "Archer": ["ai"] },
+  "dice": [15, 3],                       // 15 beats Dodge 10 + Guarded 3
+  "expect": {
+    "plans": { "Archer": ["move 9,5", "ability overwatch"] },
+    "hp": { "Hero": 17 },
+    "events": ["t2 Archer prepares overwatch", "t2 s1 Archer overwatch Hero: hit 3"]
+  }
+}

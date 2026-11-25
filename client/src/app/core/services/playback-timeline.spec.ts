@@ -1,7 +1,7 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import {
   makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeBlocked, makeConditionResult, makeEffect,
-  makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeReaction, makeTick,
+  makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeReaction, makeTick, makeUnusedReaction, makeWatching,
 } from '../../testing/builders';
 import { PLAYBACK_TIMING, buildTimeline, periodicIcon, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
@@ -448,6 +448,43 @@ describe('playback timeline: conditions (3B.4)', () => {
         movements: [makeMove({ combatantId: 'a', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }], disengaging: true })],
       })));
       expect(beat.feed).toContain('a disengages to (4, 5)');
+    });
+  });
+
+  describe('prepared reactions (3B.6 PR 2)', () => {
+    it('puts the 👁 badge on with the first beat of the watcher\'s tick, with the "prepares" line', () => {
+      const [beat] = buildTimeline(payload(tick(0, { watching: [makeWatching({ combatantId: 'w' })] })));
+      expect(beat.phase).toBe('idle');
+      expect(beat.watching).toEqual({ w: 'Brace' });
+      expect(beat.floats).toContain({ combatantId: 'w', text: '👁 Brace', kind: 'status' });
+      expect(beat.feed).toContain('w prepares Brace');
+    });
+
+    it('labels a prepared reaction with its name and takes the badge off when it fires', () => {
+      const beats = buildTimeline(payload(
+        tick(0, { watching: [makeWatching({ combatantId: 'w' })] }),
+        tick(1, {
+          movements: [move('g', [[8, 5], [7, 5], [6, 5]])],
+          reactions: [makeReaction({ reactorId: 'w', triggerId: 'g', kind: 'prepared', abilityId: 'brace', abilityName: 'Brace', step: 2,
+            feedText: "w's Brace hits g for 6 damage (HP: 10 → 4)" })],
+        }),
+      ));
+      const fired = beats.find(b => b.tick === 1 && b.floats?.some(f => f.kind === 'reaction'))!;
+      expect(fired.floats).toContain({ combatantId: 'w', text: '⚡ BRACE', kind: 'reaction' });
+      expect(fired.watching).toEqual({ w: null });
+      expect(fired.feed).toContain("w's Brace hits g for 6 damage (HP: 10 → 4)");
+    });
+
+    it('ends with an unused note that takes the badge off', () => {
+      const beats = buildTimeline(makePayload({
+        ticks: [tick(0, { watching: [makeWatching({ combatantId: 'w', abilityName: 'Overwatch' })] })],
+        unusedReactions: [makeUnusedReaction({ combatantId: 'w', abilityName: 'Overwatch' })],
+      }));
+      const last = beats[beats.length - 1];
+      expect(last.phase).toBe('unused');
+      expect(last.watching).toEqual({ w: null });
+      expect(last.floats).toEqual([{ combatantId: 'w', text: '👁 unused', kind: 'status' }]);
+      expect(last.feed).toEqual(['End of round', "w's Overwatch goes unused"]);
     });
   });
 });

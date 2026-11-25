@@ -9,6 +9,7 @@ import { ResolutionPlaybackService } from '../../../../core/services/resolution-
 import { AbilityDto, ActiveConditionDto, AttackResult, CombatantDto, PlanningCombatantDto, QueuedActionDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
 import {
   makeAbility, makeActiveCondition, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeReaction, makeRoll, makeTick,
+  makePreparedAbility, makeUnusedReaction, makeWatching,
 } from '../../../../testing/builders';
 
 const ENCOUNTER_ID = 'preview-encounter-1';
@@ -46,7 +47,13 @@ const CHARGE: AbilityDto = makeAbility({
   tags: ['melee', 'movement'], targeting: { range: 6 },
   move: { to: 'target', maxCells: 6, usesMovementBudget: true },
 });
-const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIREBOLT], c2: [TWIN_SHOT, MEND, DASH, CHARGE], c4: [POWER_STRIKE, CHARGE] };
+/** A prepared reaction (3B.6 PR 2): queued last, it watches for the rest of the round. */
+const BRACE: AbilityDto = makePreparedAbility({
+  description: 'Ends your queue. Until the end of the round, strike the first enemy that steps into your reach (weapon die + 2).',
+});
+const ABILITIES: Record<string, AbilityDto[]> = {
+  c1: [POWER_STRIKE, CLEAVE, FIREBOLT, BRACE], c2: [TWIN_SHOT, MEND, DASH, CHARGE], c3: [BRACE], c4: [POWER_STRIKE, CHARGE],
+};
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
 /** Conditions (3B.4): Zara is Emboldened, Goblin 1 is Marked and Exposed. */
 const CONDITIONS: Record<string, ActiveConditionDto[]> = {
@@ -111,11 +118,12 @@ const defends = (id: string) => makeEffect({ combatantId: id, effectType: 'defen
  * A three-tick round (3B.2 queues): action i of every queue resolves in tick i.
  *   Zara (4 AP):   move → melee Goblin 1 → move away (Goblin 1's opportunity attack hits her as she steps off, 3B.6)
  *   Isolde (5 AP): ranged Goblin 1 → ranged Goblin 2 → defend
- *   Goblin 1 (4):  ranged Isolde → melee Zara           (done after tick 2)
+ *   Goblin 1 (4):  ranged Isolde → Brace                (watches from tick 2; nobody steps in, so it goes unused, 3B.6)
  *   Goblin 2 (4):  move → melee Zara (out of reach: wasted) → defend
  */
 const MOCK_RESOLUTION: ResolutionPayload = makePayload({
   newRoundNumber: 4,
+  unusedReactions: [makeUnusedReaction({ combatantId: 'c3', combatantName: NAMES['c3'], feedText: "Goblin 1's Brace goes unused" })],
   updatedCombatants: PLANNING_COMBATANTS,
   queues: [
     queue('c1', 4,
@@ -128,7 +136,7 @@ const MOCK_RESOLUTION: ResolutionPayload = makePayload({
       { type: 'defend', apCost: 1 }),
     queue('c3', 4,
       { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c2' },
-      { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1' }),
+      { type: 'ability', apCost: 2, abilityId: 'brace' }),
     queue('c4', 4,
       { type: 'move', apCost: 1, targetCell: { x: 6, y: 14 } },
       { type: 'melee_attack', apCost: 2, targetCombatantId: 'c1' },
@@ -145,10 +153,10 @@ const MOCK_RESOLUTION: ResolutionPayload = makePayload({
     }),
     makeTick({
       tickIndex: 1,
+      watching: [makeWatching({ combatantId: 'c3', combatantName: NAMES['c3'], feedText: 'Goblin 1 prepares Brace' })],
       attacks: [
         strike('c1', 'c3', { hit: true, damage: 5, targetNewHp: 12, feedText: 'Zara Forge strikes Goblin 1 for 5 damage (HP: 17 → 12)', roll: makeRoll({ d20: 13, accuracy: 3, targetDodge: 12 }) }),
         strike('c2', 'c4', { attackType: 'ranged_attack', hit: true, damage: 3, targetNewHp: 14, feedText: 'Isolde Blade shoots at Goblin 2 for 3 damage (HP: 17 → 14)', roll: makeRoll({ d20: 17, accuracy: 2, targetDodge: 12 }) }),
-        strike('c3', 'c1', { hit: false, targetNewHp: 8, feedText: 'Goblin 1 strikes at Zara Forge — miss', roll: makeRoll({ d20: 4, accuracy: 2, targetDodge: 13 }) }),
         strike('c4', 'c1', { hit: false, targetNewHp: 8, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", wastedReason: 'out_of_melee_reach' }),
       ],
     }),

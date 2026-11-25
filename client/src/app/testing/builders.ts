@@ -32,7 +32,7 @@ import {
   QueuedActionDto,
   ResolutionPayload,
   ReactionResult,
-  TickResult, BlockedActionResult } from '../contracts/hub-contracts.generated';
+  TickResult, BlockedActionResult, UnusedReactionDto, WatchingResult } from '../contracts/hub-contracts.generated';
 import { Combatant } from '../state/encounter/encounter.model';
 
 // --- Abilities ---
@@ -254,6 +254,39 @@ export function makeReaction(overrides: Partial<ReactionResult> = {}): ReactionR
     reactorId, reactorName: reactorId, triggerId, triggerName: triggerId, kind: 'opportunity', abilityId: null, abilityName: null,
     step: 1, feedText,
     attack: makeAttack({ attackerId: reactorId, targetId: triggerId, hit: true, damage: 3, targetNewHp: 7, feedText, roll: makeRoll({ d20: 12 }) }),
+    ...overrides,
+  };
+}
+
+/** A prepared ability (3B.6 PR 2); defaults to Brace (2 AP, cooldown 1, enemy enters reach, targets the trigger). */
+export function makePreparedAbility(
+  overrides: Partial<Omit<AbilityDto, 'targeting'>> & { targeting?: Partial<AbilityTargetingDto> } = {},
+): AbilityDto {
+  const id = overrides.id ?? 'brace';
+  return makeAbility({
+    id, name: id === 'brace' ? 'Brace' : id, apCost: 2, cooldown: 1, tags: ['melee'], activation: 'prepared',
+    trigger: { kind: 'enemy_enters_reach', range: null, attackKind: null, description: 'Reacts when an enemy steps into reach' },
+    ...overrides,
+    targeting: { kind: 'trigger', filter: 'enemy', range: 0, ...overrides.targeting },
+  });
+}
+
+/** A prepared reaction starting to watch (3B.6 PR 2); defaults to `c1`'s Brace. */
+export function makeWatching(overrides: Partial<WatchingResult> = {}): WatchingResult {
+  const combatantId = overrides.combatantId ?? 'c1';
+  const abilityName = overrides.abilityName ?? 'Brace';
+  return {
+    combatantId, combatantName: combatantId, abilityId: 'brace', abilityName, feedText: `${combatantId} prepares ${abilityName}`,
+    ...overrides,
+  };
+}
+
+/** A prepared reaction that never fired this round (3B.6 PR 2); defaults to `c1`'s Brace. */
+export function makeUnusedReaction(overrides: Partial<UnusedReactionDto> = {}): UnusedReactionDto {
+  const combatantId = overrides.combatantId ?? 'c1';
+  const abilityName = overrides.abilityName ?? 'Brace';
+  return {
+    combatantId, combatantName: combatantId, abilityId: 'brace', abilityName, feedText: `${combatantId}'s ${abilityName} goes unused`,
     ...overrides,
   };
 }

@@ -147,3 +147,30 @@ test("Seeded dice: the Brute's opportunity attack rolls first, at the Bruiser's 
   await expect(feedEntries(page).filter({ hasText: 'opportunity attack on Skirmisher' })).toHaveCount(0);
   await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('td').nth(1)).toHaveText('24/24');
 });
+
+test("Seeded dice: the Scout's Overwatch shoots the Goblin Archer at its third step (Reactions preset, 3B.6 PR 2)", async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Reactions');
+
+  // Same plan as the Brace / Overwatch test in quick-battle.spec.ts: the Bruiser braces, the Scout takes up Overwatch.
+  // The Goblin Archer walks (16,2) → (11,7); at (13,5) it is 6 cells from the Scout (13,11), and the shot rolls first
+  // (a miss with seed 1). Nobody moves in tick 2, so the Archer's own Overwatch and the Bruiser's Brace go unused.
+  const actionBar = page.locator('.action-bar');
+  await actionBar.locator('.ability-btn', { hasText: 'Brace' }).click();
+  await tokenAt(page, 13, 11).click();
+  await actionBar.locator('.ability-btn', { hasText: 'Overwatch' }).click();
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expectPlanningRound(page, 2, 30_000);
+
+  for (const line of [
+    'Bruiser prepares Brace',
+    'Scout prepares Overwatch',
+    'Goblin Archer moves to (11, 7)',
+    "Scout's Overwatch misses Goblin Archer",
+    'Goblin Archer prepares Overwatch',
+    "Bruiser's Brace goes unused",
+    "Goblin Archer's Overwatch goes unused",
+  ])
+    await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1);
+});
+

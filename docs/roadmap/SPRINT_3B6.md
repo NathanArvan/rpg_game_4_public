@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.6. Hand this to Claude Code alongside `CLAUDE.md`. The starting point is `TICK_RESOLUTION.md` Decisions 4 (reactive actions) and 5 (opportunity attacks and Disengage). The decisions below (X1–X16) make those concrete, and a few of them **change** D5 (see X2, X4). They are all settled; treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` and `SPRINT_3B4.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (A1 reserves `activation: "prepared"` for this slice, A9 split it out).
 >
-> **Status:** 🟡 In progress. PR 1 (opportunity attacks & Disengage) done; PR 2 and PR 3 to do. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
+> **Status:** 🟡 In progress. PR 1 (opportunity attacks & Disengage) and PR 2 (prepared reactions: Brace, Overwatch) done; PR 3 to do. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
 >
 > **Goal:** Movement has a cost near enemies. Stepping out of an enemy's reach gives them a free **opportunity attack** (a full weapon hit, rolled and applied on the spot), unless the mover pays for a **Disengage**. Combatants can also spend AP and the rest of their queue on a **prepared reaction**: they watch for a trigger for the rest of the round and act the moment it happens. 3B.6 ships movement triggers (**Brace**: strike whoever steps into reach; **Overwatch**: shoot the first enemy who moves nearby) and attack triggers (**Parry**: harder to hit for the attacks aimed at you; **Intercept**: take a hit meant for an adjacent ally). The enemy AI uses them a little. All of it can be tried in a new **Reactions** Quick Battle.
 
@@ -282,6 +282,19 @@ New Quick Battle preset **`reactions.json`** ("Reactions"): the party starts **n
 ---
 
 ## PR 2 — Prepared reactions: framework & movement triggers
+
+*Status: done. Differences from the plan below:*
+- *A prepared ability that starts watching is reported in `TickOutcome.Watching` (`PreparedReaction`: combatant, ability) and not in `TickOutcome.AbilityUses`, so the feed says "Brakka prepares Brace" and not "uses". One refused at its tick (on cooldown, not in the loadout) is still an `AbilityUse` with its wasted reason. `RoundOutcome.UnusedReactions` uses the same record.*
+- *`WatchingResult` (hub) gained `CombatantName` and `FeedText`, like the other result records.*
+- *`ReactionTrigger.AttackKind` is `AttackKind?` (null = any) rather than an `Any` value, since `AttackKind` has no such member.*
+- *A reactor can make both its passive opportunity attack and its prepared reaction on the same step (e.g. an adjacent Overwatcher whose enemy steps away): they're independent, the opportunity attack rolls first. X5's "one passive reaction per tick" still holds.*
+- *"Unused" means still watching when the round ends. A watcher that fell or was Stunned stopped watching, so it isn't reported unused.*
+- *`AbilityCatalog` accepts only `"attack"` effects on a prepared ability for now, and refuses the `attacked` / `ally_attacked` triggers until PR 3 brings their effects. A `"trigger"` target has no `range` and defaults to the `enemy` filter.*
+- *AI (X15): Brace when a standing enemy outside its reach could walk into it this round (within that enemy's movement + reach, Rooted enemies can't); Overwatch when a standing enemy that can move could end a step within its range. The plan's "no enemy in range of a ranged attack after its walk" didn't apply: the AI has no ranged attacks yet. Either way it only replaces a lone Defend or uses AP left at the end of the queue.*
+- *The Goblin Archer starts at (16, 2), out of reach in round 1; it walks toward the party and takes up Overwatch with its last AP. In the Reactions preset the Scout's Overwatch catches it walking in (the seeded E2E pins that shot).*
+- *Playback: the 👁 badge comes on with the first beat of the watcher's tick (with a `👁 Brace` float), comes off when it fires (`⚡ BRACE` cue) or in a new end-of-round `unused` beat (first in the end of round, before periodic effects). Badges only show during playback.*
+- *Integration preset `it-brace.json` (a hero with Brace three cells from a manual goblin) for the hub test.*
+- *Migration `AddReactions` (model snapshot only): the ability snapshot's `Activation` and owned `Trigger`.*
 
 ### Rules
 

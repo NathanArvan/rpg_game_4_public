@@ -104,7 +104,7 @@ Delivers: Abilities and environmental effects can apply conditions (stunned, bur
 
 *Split out of 3B.3 in November 2026 (`ABILITIES.md` A9). Runs after 3B.4.*
 
-*Status: in progress (`SPRINT_3B6.md`). PR 1 done: passive **opportunity attacks** (leaving an enemy's reach provokes a full weapon hit at that step; a mover it drops stops there), **Disengage** (2 AP, provokes none), the `opportunityAttacks` profile value, a threat preview on the move highlight, a playback cue, the AI Disengaging rather than walking out of reach, and the **Reactions** Quick Battle. Next: PR 2 (prepared reactions: Brace, Overwatch), PR 3 (attack triggers: Parry, Intercept).*
+*Status: in progress (`SPRINT_3B6.md`). PR 1 done: passive **opportunity attacks** (leaving an enemy's reach provokes a full weapon hit at that step; a mover it drops stops there), **Disengage** (2 AP, provokes none), the `opportunityAttacks` profile value, a threat preview on the move highlight, a playback cue, the AI Disengaging rather than walking out of reach, and the **Reactions** Quick Battle. PR 2 done: **prepared reactions** as abilities (`activation: "prepared"`, a `trigger`, `trigger` targeting) that end the queue and watch from their tick to the end of the round; **Brace** (strike an enemy that steps into reach) and **Overwatch** (shoot the first enemy that moves within 6), resolved at the movement step hook; no AP refund, the cooldown starts anyway, an unused one is reported; a 👁 badge and ⚡ cue in playback; the AI braces or takes up Overwatch with its leftover AP. Next: PR 3 (attack triggers: Parry, Intercept).*
 
 Delivers: The reactive action framework from `TICK_RESOLUTION.md` Decisions 4–5. **Passive reactions:** opportunity attacks when an adjacent enemy moves away, and **Disengage** (a move that doesn't provoke them). **Prepared reactions:** an ability with `activation: "prepared"` takes a queue slot and AP and puts the combatant in a watching state for the rest of the round; it fires when its trigger is met (enemy enters/leaves melee range, enemy attacks me or an ally, enemy uses a tagged ability, ally HP drops below a threshold), with interrupt / simultaneous / response timing. Counterspell, overwatch, parry and intercept become possible. `EnemyAi` gets a minimal use (e.g. it doesn't walk out of melee range carelessly). Decisions to settle in its sprint doc: AP refund for unused prepared actions, duplicate triggers, same-tick readiness, whether Disengage avoids prepared movement reactions (current leans in `TICK_RESOLUTION.md` → Open Questions).
 
@@ -412,7 +412,7 @@ Defined in `TICK_RESOLUTION.md`. The schema evolves across slices but is always 
 
 As shipped in 3B.2: the queue costs 1 + 2 = 3 AP, which must fit the combatant's `MaxAp`. Costs come from `RulesConfig` and are sent to clients in `PlanningPhaseStarted.apCosts`; entries don't carry them, and there's no `totalApSpent` / `maxAp` on the wire plan.
 
-**3B.6+ (prepared reactions):**
+**3B.6+ (prepared reactions):** *as built in 3B.6 PR 2, a prepared reaction is an ability entry, `{ "type": "ability", "abilityId": "brace" }` with no target, last in the queue; its trigger lives on the ability (`SPRINT_3B6.md` X6, X7). The sketch below is the original plan.*
 ```json
 {
   "actions": [
@@ -585,6 +585,9 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | When an opportunity attack resolves | At the movement step that provoked it, netted per step; it stops the mover only if it drops them | `SPRINT_3B6.md` X3 (Nov 2026) | Reads naturally in playback; keeps the tick's Attack phase as it was |
 | Disengage cost | 2 AP (a move otherwise) | `SPRINT_3B6.md` X4 (Nov 2026) | At 1 AP it would cost nothing over a Move |
 | Opportunity attack strength | A full weapon hit; one per reactor per tick; nobody moving in the same tick reacts | `SPRINT_3B6.md` X5 (Nov 2026) | Makes retreating a real choice; stops two fighters stepping apart from trading free hits |
+| Planning a prepared reaction | An ability (`activation: "prepared"`) that must be the last action in the queue; watches from the start of its tick to the end of the round, fires once | `SPRINT_3B6.md` X6–X9 (Nov 2026) | Reuses abilities (cost, cooldown, effects); committing the rest of the round is the price |
+| Unused prepared reactions | No AP refund; the cooldown starts anyway; reported at the end of the round | `SPRINT_3B6.md` X10 (Nov 2026) | Preparation is a gamble |
+| Several prepared reactions on one trigger | All fire | `SPRINT_3B6.md` X10 (Nov 2026) | Two Overwatchers both shoot the same runner; the cost of imperfect coordination |
 | Environmental magic timing | Ability-side hooks in 3B.3; map side (ley points, resonance) in 3M.5 after 3M.2 | `ABILITIES.md` A12 (Nov 2026) | Ley points and resonance are map content and should land once, in the map file format |
 | High ground | Affects combat, not just movement | This roadmap (Nov 2026); details in `ELEVATION.md` | Makes elevation a tactical objective, like ley points |
 | Condition storage | JSON catalog, definition copied into each ability snapshot; active conditions in a per-encounter Redis hash | `SPRINT_3B4.md` C1, C13 (Nov 2026) | Same pattern as abilities; retuning never changes a running fight |
@@ -603,8 +606,6 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Non-hostile rival teams (e.g. two parties racing for an objective) | When needed (after 3B.3) | `Neutral` relation + per-encounter team relations / none | Deferred; `ABILITIES.md` A3 keeps every hostility check inside `Relation(a, b)` so it can be added there |
 | Win condition when an AI side and a human side share a session | 3B.0 | Last side standing / per-preset objectives | Last side standing |
 | Ability loadout storage | 3B.3 | `character_abilities` join table / listed on profile preset | Listed on profile preset, snapshotted per combatant (`ABILITIES.md` A2) |
-| Unused prepared actions refund AP? | 3B.6 | Full / partial / none | No refund |
-| Multiple prepared reactions on same trigger? | 3B.6 | All fire / only first | All fire (wasted duplicates) |
 | Ranged attacks in melee penalty? | 3B+ | Penalty / no penalty | Penalty (disadvantage) |
 | Player-drawn movement paths? | 3B+ | Server-computed shortest / player-drawn | Server-computed; player-drawn is a UI enhancement (more useful once walls and terrain costs make routes differ) |
 | How client and server agree on paths | 3M.2 | TypeScript port of the pathfinder tested against shared JSON fixtures / server returns each planned move's path | TS port with shared fixtures (keeps the instant move preview) |

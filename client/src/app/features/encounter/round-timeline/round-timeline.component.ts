@@ -78,6 +78,8 @@ export class RoundTimelineComponent {
       [`outcome-${slot.outcome}`]: revealed,
       pending: !revealed,
       current: slot.tick === this.shownTick(),
+      'watch-start': slot.watching === 'start',
+      'watch-on': slot.watching === 'on',
     };
   }
 

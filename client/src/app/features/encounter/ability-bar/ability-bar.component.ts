@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { AbilityDto, PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
 import { Combatant } from '../../../state/encounter/encounter.model';
-import { DEFAULT_AP_COSTS, abilityUnavailableReason } from '../../../state/encounter/plan-queue';
+import { DEFAULT_AP_COSTS, abilityUnavailableReason, isPrepared } from '../../../state/encounter/plan-queue';
 import { describeAppliedDuration, describeModifiers } from '../condition-chips/condition-format';
 
 /** One button's worth of display data. */
@@ -11,13 +11,16 @@ export interface AbilityButton {
   unavailable: string | null;
   cooldownLeft: number;
   armed: boolean;
+  /** A prepared reaction (3B.6): queued on click, it ends the queue and watches for its trigger. */
+  prepared: boolean;
   tooltip: string;
 }
 
 /**
  * The selected combatant's abilities (3B.3): one button each, with its AP cost and cooldown.
  * Clicking a ready ability arms it (the next grid click picks its target); clicking the armed one
- * disarms it. Presentational: the parent dispatches ArmAbility / DisarmAbility.
+ * disarms it. A prepared reaction (3B.6, 👁) takes no target: the parent queues it on the click.
+ * Presentational: the parent dispatches ArmAbility / DisarmAbility or queues the reaction.
  */
 @Component({
   selector: 'app-ability-bar',
@@ -45,6 +48,7 @@ export class AbilityBarComponent {
         unavailable,
         cooldownLeft: c.cooldowns[ability.id] ?? 0,
         armed: this.armedAbilityId === ability.id,
+        prepared: isPrepared(ability),
         tooltip: AbilityBarComponent.tooltip(ability, unavailable),
       };
     });
@@ -61,7 +65,9 @@ export class AbilityBarComponent {
     const reach = t.range === 1 ? 'adjacent' : `within ${t.range} cells`;
     const cooldown = ability.cooldown > 0 ? ` · cooldown ${ability.cooldown} ${ability.cooldown === 1 ? 'round' : 'rounds'}` : '';
     const move = ability.move;
-    const target = move?.to === 'cell'
+    const target = isPrepared(ability)
+      ? `👁 ${ability.trigger?.description ?? 'Reacts to a trigger'}, until the end of the round. Ends your queue.`
+      : move?.to === 'cell'
       ? `Target: a cell up to ${move.maxCells} away${move.usesMovementBudget ? '' : ' (on top of your movement)'}`
       : t.kind === 'self' ? 'Target: yourself'
       : `Target: ${who} ${reach}${move ? ` (you run next to them${move.usesMovementBudget ? ', using your movement' : ''})` : ''}`;

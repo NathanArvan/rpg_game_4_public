@@ -69,7 +69,7 @@ export function wastedLabel(reason: string | null): string {
 }
 
 export type PlaybackPhase =
-  'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'periodic' | 'bleedout' | 'expiries' | 'idle';
+  'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'periodic' | 'bleedout' | 'expiries' | 'unused' | 'idle';
 
 export interface PlaybackBeat {
   /** 0-based tick this beat belongs to. */
@@ -91,6 +91,11 @@ export interface PlaybackBeat {
   conditions?: Record<string, ActiveConditionDto[]>;
   /** Feed lines added at this beat. */
   feed?: string[];
+  /**
+   * Prepared reactions that start or stop watching at this beat (3B.6): combatant → the ability's name (shown as a 👁
+   * badge on the token from now on), or null to take the badge off (it fired, or the round ended).
+   */
+  watching?: Record<string, string | null>;
 }
 
 export interface PlaybackTiming {
@@ -119,6 +124,8 @@ export interface PlaybackTiming {
   bleedoutMs: number;
   /** Hold for the end-of-round step where conditions run out (3B.4). */
   expiryMs: number;
+  /** Hold for the end-of-round note on prepared reactions that never fired (3B.6). */
+  unusedMs: number;
   /** How long an aura glows. */
   auraMs: number;
   /** How long floating damage / MISS text lingers (it may outlast its beat). */
@@ -139,6 +146,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   periodicMs: 1500,
   bleedoutMs: 1500,
   expiryMs: 900,
+  unusedMs: 700,
   auraMs: 1000,
   floatMs: 2500,
 };
@@ -248,8 +256,10 @@ function addReactionCues(
   const hp: Record<string, number> = { ...beat.hp };
   const statuses: Record<string, StatusView> = { ...beat.statuses };
   const conditions: Record<string, ActiveConditionDto[]> = { ...beat.conditions };
+  const watching: Record<string, string | null> = { ...beat.watching };
   for (const r of reactions) {
     const label = r.kind === 'opportunity' ? 'OPPORTUNITY' : `⚡ ${(r.abilityName ?? r.abilityId ?? '').toUpperCase()}`;
+    if (r.kind === 'prepared') watching[r.reactorId] = null; // it fired: no longer watching (SPRINT_3B6 X9)
     if (!auras.some(a => a.combatantId === r.reactorId)) auras.push({ combatantId: r.reactorId, kind: 'lunge' });
     floats.push({ combatantId: r.reactorId, text: label, kind: 'reaction' });
     const a = r.attack;
@@ -271,6 +281,7 @@ function addReactionCues(
   if (Object.keys(hp).length > 0) beat.hp = hp;
   if (Object.keys(statuses).length > 0) beat.statuses = statuses;
   if (Object.keys(conditions).length > 0) beat.conditions = conditions;
+  if (Object.keys(watching).length > 0) beat.watching = watching;
   beat.durationMs = Math.max(beat.durationMs, timing.reactionMs);
 }
 
@@ -321,6 +332,10 @@ export function buildTimeline(
     // Actions a condition stopped (3B.4 PR 3): Stunned / Rooted, said as the tick starts.
     const blocked = tick.blocked ?? [];
     pendingFeed.push(...blocked.map(b => b.feedText));
+
+    // Prepared reactions (3B.6) start watching as the tick starts, before its movement: 👁 on the token from then on.
+    const watchers = tick.watching ?? [];
+    pendingFeed.push(...watchers.map(w => w.feedText));
 
     // Movement: one beat per cell, every mover stepping in lockstep (as the rules resolve it).
     const uses = tick.abilityUses ?? [];
@@ -483,6 +498,14 @@ export function buildTimeline(
         ...shown.map(b => ({ combatantId: b.combatantId, text: `⛔ ${b.conditionName.toUpperCase()}`, kind: 'debuff' as const }))];
     }
 
+    // A watcher's 👁 badge goes on with the tick's first beat (a reaction that fires on that very beat takes it off again).
+    if (watchers.length > 0) {
+      const first = beats[beatsBefore];
+      first.watching = { ...Object.fromEntries(watchers.map(w => [w.combatantId, w.abilityName])), ...first.watching };
+      first.floats = [...(first.floats ?? []),
+        ...watchers.map(w => ({ combatantId: w.combatantId, text: `👁 ${w.abilityName}`, kind: 'status' as const }))];
+    }
+
     // Guarded shows as the tick starts: on its first beat, with a short cue over the defender.
     if (guards.length > 0) {
       const first = beats[beatsBefore];
@@ -499,7 +522,19 @@ export function buildTimeline(
     endOfRoundHeading = true;
   };
 
-  // End of round, first: conditions' periodic damage and healing, netted per combatant (3B.4 PR 2).
+  // End of round, first: prepared reactions that never fired (3B.6). No refund; the badge comes off.
+  const unused = payload.unusedReactions ?? [];
+  if (unused.length > 0) {
+    endOfRound();
+    pendingFeed.push(...unused.map(u => u.feedText));
+    beats.push({
+      tick: lastTick, phase: 'unused', durationMs: timing.unusedMs, feed: takeFeed(),
+      floats: unused.map(u => ({ combatantId: u.combatantId, text: '👁 unused', kind: 'status' as const })),
+      watching: Object.fromEntries(unused.map(u => [u.combatantId, null])),
+    });
+  }
+
+  // Then conditions' periodic damage and healing, netted per combatant (3B.4 PR 2).
   const periodic = payload.periodic ?? [];
   if (periodic.length > 0) {
     endOfRound();

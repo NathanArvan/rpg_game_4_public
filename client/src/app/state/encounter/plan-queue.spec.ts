@@ -3,8 +3,9 @@ import {
   DEFAULT_AP_COSTS, abilityUnavailableReason, apSpent, canAfford, canAffordEntry, canTargetWithAbility, describeQueue, entry,
   abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
   abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue, blockOf, entryMoves, skipsRoundReason, provokedBy, isMoveType,
+  isPrepared, queuedPrepared, validatePlan, PREPARED_NOT_LAST,
 } from './plan-queue';
-import { makeAbility } from '../../testing/builders';
+import { makeAbility, makePreparedAbility } from '../../testing/builders';
 
 const move = (x: number, y: number): PlannedActionEntry => entry('move', { targetCell: { x, y } });
 const melee = (id: string): PlannedActionEntry => entry('melee_attack', { targetCombatantId: id });
@@ -217,5 +218,31 @@ describe('conditions at planning (3B.4 PR 3)', () => {
       // Passing by: in and out of reach.
       expect(provokedBy([{ x: 4, y: 3 }, { x: 5, y: 4 }, { x: 6, y: 3 }, { x: 7, y: 2 }], [goblin])).toEqual([goblin]);
     });
+  });
+});
+
+describe('prepared reactions (3B.6 PR 2)', () => {
+  const brace = makePreparedAbility();
+  const prepared = entry('ability', { abilityId: 'brace' });
+  const facts = { maxAp: 4, movementRange: 6, abilities: [brace], cooldowns: {}, start: { x: 0, y: 0 }, gridWidth: 20, gridHeight: 20 };
+
+  it('knows a prepared ability and the one ending a queue', () => {
+    expect(isPrepared(brace)).toBeTrue();
+    expect(isPrepared(makeAbility())).toBeFalse();
+    expect(queuedPrepared([move(1, 0), prepared], [brace])).toBe(brace);
+    expect(queuedPrepared([prepared, move(1, 0)], [brace])).toBeUndefined();
+    expect(queuedPrepared([], [brace])).toBeUndefined();
+  });
+
+  it('takes no target and must be last, in the server\'s words', () => {
+    expect(validatePlan([move(2, 0), prepared], facts)).toEqual({ error: null, ap: 3, cells: 2 });
+    expect(validatePlan([prepared, defend], facts).error).toBe(PREPARED_NOT_LAST);
+    expect(validatePlan([entry('ability', { abilityId: 'brace', targetCombatantId: 'g' })], facts).error).toBe("Brace doesn't take a target.");
+  });
+
+  it('makes every other ability unavailable once it ends the queue', () => {
+    expect(abilityUnavailableReason(powerStrike, [prepared], 10, DEFAULT_AP_COSTS, [brace, powerStrike], {}))
+      .toBe('A prepared reaction ends the queue');
+    expect(abilityUnavailableReason(brace, [move(1, 0)], 4, DEFAULT_AP_COSTS, [brace], {})).toBeNull();
   });
 });

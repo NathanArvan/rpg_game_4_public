@@ -72,12 +72,16 @@ AbilityDefinition
   apCost            int
   cooldown          int   rounds unusable after the round it was used (0 = none)
   charges           int?  uses per encounter (reserved; not implemented in 3B.3)
-  activation        "active" (only value in 3B.3; "prepared" / "passive" reserved, A9)
+  activation        "active" | "prepared" (3B.6 PR 2; "passive" reserved, A9)
+  trigger           prepared only (3B.6): { kind, range?, attackKind? }: enemy_enters_reach,
+                    enemy_moves_within (+ range); attacked, ally_attacked (3B.6 PR 3)
   tags[]            mechanic tags (melee, ranged, healing, movement, spell, aoe)
                     + resonance tags (flame, holy, …, MAGIC_SYSTEM.md)
   targeting         Targeting (A4)
   effects[]         ordered list of Effect (A5)
 ```
+
+> 3B.6 PR 2 (`SPRINT_3B6.md` X6–X9): a **prepared** ability is queued as the last action of a queue, with no target. From the start of its tick to the end of the round it watches for its `trigger` and resolves its effects (only `attack` so far) on whoever set it off, the moment that happens; its cooldown starts when its tick is reached, whether or not it fires. Shipped: Brace, Overwatch.
 
 In Rules these are immutable records. `AbilityEffect` is an abstract record with one sealed subtype per effect kind (`MoveEffect`, `AttackEffect`, `HealEffect`, `StabilizeEffect`, later `ApplyConditionEffect`, `PushEffect`, …). In JSON the effect kind is a `"kind"` field. Parsing lives in the Api, like profiles: Rules has no serialization.
 
@@ -101,7 +105,7 @@ In Rules these are immutable records. `AbilityEffect` is an abstract record with
 
 ```
 Targeting
-  kind      "self" | "combatant" | "combatants" | "auto" | "cell" (cell: 4.1, reserved)
+  kind      "self" | "combatant" | "combatants" | "auto" | "trigger" (3B.6) | "cell" (cell: 4.1, reserved)
   filter    "enemy" | "ally" | "any" | "downed_ally"  (who is a legal target)
   range     int   Chebyshev cells from the caster at resolution time (1 = adjacent)
   count     int   "combatants": max chosen targets (e.g. 2). "auto": max hit (null = all)
@@ -111,6 +115,7 @@ Targeting
 - **`combatant`**: one chosen target, tracked like an attack (TICK_RESOLUTION D3).
 - **`combatants`**: up to `count` **distinct** chosen targets, each tracked separately. Each target that is out of range or already defeated is wasted on its own; the rest still resolve.
 - **`auto`**: targets are found **at resolution time**: every combatant matching `filter` within `range` of the caster, after this tick's movement, in a fixed order (by distance, then id). Cleave is `auto / enemy / range 1`. This is the first "area" shape (a burst around the caster) and doesn't need the 4.1 cell-targeting UI.
+- **`trigger`** (3B.6 PR 2): prepared abilities only. The target is whoever set off the reaction (the enemy that stepped into reach). Nothing is chosen at planning; no `range` (the trigger decides who).
 - **`cell`** is reserved for 4.1 (cell-targeted AoE with friendly fire, TICK_RESOLUTION D3).
 - **One reach check.** Every target test goes through one helper (`CanTarget(caster, target, targeting)`: exists → filter → status → range). 3M.2 adds line of sight, 3M.4 the high-ground bonus, 3C.1 "visible to the caster". Nothing else in the resolver may check range.
 - **Planning only validates what can't change:** the ids exist, the filter matches (team), the count isn't exceeded, there are no duplicates. Range is checked at resolution, because positions change during the round. That matches how melee reach works today.
@@ -177,6 +182,8 @@ All of a round's ordinary moves share `MovementRange` (3B.2). For ability moveme
 - ✅ Healing a target that was Standing at the start of the tick and goes to 0 in the same tick is just netting: if damage − heal leaves HP ≤ 0, they fall.
 
 ### A9. Prepared reactions are not in 3B.3 ✅ Decided
+
+> **Resolved in 3B.6** (`SPRINT_3B6.md`): prepared reactions are abilities with `activation: "prepared"` and a `trigger` (PR 2: Brace, Overwatch; PR 3: Parry, Intercept). No AP refund for an unused one; several on the same event all fire.
 
 Reactions are a separate framework: a watching state, trigger checks at every cell step and attack, interrupts. They get their own slice, **3B.6 Prepared Reactions & Opportunity Attacks**, after 3B.4, together with opportunity attacks and Disengage (TICK_RESOLUTION D4–D5). In 3B.3 only the `activation` field is reserved. The two reaction decisions the roadmap listed as "needed by 3B.3" (AP refund for unused prepared actions, duplicate triggers) move to 3B.6.
 

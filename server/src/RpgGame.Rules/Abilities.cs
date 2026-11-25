@@ -21,6 +21,11 @@ public enum TargetKind
     Auto,
     /// <summary>A grid cell (4.1, reserved).</summary>
     Cell,
+    /// <summary>
+    /// Prepared reactions only (3B.6, SPRINT_3B6 X6): whoever set off the reaction, e.g. the enemy that stepped into
+    /// reach. Nothing is chosen when it's planned.
+    /// </summary>
+    Trigger,
 }
 
 /// <summary>Who is a legal target, by <see cref="Relation"/> and status.</summary>
@@ -44,16 +49,37 @@ public enum AttackKind
     None,
 }
 
-/// <summary>How an ability is used. Only <see cref="Active"/> exists in 3B.3; the others are reserved (3B.6).</summary>
+/// <summary>How an ability is used (ABILITIES.md A1).</summary>
 public enum AbilityActivation
 {
     /// <summary>Queued and resolved at its queue position.</summary>
     Active,
-    /// <summary>Queued; fires when a trigger is met (3B.6).</summary>
+    /// <summary>
+    /// Queued as the last action of a queue; from its tick to the end of the round it watches for its
+    /// <see cref="AbilityDefinition.Trigger"/> and resolves the moment that happens (3B.6, SPRINT_3B6 X6–X9).
+    /// </summary>
     Prepared,
-    /// <summary>Always on, never queued (3B.6).</summary>
+    /// <summary>Always on, never queued (reserved).</summary>
     Passive,
 }
+
+/// <summary>What sets off a prepared reaction (3B.6, SPRINT_3B6 X6, X12, X13).</summary>
+public enum TriggerKind
+{
+    /// <summary>An enemy's movement step ends within the watcher's melee reach, having started outside it (Brace).</summary>
+    EnemyEntersReach,
+    /// <summary>An enemy takes a movement step that ends within <see cref="ReactionTrigger.Range"/> of the watcher (Overwatch).</summary>
+    EnemyMovesWithin,
+    /// <summary>The watcher is the target of an attack this tick (Parry; acted on from 3B.6 PR 3).</summary>
+    Attacked,
+    /// <summary>An ally within <see cref="ReactionTrigger.Range"/> is the target of an attack (Intercept; acted on from 3B.6 PR 3).</summary>
+    AllyAttacked,
+}
+
+/// <summary>The trigger of a prepared ability (3B.6, SPRINT_3B6 X6).</summary>
+/// <param name="Range">Cells from the watcher, for <see cref="TriggerKind.EnemyMovesWithin"/> and <see cref="TriggerKind.AllyAttacked"/>.</param>
+/// <param name="AttackKind">For <see cref="TriggerKind.Attacked"/>: only attacks of this kind, or null for any.</param>
+public sealed record ReactionTrigger(TriggerKind Kind, int? Range = null, AttackKind? AttackKind = null);
 
 /// <param name="Range">Chebyshev cells from the caster at resolution time (1 = adjacent).</param>
 /// <param name="Count"><see cref="TargetKind.Combatants"/>: max chosen targets. <see cref="TargetKind.Auto"/>: max hit (null = all).</param>
@@ -167,11 +193,18 @@ public sealed record AbilityDefinition(
     int? Charges = null,
     AbilityActivation Activation = AbilityActivation.Active)
 {
+    /// <summary>What sets off a <see cref="AbilityActivation.Prepared"/> ability (3B.6); null for an active one.</summary>
+    public ReactionTrigger? Trigger { get; init; }
+
+    /// <summary>A prepared reaction (3B.6): it ends its queue and watches for <see cref="Trigger"/>.</summary>
+    public bool IsPrepared => Activation == AbilityActivation.Prepared;
+
     // Records compare collections by reference; tags and effects are compared by content.
     public bool Equals(AbilityDefinition? other) =>
         other is not null
         && Id == other.Id && Name == other.Name && ApCost == other.ApCost && Cooldown == other.Cooldown
         && Targeting == other.Targeting && Charges == other.Charges && Activation == other.Activation
+        && Trigger == other.Trigger
         && Tags.SequenceEqual(other.Tags) && Effects.SequenceEqual(other.Effects);
 
     public override int GetHashCode() => HashCode.Combine(Id, ApCost, Cooldown, Targeting, Effects.Count);

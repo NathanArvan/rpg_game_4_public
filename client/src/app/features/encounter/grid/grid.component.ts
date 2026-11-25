@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_AP_COSTS, MELEE_REACH, abilityCellError, abilityTakesCell, abilityTakesTargets, apCost, apSpent, canAfford,
   blockOf, canAffordEntry, canTargetWithAbility, chebyshev, chebyshevPath, describeQueue, entry, entryMoves, estimateMoveToTarget,
-  isMoveType, maxTargets, provokedBy, skipsRoundReason, Threat, walkQueue,
+  isMoveType, maxTargets, provokedBy, skipsRoundReason, Threat, walkQueue, queuedPrepared, isPrepared,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -311,6 +311,11 @@ export class GridComponent implements OnInit {
     return this.playback.statusOf(combatant);
   }
 
+  /** The prepared reaction the token is watching with during playback (3B.6), for its 👁 badge; null if none. */
+  shownWatching(combatant: Combatant): string | null {
+    return this.playback.watchingOf(combatant);
+  }
+
   /** Conditions as shown (3B.4): playback reveals them as they land. */
   shownConditions(combatant: Combatant): ActiveConditionDto[] {
     return this.playback.conditionsOf(combatant);
@@ -362,6 +367,7 @@ export class GridComponent implements OnInit {
   private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
     const start = this.positions[combatant.id];
     if (skipsRoundReason(combatant) || blockOf(combatant.blocks, 'move')) return false; // Stunned / Rooted (3B.4)
+    if (queuedPrepared(queue, combatant.abilities)) return false; // nothing follows a prepared reaction (3B.6)
     const moveType = !this.isGm && this.disengageArmed ? 'disengage' : 'move';
     if (!start || !canAfford(queue, moveType, combatant.maxAp, this.apCosts, combatant.abilities)) return false;
     const { position, cells } = this.walk(combatant, queue);
@@ -411,8 +417,17 @@ export class GridComponent implements OnInit {
   /** Disengage is offered: the selected character can move and afford it (2 AP). */
   get canAffordDisengage(): boolean {
     const selected = this.selected;
-    return !!selected && !skipsRoundReason(selected) && !blockOf(selected.blocks, 'move')
+    return !!selected && !skipsRoundReason(selected) && !blockOf(selected.blocks, 'move') && !this.selectedWatching
       && canAfford(this.selectedPlan, 'disengage', selected.maxAp, this.apCosts, selected.abilities);
+  }
+
+  /**
+   * The prepared reaction ending the selected character's queue (3B.6, SPRINT_3B6 X7), or undefined. While it's
+   * there, nothing more can be queued: the grid ignores clicks and the action bar says so (undo removes it).
+   */
+  get selectedWatching(): AbilityDto | undefined {
+    const selected = this.selected;
+    return selected ? queuedPrepared(this.selectedPlan, selected.abilities) : undefined;
   }
 
   toggleDisengage(): void {
@@ -605,6 +620,14 @@ export class GridComponent implements OnInit {
 
   toggleAbility(abilityId: string): void {
     this.disengageArmed = false;
+    // A prepared reaction (3B.6) takes no target: it's queued straight away, as the queue's last action.
+    const user = this.selected;
+    const ability = user?.abilities.find(a => a.id === abilityId);
+    if (user && isPrepared(ability)) {
+      if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
+      this.plan(user, entry('ability', { abilityId }));
+      return;
+    }
     this.store.dispatch(this.armedAbilityId === abilityId ? new DisarmAbility() : new ArmAbility(abilityId));
   }
 
@@ -682,7 +705,8 @@ export class GridComponent implements OnInit {
 
   get canAffordDefend(): boolean {
     const selected = this.selected;
-    return !!selected && !skipsRoundReason(selected) && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts, selected.abilities);
+    return !!selected && !skipsRoundReason(selected) && !this.selectedWatching
+      && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts, selected.abilities);
   }
 
   /** Cells the selected character can still move this round. */
@@ -783,14 +807,14 @@ export class GridComponent implements OnInit {
   /** Appends an action to the character's queue if its AP allows, and sends the whole queue. */
   private plan(combatant: Combatant, action: PlannedActionEntry): void {
     const queue = this.myPlans[combatant.id] ?? [];
-    if (!this.conditionsAllow(combatant, action)) return;
+    if (!this.conditionsAllow(combatant, action) || queuedPrepared(queue, combatant.abilities)) return;
     if (!canAffordEntry(queue, action, combatant.maxAp, this.apCosts, combatant.abilities)) return;
     this.setPlan(combatant, [...queue, action]);
   }
 
   /** Appends an action to a monster's queue (GM planning) if its AP allows, and sends it. */
   private planEnemy(enemy: Combatant, queue: PlannedActionEntry[], action: PlannedActionEntry): void {
-    if (!this.conditionsAllow(enemy, action)) return;
+    if (!this.conditionsAllow(enemy, action) || queuedPrepared(queue, enemy.abilities)) return;
     if (!canAffordEntry(queue, action, enemy.maxAp, this.apCosts, enemy.abilities)) return;
     const next = [...queue, action];
     this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
@@ -799,7 +823,8 @@ export class GridComponent implements OnInit {
     const cheapest = Math.min(
       ...Object.keys(this.apCosts).map(t => apCost(t, this.apCosts)),
       ...enemy.abilities.filter(a => !(enemy.cooldowns[a.id] > 0)).map(a => a.apCost));
-    if (apSpent(next, this.apCosts, enemy.abilities) + cheapest > enemy.maxAp) this.store.dispatch(new GmSelectEnemy(null));
+    if (apSpent(next, this.apCosts, enemy.abilities) + cheapest > enemy.maxAp || queuedPrepared(next, enemy.abilities))
+      this.store.dispatch(new GmSelectEnemy(null));
   }
 
   /** Stores and sends a character's queue; an empty queue clears the plan on the server too. */

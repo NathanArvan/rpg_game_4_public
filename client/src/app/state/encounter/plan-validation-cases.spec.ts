@@ -26,6 +26,8 @@ interface LibraryAbility {
   name: string; apCost: number; cooldown: number;
   targeting: { kind: string; count: number | null };
   move: AbilityDto['move'];
+  /** 'prepared' for a prepared reaction (3B.6 PR 2); active otherwise. */
+  activation?: string;
 }
 
 const file = cases as unknown as {
@@ -40,7 +42,10 @@ const at = ([x, y]: number[]): Position => ({ x, y });
 function toAbility(id: string): AbilityDto {
   const a = file.abilities[id];
   if (!a) throw new Error(`ability '${id}' isn't in the library`);
-  return makeAbility({ id, name: a.name, apCost: a.apCost, cooldown: a.cooldown, targeting: { ...a.targeting }, move: a.move });
+  return makeAbility({
+    id, name: a.name, apCost: a.apCost, cooldown: a.cooldown, targeting: { ...a.targeting }, move: a.move,
+    activation: a.activation ?? 'active',
+  });
 }
 
 /** The table's compact queue syntax (see its "about"). */

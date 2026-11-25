@@ -4,7 +4,7 @@ import { AbilityBarComponent } from './ability-bar.component';
 import { AbilityDto } from '../../../contracts/hub-contracts.generated';
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { entry } from '../../../state/encounter/plan-queue';
-import { makeAbility, makeAbilityCondition, makeCombatant } from '../../../testing/builders';
+import { makeAbility, makeAbilityCondition, makeCombatant, makePreparedAbility } from '../../../testing/builders';
 
 describe('AbilityBarComponent', () => {
   let component: AbilityBarComponent;
@@ -87,5 +87,20 @@ describe('AbilityBarComponent', () => {
     expect(AbilityBarComponent.tooltip(mark, null)).toContain('Applies marked (takes 2 extra damage per hit) until end of next round');
     const strike = makeAbility({ appliesConditions: [makeAbilityCondition({ duration: 0, requiresHit: true, condition: { id: 'dazzled', name: 'Dazzled', modifiers: { accuracy: -3, attackKind: 'ranged' } } })] });
     expect(AbilityBarComponent.tooltip(strike, null)).toContain('Applies Dazzled (-3 to hit (ranged)) until end of round, on a hit');
+  });
+
+  it('marks a prepared reaction with 👁 and its trigger, and greys out the rest once it ends the queue (3B.6)', () => {
+    const brace = makePreparedAbility({ description: 'Strike whoever steps in.' });
+    component.combatant = makeCombatant({ id: 'h', characterName: 'Hero', abilities: [powerStrike, brace], maxAp: 6 });
+    fixture.detectChanges();
+    const [strike, watch] = buttons();
+    expect(watch.classList).toContain('prepared');
+    expect(watch.textContent).toContain('👁');
+    expect(watch.title).toContain('👁 Reacts when an enemy steps into reach, until the end of the round. Ends your queue.');
+
+    component.queue = [entry('ability', { abilityId: 'brace' })];
+    fixture.detectChanges();
+    expect(strike.disabled).toBeTrue();
+    expect(strike.title).toContain('(A prepared reaction ends the queue)');
   });
 });

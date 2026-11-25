@@ -124,6 +124,19 @@
       "id": "hex", "name": "Hex", "ap": 3, "cooldown": 4, "tags": ["debuff"],
       "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
       "effects": [ { "kind": "apply_condition", "condition": "stunned", "duration": 1 } ]
+    },
+    {
+      // Prepared reactions (3B.6 PR 2): queued last, they watch from their tick to the end of the round.
+      "id": "brace", "name": "Brace", "activation": "prepared", "ap": 2, "cooldown": 1, "tags": ["melee"],
+      "trigger": { "kind": "enemy_enters_reach" },
+      "target": { "kind": "trigger" },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 2 } } ]
+    },
+    {
+      "id": "overwatch", "name": "Overwatch", "activation": "prepared", "ap": 2, "cooldown": 1, "tags": ["ranged"],
+      "trigger": { "kind": "enemy_moves_within", "range": 6 },
+      "target": { "kind": "trigger" },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
     }
   ]
 }

@@ -284,3 +284,35 @@ test('Reactions: stepping away from the Brute draws an opportunity attack; a Dis
   await expectPlanningRound(page, 2, 20_000);
   await expect(page.locator('app-round-timeline tr', { hasText: 'Bruiser' }).locator('.provoked')).toHaveCount(1);
 });
+
+test('Reactions: Brace ends the queue and goes unused; Overwatch shoots the Goblin Archer as it walks in (3B.6 PR 2)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Reactions');
+
+  // The Bruiser braces: queued at once, with no target, and nothing can follow it.
+  const actionBar = page.locator('.action-bar');
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  const brace = actionBar.locator('.ability-btn', { hasText: 'Brace' });
+  await expect(brace).toHaveAttribute('title', /Reacts when an enemy steps into reach/);
+  await brace.click();
+  await expect(page.locator('.planned-action-display')).toContainText('Brace');
+  await expect(page.getByTestId('watching-hint')).toContainText('nothing can follow a prepared reaction');
+  await expect(actionBar.locator('.ability-btn', { hasText: 'Power Strike' })).toBeDisabled();
+
+  // The Scout takes up Overwatch: the Goblin Archer (16,2) walks toward the Skirmisher and comes within 6 cells.
+  await tokenAt(page, 13, 11).click();
+  await expect(actionBar).toContainText('Planning for Scout');
+  await actionBar.locator('.ability-btn', { hasText: 'Overwatch' }).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Overwatch');
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  for (const line of ['Bruiser prepares Brace', 'Scout prepares Overwatch', "Bruiser's Brace goes unused"])
+    await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1, { timeout: 20_000 });
+  await expect(feedEntries(page).filter({ hasText: /Scout's Overwatch (hits|misses) Goblin Archer/ })).toHaveCount(1);
+  await expectPlanningRound(page, 2, 20_000);
+  // Brace is on cooldown now, though it never fired.
+  await tokenAt(page, 9, 10).click();
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  await expect(actionBar.locator('.ability-btn', { hasText: 'Brace' })).toBeDisabled();
+});
+
