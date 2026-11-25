@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.4. Hand this to Claude Code alongside `CLAUDE.md`. There is no separate design doc for conditions: the decisions are in the **Decisions** section below (C1–C14). Settle the ones marked *to confirm* before PR 1, then treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (conditions are applied through the `apply_condition` effect it reserves in A5).
 >
-> **Status:** 🔄 In progress. PR 1 (framework, hit & damage modifiers) done; PR 2 (ongoing damage & resistance) and PR 3 (movement, AP & action denial) to do.
+> **Status:** 🔄 In progress. PR 1 (framework, hit & damage modifiers) and PR 2 (ongoing damage & resistance) done; PR 3 (movement, AP & action denial) to do.
 >
 > **Goal:** Abilities (and Defend) can put **conditions** on combatants: named, time-limited bundles of modifiers in the game's own vocabulary. A condition can deal or heal damage every round, make someone more or less likely to hit or be hit, change how much damage they take or deal, change how far they can move, change how many AP they have, or stop them from moving or acting at all. Resistance comes from a `ConditionResist` profile value. The enemy AI plays around conditions and uses a few. All of it can be tried in a new **Conditions** Quick Battle.
 
@@ -351,6 +351,16 @@ New Quick Battle preset **`conditions.json`** ("Conditions"): Bruiser (Battle Cr
 ---
 
 ## PR 2 — Ongoing damage & resistance
+
+*Status: done. Differences from the plan below:*
+- *The payload field is a top-level `ResolutionPayload.Periodic` (`PeriodicResultDto[]`), not `EndOfRound.Periodic`: `EndOfRound` is the bleedout list. Each entry carries the condition's tags (for the playback icon), `Fell`, and the combatant's HP after **all** its periodic effects; only a combatant's last line in the feed shows the HP (or "— goes down!" / "— defeated!"), since they are netted together.*
+- *Feed wording: "Goblin takes 3 damage from Burning (HP: 7 → 4)", "Mira heals 2 from Regenerating (HP: 5 → 7)", a damage-taken change as "(-2 from conditions)" like hits; a fall reuses the tick wording ("— goes down!" / "— defeated!") rather than "burns down!". "Ogre resists Burning" already existed from PR 1.*
+- *GameEvents `periodic_damage` / `periodic_heal`; a resist is `condition_resisted`.*
+- *Rules: `RoundOutcome.PeriodicEffects` (`PeriodicOutcome`: kind, amount after damage taken, `ConditionDamage`, HP before / after, status, `Fell`). The tick's 0-HP check is now one helper, `ResolveFalls`, used by ticks and the end of round. End-of-round falls go into `DefeatedThisRound`, so `CombatantDefeated`, Redis status / defeated set and `EncounterEndCheck` need no changes.*
+- *`resonanceScaling.thresholdEffects` values must name a condition in `conditions.json` or a reserved non-condition effect (only `ember` so far).*
+- *Scenarios: the library's `firebolt` stays without Burning so older scenarios keep their dice; the shipped Firebolt is the library's `ignite`. Library gains `burning`, `poisoned`, `regenerating` and `envenom`. Combatant field `conditionResist`; event-log lines `end G burning: -3`, `end Hero poisoned: -2, Hero downed`, `end Mira regenerating: +4`. No `expect.periodic` key: `expect.events` covers it. Extra scenarios: `periodic-tick-damage-and-burn-same-round`, `resist-not-rolled-for-own-harmful`, `ai-uses-envenom`.*
+- *Client: a `periodic` playback phase (orange `🔥-3` / `☠-2` floats, green `+2`, hurt / heal auras, HP), then a `defeats` beat for anyone it drops (chips cleared), then bleedout and expiries, with one "End of round" feed heading. The round timeline gets no end-of-round column (it would crowd the lanes; the feed and playback show it).*
+- *The Conditions preset's existing E2E check "no chips on the Bruiser" became "no Guarded chip on the Bruiser", since Goblin 2's Envenom may Poison it. The new seeded E2E (Mark in round 1, Firebolt on the Ogre in round 2) pins a Burning tick and a Poisoned tick.*
 
 ### Rules
 - **End of round, step 1–2** (C11): `ResolvePeriodic(round)` before `ResolveBleedout`: rolls each standing combatant's `periodic` conditions in combatant order then application order (damage die rolls go into the dice sequence here), applies the target's own `damageTaken` with the condition's tags, nets damage and healing per combatant, caps at max, then runs the same 0-HP check as a tick (extract it into one helper used by both). New falls go into `DefeatedThisRound`; C10 clears their conditions; their bleedout doesn't count down this round.

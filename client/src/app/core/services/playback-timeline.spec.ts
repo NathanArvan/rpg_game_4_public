@@ -1,9 +1,9 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import {
   makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeConditionResult, makeEffect,
-  makeExpiredCondition, makeHeal, makeMove, makePayload, makePlanningCombatant, makeTick,
+  makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeTick,
 } from '../../testing/builders';
-import { PLAYBACK_TIMING, buildTimeline, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
+import { PLAYBACK_TIMING, buildTimeline, periodicIcon, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
 const move = (id: string, path: [number, number][], wasBlocked = false): MovementResult =>
   makeMove({ combatantId: id, path: path.map(([x, y]) => ({ x, y })), wasBlocked });
@@ -321,5 +321,62 @@ describe('playback timeline: conditions (3B.4)', () => {
     expect(last.feed).toEqual(['End of round', 'g is no longer Marked']);
     expect(last.conditions!['g'].map(c => c.condition.id)).toEqual(['blessed']);
     expect(last.durationMs).toBe(PLAYBACK_TIMING.expiryMs);
+  });
+
+  describe('periodic effects at the end of the round (3B.4 PR 2)', () => {
+    it('plays periodic damage and healing first, then bleedout, then expiries', () => {
+      const p = makePayload({
+        ticks: [tick(0)],
+        periodic: [
+          makePeriodic({ combatantId: 'g', amount: 3, newHp: 4, feedText: 'g takes 3 damage from Burning (HP: 7 → 4)' }),
+          makePeriodic({ combatantId: 'm', conditionId: 'regenerating', conditionName: 'Regenerating', harmful: false, tags: [],
+            kind: 'heal', amount: 2, newHp: 9, feedText: 'm heals 2 from Regenerating (HP: 7 → 9)' }),
+        ],
+        endOfRound: [makeBleedout({ combatantId: 'h', roundsLeft: 1, feedText: 'h is bleeding out — 1 round left' })],
+        expiredConditions: [makeExpiredCondition({ combatantId: 'g', feedText: 'g is no longer Burning' })],
+      });
+
+      const beats = buildTimeline(p);
+      expect(beats.map(b => b.phase).slice(-3)).toEqual(['periodic', 'bleedout', 'expiries']);
+      const periodic = beats.find(b => b.phase === 'periodic')!;
+      expect(periodic.floats).toEqual([
+        { combatantId: 'g', text: '🔥-3', kind: 'periodic' },
+        { combatantId: 'm', text: '+2', kind: 'heal' },
+      ]);
+      expect(periodic.auras).toEqual([{ combatantId: 'g', kind: 'hurt' }, { combatantId: 'm', kind: 'heal' }]);
+      expect(periodic.hp).toEqual({ g: 4, m: 9 });
+      expect(periodic.durationMs).toBe(PLAYBACK_TIMING.periodicMs);
+      // One "End of round" heading, before the first end-of-round line.
+      expect(periodic.feed!.slice(-3)).toEqual(['End of round', 'g takes 3 damage from Burning (HP: 7 → 4)', 'm heals 2 from Regenerating (HP: 7 → 9)']);
+      expect(beats.find(b => b.phase === 'bleedout')!.feed).toEqual(['h is bleeding out — 1 round left']);
+      expect(beats.find(b => b.phase === 'expiries')!.feed).toEqual(['g is no longer Burning']);
+    });
+
+    it('drops anyone it downs or kills in a defeats beat, clearing their conditions', () => {
+      const before = { hero: [makeActiveCondition({ condition: { id: 'burning' } })], g: [makeActiveCondition({ condition: { id: 'poisoned' } })] };
+      const p = makePayload({
+        ticks: [tick(0)],
+        updatedCombatants: [makePlanningCombatant({ id: 'hero', currentHp: 0, isDefeated: true, status: 'downed', bleedoutRoundsLeft: 2 })],
+        periodic: [
+          makePeriodic({ combatantId: 'hero', newHp: 0, status: 'downed', fell: true }),
+          makePeriodic({ combatantId: 'g', conditionId: 'poisoned', tags: ['poison'], amount: 2, newHp: 0, status: 'dead', fell: true }),
+        ],
+      });
+
+      const beats = buildTimeline(p, PLAYBACK_TIMING, before);
+      const periodicAt = beats.findIndex(b => b.phase === 'periodic');
+      expect(beats[periodicAt].floats![1].text).toBe('☠-2');
+      const fall = beats[periodicAt + 1];
+      expect(fall.phase).toBe('defeats');
+      expect(fall.statuses).toEqual({ hero: { status: 'downed', bleedoutRoundsLeft: 2 }, g: { status: 'dead', bleedoutRoundsLeft: 0 } });
+      expect(fall.floats).toEqual([{ combatantId: 'hero', text: 'DOWN', kind: 'damage' }]);
+      expect(fall.conditions).toEqual({ hero: [], g: [] });
+    });
+
+    it('icons follow the tags', () => {
+      expect(periodicIcon(['flame'])).toBe('🔥');
+      expect(periodicIcon(['poison'])).toBe('☠');
+      expect(periodicIcon([])).toBe('');
+    });
   });
 });

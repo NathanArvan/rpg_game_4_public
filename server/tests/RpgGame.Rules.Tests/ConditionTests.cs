@@ -161,4 +161,46 @@ public class ConditionTests
         Assert.Equal([blessed], a.Conditions);
         Assert.Equal([blessed with { RoundsLeft = 0 }], o.Next.Combatants[0].Conditions); // Guarded expired, Blessed counted down
     }
+
+    // ----- Periodic effects (PR 2) -----
+
+    private static ActiveCondition Burning(int rounds = 0) =>
+        new(new ConditionDefinition("burning", "Burning", Harmful: true, Tags: ["flame"],
+            new Modifiers(Periodic: new PeriodicEffect(PeriodicKind.Damage, DamageDie.D4))), rounds);
+
+    [Fact]
+    public void EndOfRoundFall_IsReportedInDefeatedThisRound_WithBothSidesFallingTogether()
+    {
+        // Two combatants burn down at the same end of round: both fall, like a mutual kill in a tick.
+        var state = new EncounterState(20, 20, [Fighter("A", 0, 0, hp: 2, downs: true, conditions: Burning()), Fighter("B", 5, 5, hp: 1, conditions: Burning())]);
+
+        var o = RoundResolver.Resolve(state, new Dictionary<string, IReadOnlyList<PlannedAction>>(), new ScriptedDice(3, 1));
+
+        Assert.Equal(["A", "B"], o.DefeatedThisRound);
+        Assert.Equal([CombatantStatus.Downed, CombatantStatus.Dead], o.Next.Combatants.Select(c => c.Status));
+        Assert.Equal(2, o.Next.Combatants[0].BleedoutRoundsLeft); // fell this round: no countdown yet
+        Assert.Empty(o.EndOfRound);
+        Assert.Empty(o.ExpiredConditions); // cleared by falling, not expired
+        var a = o.PeriodicEffects[0];
+        Assert.Equal(("A", "burning", PeriodicKind.Damage, 3, 2, 0, CombatantStatus.Downed, true),
+            (a.CombatantId, a.ConditionId, a.Kind, a.Amount, a.HpBefore, a.HpAfter, a.Status, a.Fell));
+    }
+
+    [Fact]
+    public void Periodic_DoesNotTouchSomeoneAlreadyDown()
+    {
+        // Input that (wrongly) carries a condition on a Downed combatant: it's ignored (C10), so nothing rolls.
+        var state = new EncounterState(20, 20, [Fighter("A", 0, 0, hp: 0, downs: true, status: CombatantStatus.Downed, Burning(1))]);
+
+        var o = RoundResolver.Resolve(state, new Dictionary<string, IReadOnlyList<PlannedAction>>(), new ScriptedDice());
+
+        Assert.Empty(o.PeriodicEffects);
+    }
+
+    [Fact]
+    public void ConditionResist_IsPartOfProfileEquality()
+    {
+        Assert.NotEqual(CombatProfile.Default, CombatProfile.Default with { ConditionResist = 25 });
+        Assert.Equal(CombatProfile.Default with { ConditionResist = 25 }, CombatProfile.Default with { ConditionResist = 25 });
+    }
 }

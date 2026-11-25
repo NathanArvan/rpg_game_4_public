@@ -37,9 +37,17 @@ export interface FloatCue {
   /**
    * damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized /
    * bleeding (3B.5); ability: the ability's name above its user (3B.3); heal: green +n, and UP for
-   * someone back on their feet (3B.3); buff / debuff: a condition's name as it lands (3B.4).
+   * someone back on their feet (3B.3); buff / debuff: a condition's name as it lands (3B.4);
+   * periodic: orange end-of-round damage from a condition, with an icon for its tag (3B.4 PR 2).
    */
-  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff';
+  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff' | 'periodic';
+}
+
+/** A small icon for a periodic effect's tags (3B.4 PR 2): flame, poison, or none. */
+export function periodicIcon(tags: readonly string[]): string {
+  if (tags.includes('flame')) return '🔥';
+  if (tags.includes('poison')) return '☠';
+  return '';
 }
 
 /** Short words for why an attack was wasted (the server's wastedReason). */
@@ -59,7 +67,8 @@ export function wastedLabel(reason: string | null): string {
   }
 }
 
-export type PlaybackPhase = 'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'bleedout' | 'expiries' | 'idle';
+export type PlaybackPhase =
+  'movement' | 'attacks' | 'defeats' | 'revives' | 'effects' | 'periodic' | 'bleedout' | 'expiries' | 'idle';
 
 export interface PlaybackBeat {
   /** 0-based tick this beat belongs to. */
@@ -101,6 +110,8 @@ export interface PlaybackTiming {
   reviveMs: number;
   /** Hold after a tick's stabilizes (3B.5). */
   effectMs: number;
+  /** Hold for the end-of-round periodic damage and healing (3B.4 PR 2). */
+  periodicMs: number;
   /** Hold for the end-of-round bleedout step (3B.5). */
   bleedoutMs: number;
   /** Hold for the end-of-round step where conditions run out (3B.4). */
@@ -121,6 +132,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   defeatMs: 600,
   reviveMs: 900,
   effectMs: 1200,
+  periodicMs: 1500,
   bleedoutMs: 1500,
   expiryMs: 900,
   auraMs: 1000,
@@ -216,8 +228,9 @@ class ConditionTracker {
 
 /**
  * The beats of a round, in order. Each tick plays as: movement steps → attacks and heals →
- * defeats → revives → effects (stabilize, conditions); after the last tick, the end-of-round bleedout
- * step (3B.5) and conditions running out (3B.4). Defend's Guarded shows with the tick's first beat.
+ * defeats → revives → effects (stabilize, conditions); after the last tick, the end of round:
+ * periodic damage and healing (3B.4 PR 2), anyone that drops, the bleedout step (3B.5) and conditions
+ * running out (3B.4). Defend's Guarded shows with the tick's first beat.
  * Attacks and heals within a tick are simultaneous (the rules net them together), so they share
  * one beat; the next tick's actions only start after it.
  *
@@ -413,11 +426,53 @@ export function buildTimeline(
   }
 
   const lastTick = Math.max(0, payload.ticks.length - 1);
+  let endOfRoundHeading = false;
+  const endOfRound = () => {
+    if (!endOfRoundHeading) pendingFeed.push('End of round');
+    endOfRoundHeading = true;
+  };
+
+  // End of round, first: conditions' periodic damage and healing, netted per combatant (3B.4 PR 2).
+  const periodic = payload.periodic ?? [];
+  if (periodic.length > 0) {
+    endOfRound();
+    pendingFeed.push(...periodic.map(p => p.feedText));
+    const auras: AuraCue[] = [];
+    const floats: FloatCue[] = [];
+    const hp: Record<string, number> = {};
+    for (const p of periodic) {
+      const kind: AuraKind = p.kind === 'heal' ? 'heal' : 'hurt';
+      if (!auras.some(a => a.combatantId === p.combatantId && a.kind === kind)) auras.push({ combatantId: p.combatantId, kind });
+      floats.push(p.kind === 'heal'
+        ? { combatantId: p.combatantId, text: `+${p.amount}`, kind: 'heal' }
+        : { combatantId: p.combatantId, text: `${periodicIcon(p.tags)}-${p.amount}`, kind: 'periodic' });
+      hp[p.combatantId] = p.newHp;
+    }
+    beats.push({ tick: lastTick, phase: 'periodic', durationMs: timing.periodicMs, auras, floats, hp, feed: takeFeed() });
+
+    // Anyone it dropped falls now, as in a tick: Downed (their bleedout starts next round) or dead.
+    const fell: Record<string, StatusView> = {};
+    const downFloats: FloatCue[] = [];
+    const cleared: Record<string, ActiveConditionDto[]> = {};
+    for (const p of periodic.filter(p => p.fell)) {
+      if (fell[p.combatantId]) continue;
+      const status = toStatus(p.status, true);
+      fell[p.combatantId] = { status, bleedoutRoundsLeft: status === 'downed' ? finalBleedout.get(p.combatantId) ?? 0 : 0 };
+      if (status === 'downed') downFloats.push({ combatantId: p.combatantId, text: 'DOWN', kind: 'damage' });
+      if (tracker.clear(p.combatantId)) cleared[p.combatantId] = [];
+    }
+    if (Object.keys(fell).length > 0) {
+      const beat: PlaybackBeat = { tick: lastTick, phase: 'defeats', durationMs: timing.defeatMs, statuses: fell, floats: downFloats };
+      if (Object.keys(cleared).length > 0) beat.conditions = cleared;
+      beats.push(beat);
+    }
+  }
 
   // End of round: bleedout countdowns tick, and anyone at 0 dies (3B.5).
   const bleeding = payload.endOfRound ?? [];
   if (bleeding.length > 0) {
-    pendingFeed.push('End of round', ...bleeding.map(b => b.feedText));
+    endOfRound();
+    pendingFeed.push(...bleeding.map(b => b.feedText));
     const statuses: Record<string, StatusView> = {};
     const floats: FloatCue[] = [];
     for (const b of bleeding) {
@@ -432,7 +487,7 @@ export function buildTimeline(
   // End of round: conditions that ran out go (3B.4); chips end on the server's lists.
   const expired = payload.expiredConditions ?? [];
   if (expired.length > 0) {
-    if (bleeding.length === 0) pendingFeed.push('End of round');
+    endOfRound();
     pendingFeed.push(...expired.map(x => x.feedText));
     const conditions: Record<string, ActiveConditionDto[]> = {};
     for (const u of payload.updatedCombatants ?? [])

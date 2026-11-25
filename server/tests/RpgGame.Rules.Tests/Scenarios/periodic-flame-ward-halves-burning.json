@@ -1,0 +1,15 @@
+{
+  // 3B.4 PR 2 (C4, C11): periodic damage goes through the bearer's own damage taken, with the condition's
+  // tags. Burning carries "flame", so Flame Ward halves it (rounded down); Poisoned carries "poison", so it doesn't.
+  "description": "Periodic: Flame Ward halves Burning but not Poisoned",
+  "combatants": [
+    { "id": "G", "at": [2, 2],
+      "conditions": [ { "id": "flame_ward", "rounds": 0 }, { "id": "burning", "rounds": 0 }, { "id": "poisoned", "rounds": 0 } ] }
+  ],
+  "plans": {},
+  "dice": [3],                        // Burning d4 3 → 1
+  "expect": {
+    "hp": { "G": 17 },
+    "events": ["end G burning: -1 (-2 conditions)", "end G poisoned: -2"]
+  }
+}

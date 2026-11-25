@@ -26,6 +26,9 @@ public sealed record CombatProfileDefinition(
     /// <summary>The loadout's full definitions, filled in by <see cref="CombatProfileCatalog"/> from <see cref="AbilityIds"/>.</summary>
     public IReadOnlyList<AbilityValues> Abilities { get; init; } = [];
 
+    /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
+    public int ConditionResist { get; init; }
+
     /// <summary>A fresh copy of these values to store on a combatant.</summary>
     public CombatProfileValues Snapshot() => new()
     {
@@ -40,6 +43,7 @@ public sealed record CombatProfileDefinition(
         BaseDamage = BaseDamage,
         MaxAp = MaxAp,
         Abilities = Abilities.Select(a => a.Copy()).ToList(),
+        ConditionResist = ConditionResist,
     };
 }
 
@@ -63,6 +67,9 @@ public sealed class CombatProfileCatalog
 
     /// <summary>Allowed range for a profile's (or preset override's) AP per round.</summary>
     public const int MinAp = 1, MaxApLimit = 10;
+
+    /// <summary>Allowed range for <c>conditionResist</c> (a percentage).</summary>
+    public const int MaxConditionResist = 100;
 
     private readonly Dictionary<string, CombatProfileDefinition> _byId;
 
@@ -142,13 +149,17 @@ public sealed class CombatProfileCatalog
         try { DamageDie.Parse(p.Damage ?? ""); }
         catch (FormatException) { Fail("'damage' must be a die like \"d6\""); }
         if (p.Ap is < MinAp or > MaxApLimit) Fail($"'ap' must be between {MinAp} and {MaxApLimit}");
+        if (p.ConditionResist is < 0 or > MaxConditionResist) Fail($"'conditionResist' must be between 0 and {MaxConditionResist}");
 
         return new CombatProfileDefinition(
             p.Id!.Trim(), p.Name!.Trim(), p.Description?.Trim() ?? "", side,
             p.Hp!.Value, p.Move!.Value, p.Speed!.Value,
             p.MeleeAccuracy ?? 0, p.RangedAccuracy ?? 0, p.Dodge!.Value, p.Damage!.Trim(),
             p.Ap ?? CombatProfile.DefaultMaxAp,
-            p.Abilities?.Select(id => id.Trim()).ToList() ?? []);
+            p.Abilities?.Select(id => id.Trim()).ToList() ?? [])
+        {
+            ConditionResist = p.ConditionResist ?? 0,
+        };
     }
 
     private sealed class FileDto
@@ -171,6 +182,7 @@ public sealed class CombatProfileCatalog
         public string? Damage { get; set; }
         public int? Ap { get; set; }
         public List<string>? Abilities { get; set; }
+        public int? ConditionResist { get; set; }
     }
 }
 
@@ -186,7 +198,11 @@ internal static class CombatProfileMapping
         {
             CanBeDowned = CanBeDowned(v, combatantType),
             Abilities = v?.Abilities?.Select(AbilityMapping.ToRules).ToList() ?? [],
+            ConditionResist = ConditionResist(v),
         };
+
+    /// <summary>Rows from before 3B.4 PR 2 have no ConditionResist: 0.</summary>
+    public static int ConditionResist(CombatProfileValues? v) => v?.ConditionResist ?? 0;
 
     /// <summary>
     /// Goes Downed at 0 HP instead of dying (3B.5): party combatants do and monsters don't, unless

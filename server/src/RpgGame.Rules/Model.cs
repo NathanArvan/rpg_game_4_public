@@ -98,6 +98,12 @@ public sealed record CombatProfile(
     /// </summary>
     public IReadOnlyList<AbilityDefinition> Abilities { get; init; } = [];
 
+    /// <summary>
+    /// Chance in percent (0–100) to shrug off a harmful condition an enemy puts on this combatant (3B.4,
+    /// SPRINT_3B4 C9): a d100 at or under it resists. 0 (the default) rolls nothing.
+    /// </summary>
+    public int ConditionResist { get; init; }
+
     /// <summary>The loadout's ability with this id, or null.</summary>
     public AbilityDefinition? FindAbility(string? id) =>
         id is null ? null : Abilities.FirstOrDefault(a => a.Id == id);
@@ -108,7 +114,7 @@ public sealed record CombatProfile(
         && MaxHp == other.MaxHp && MovementRange == other.MovementRange && Speed == other.Speed
         && MeleeAccuracy == other.MeleeAccuracy && RangedAccuracy == other.RangedAccuracy
         && Dodge == other.Dodge && BaseDamage == other.BaseDamage && MaxAp == other.MaxAp
-        && CanBeDowned == other.CanBeDowned
+        && CanBeDowned == other.CanBeDowned && ConditionResist == other.ConditionResist
         && Abilities.SequenceEqual(other.Abilities);
 
     public override int GetHashCode() =>

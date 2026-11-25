@@ -72,6 +72,18 @@ public class CombatProfileCatalogTests : IDisposable
     }
 
     [Fact]
+    public void ConditionResist_ShipsOnTheBruteOnly_AndReachesTheRulesProfile()
+    {
+        var all = TestProfiles.Catalog.All;
+        Assert.Equal(["brute"], all.Where(p => p.ConditionResist > 0).Select(p => p.Id));
+        var brute = TestProfiles.Catalog.Find("brute")!.Snapshot();
+        Assert.Equal(25, brute.ConditionResist);
+        Assert.Equal(25, CombatProfileMapping.ToRules(brute).ConditionResist);
+        brute.ConditionResist = null; // stored before 3B.4 PR 2
+        Assert.Equal(0, CombatProfileMapping.ToRules(brute).ConditionResist);
+    }
+
+    [Fact]
     public void MissingStoredProfile_MapsToTheDefault() =>
         Assert.Equal(CombatProfile.Default, CombatProfileMapping.ToRules(null));
 
@@ -81,7 +93,7 @@ public class CombatProfileCatalogTests : IDisposable
         var p = Assert.Single(CombatProfileCatalog.Load(Write("""
             { "profiles": [ { "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6" } ] }
             """)));
-        Assert.Equal(("any", "", 0, 0, CombatProfile.DefaultMaxAp), (p.Side, p.Description, p.MeleeAccuracy, p.RangedAccuracy, p.MaxAp));
+        Assert.Equal(("any", "", 0, 0, CombatProfile.DefaultMaxAp, 0), (p.Side, p.Description, p.MeleeAccuracy, p.RangedAccuracy, p.MaxAp, p.ConditionResist));
     }
 
     [Theory]
@@ -94,6 +106,8 @@ public class CombatProfileCatalogTests : IDisposable
     [InlineData("""{ "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6" }""", "'id'")]
     [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "ap": 0 }""", "'ap'")]
     [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "ap": 11 }""", "'ap'")]
+    [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "conditionResist": 101 }""", "'conditionResist'")]
+    [InlineData("""{ "id": "x", "name": "X", "hp": 5, "move": 3, "speed": 9, "dodge": 11, "damage": "d6", "conditionResist": -1 }""", "'conditionResist'")]
     public void BrokenProfile_FailsWithTheFileName(string profile, string expected)
     {
         var path = Write($$"""{ "profiles": [ {{profile}} ] }""");

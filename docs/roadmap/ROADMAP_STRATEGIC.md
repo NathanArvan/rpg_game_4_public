@@ -96,7 +96,7 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 ### 🔄 Slice 3B.4 — Conditions & Status Effects
 
-*Status: in progress (`SPRINT_3B4.md`, three PRs). PR 1 done: conditions are data in `Conditions/conditions.json` (no table), applied by an `apply_condition` ability effect (Effects phase, on a hit if the ability attacks) and copied into each ability snapshot; they change hit chance (accuracy / dodge, optionally melee or ranged only) and damage (dealt, and taken as a percent and/or flat amount, optionally only from tagged sources); durations count full rounds after the current one and are shown in words; the same condition refreshes rather than stacks; falling clears them; Defend grants Guarded (+3 Dodge) from the start of its tick. Active conditions live in a per-encounter Redis hash. Battle Cry, Stoneskin and Mark in a new **Conditions** Quick Battle; the AI buffs and debuffs. To do: ongoing damage and `ConditionResist` (PR 2), movement / AP modifiers and Stunned / Rooted (PR 3; budgets change from the next round, blocks from the next tick).*
+*Status: in progress (`SPRINT_3B4.md`, three PRs). PR 1 done: conditions are data in `Conditions/conditions.json` (no table), applied by an `apply_condition` ability effect (Effects phase, on a hit if the ability attacks) and copied into each ability snapshot; they change hit chance (accuracy / dodge, optionally melee or ranged only) and damage (dealt, and taken as a percent and/or flat amount, optionally only from tagged sources); durations count full rounds after the current one and are shown in words; the same condition refreshes rather than stacks; falling clears them; Defend grants Guarded (+3 Dodge) from the start of its tick. Active conditions live in a per-encounter Redis hash. Battle Cry, Stoneskin and Mark in a new **Conditions** Quick Battle; the AI buffs and debuffs. PR 2 done: conditions can deal or heal damage once at the start of the end of round (Burning, Poisoned, Regenerating), netted per combatant and run through the bearer's damage taken with the condition's tags; anyone it drops falls then (no bleedout tick that round) and an end-of-round death can end the encounter. `ConditionResist` (profile / preset value, 0–100, Brute 25%) lets a combatant shrug off a harmful condition from an enemy on a d100, rolled only when above 0. Firebolt now sets its target Burning; new Envenom (Goblin 2 in the Conditions preset). To do: movement / AP modifiers and Stunned / Rooted (PR 3; budgets change from the next round, blocks from the next tick).*
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
@@ -267,7 +267,7 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Now         3B.4 Conditions & Status Effects (PR 1 of 3 done; 3B.3 Abilities & Cooldowns done)
+Now         3B.4 Conditions & Status Effects (PR 2 of 3 done; 3B.3 Abilities & Cooldowns done)
 Next        3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
 Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
@@ -313,7 +313,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts`, `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) and `AddMovementEffects` (PR 3: the move effect and `bonusIfMoved`) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
-**3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot.
+**3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot (migration `AddConditionResist`, model snapshot only).
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 
@@ -509,7 +509,7 @@ What the rules engine consumes per combatant from 3B.1 on. Values are hand-autho
 | `Dodge` | Hit check threshold (d20 + attacker accuracy ≥ target Dodge) | 3B.1 |
 | `BaseDamage` (a die, e.g. `d8`) | Damage pipeline | 3B.1 |
 | `MaxAp` | AP budget (queue cost per round) | 3B.2 |
-| `ConditionResist` | Condition application | 3B.4 |
+| `ConditionResist` | Condition application: a harmful condition from an enemy is resisted on a d100 ≤ it (percent, default 0; Brute 25) | 3B.4 (done, PR 2) |
 | `VisionRange` | Fog of war | 3C.1 |
 | `ShareRange` (if the chosen model needs it) | Info sharing | 3C.2 |
 | `Perception` | Spotting hidden enemies | 3C.3 |
@@ -585,6 +585,7 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | When condition modifiers apply | Budgets (AP, movement) from the next planning phase; blocks (Stunned, Rooted) and hit / damage modifiers from the next tick | `SPRINT_3B4.md` C6 (Nov 2026) | A condition never shrinks or grows a locked-in plan; Stunned and Rooted are the deliberate way to disrupt one |
 | Defend | Grants Guarded (+3 Dodge) from the start of its tick until the end of the round | `SPRINT_3B4.md` C7 (Nov 2026, for now) | Gives the timeout default and the AI's fallback a purpose without a free whole-round buff |
 | Ongoing damage timing | Once at the end of the round, before bleedout | `SPRINT_3B4.md` C11 (Nov 2026, for now) | Damage per round doesn't depend on how many ticks the round had |
+| Condition resistance | Only harmful conditions from enemies are rolled against (d100 ≤ `ConditionResist`); the d100 is only rolled when the value is above 0 | `SPRINT_3B4.md` C9 (Nov 2026) | Buffs and allies' effects always land; existing dice sequences don't change. Revisit with stats (Resilience) |
 
 ### Open Design Decisions
 

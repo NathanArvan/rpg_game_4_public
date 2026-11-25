@@ -228,6 +228,10 @@ A heal that nets a Downed or Stable combatant's HP above 0 brings them back to *
 
 ---
 
+### As built later: falling at the end of the round (3B.4 PR 2)
+
+Conditions' periodic damage (Burning, Poisoned) resolves once at the start of the end of round, before bleedout (`SPRINT_3B4.md` C11). Anyone it takes to 0 HP falls there with the same rules as in a tick: a party combatant goes Downed with the full `BleedoutRounds` (the round they fell in doesn't count, so no countdown that round), a monster dies. Falling clears every condition, so periodic damage can never act as an unplanned finishing blow, and nobody Downed, Stable or Dead takes periodic damage. The encounter-end check runs after the end of round, so a burn that drops the last enemy ends the fight.
+
 ## 7. Decisions (locked)
 
 | # | Question | Decision |

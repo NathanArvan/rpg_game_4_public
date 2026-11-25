@@ -15,6 +15,12 @@ public sealed record RoundOutcome(
     public IReadOnlyList<ExpiredCondition> ExpiredConditions { get; init; } = [];
 
     /// <summary>
+    /// Periodic damage and healing at the end of this round (3B.4 PR 2, SPRINT_3B4 C11), before bleedout:
+    /// combatant order, then the order the conditions were applied. Netted per combatant as one batch.
+    /// </summary>
+    public IReadOnlyList<PeriodicOutcome> PeriodicEffects { get; init; } = [];
+
+    /// <summary>
     /// Combatants who were out of the fight (Downed or Stable) when the round started and are
     /// standing again at its end, because a heal brought them back (3B.3, ABILITIES.md A8).
     /// Someone who went down and was healed back up within the round is in neither this list nor
@@ -47,6 +53,28 @@ public sealed record TickOutcome(
     /// </summary>
     public IReadOnlyList<ConditionOutcome> Conditions { get; init; } = [];
 }
+
+/// <summary>
+/// One periodic effect at the end of a round (3B.4 PR 2): a condition's damage or healing on its bearer.
+/// All of a combatant's periodic effects are netted together, so <see cref="HpBefore"/>, <see cref="HpAfter"/>
+/// and <see cref="Status"/> are the same on each of that combatant's entries.
+/// </summary>
+/// <param name="Amount">HP rolled: damage after the bearer's damage-taken modifiers, or healing (≥ 0).</param>
+/// <param name="ConditionDamage">How much the bearer's damage-taken modifiers changed the damage, signed (0 for heals).</param>
+/// <param name="HpBefore">The bearer's HP before the end of round.</param>
+/// <param name="HpAfter">The bearer's HP after all its periodic effects were netted (capped at MaxHp, never below 0).</param>
+/// <param name="Status">The bearer's status afterwards: Downed or Dead if this made it fall.</param>
+/// <param name="Fell">The bearer fell to these effects.</param>
+public sealed record PeriodicOutcome(
+    string CombatantId,
+    string ConditionId,
+    PeriodicKind Kind,
+    int Amount,
+    int HpBefore,
+    int HpAfter,
+    CombatantStatus Status,
+    bool Fell = false,
+    int ConditionDamage = 0);
 
 /// <summary>A condition that ran out at the end of a round (3B.4).</summary>
 public sealed record ExpiredCondition(string CombatantId, string ConditionId);

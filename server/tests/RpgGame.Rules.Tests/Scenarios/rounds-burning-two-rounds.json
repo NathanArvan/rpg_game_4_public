@@ -1,0 +1,29 @@
+{
+  // 3B.4 PR 2: Burning with duration 1 burns at the end of the round it lands in and the next, then expires.
+  "description": "Periodic: a duration-1 Burning burns twice, then expires",
+  "combatants": [
+    { "id": "A", "side": "party", "at": [2, 2], "abilities": ["ignite"] },
+    { "id": "G", "side": "enemy", "at": [6, 2] }
+  ],
+  "rounds": [
+    {
+      "plans": { "A": ["ability ignite G"] },
+      "dice": [15, 5, 3],
+      "expect": { "hp": { "G": 11 }, "conditions": { "G": { "burning": 0 } } }
+    },
+    {
+      "plans": {},
+      "dice": [2],
+      "expect": {
+        "hp": { "G": 9 },
+        "conditions": { "G": {} },
+        "events": ["end G burning: -2", "end G: burning expires"]
+      }
+    },
+    {
+      "plans": {},
+      "dice": [],
+      "expect": { "hp": { "G": 9 } }
+    }
+  ]
+}

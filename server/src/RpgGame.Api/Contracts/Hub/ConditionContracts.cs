@@ -71,6 +71,33 @@ public record ConditionResult(
     string? WastedReason,
     string FeedText);
 
+/// <summary>
+/// One condition's periodic damage or healing at the end of the round (3B.4 PR 2). A combatant's periodic
+/// effects are netted together, so <paramref name="NewHp"/> and <paramref name="Status"/> are the same on
+/// each of its entries; only its last entry carries the HP and any fall in <paramref name="FeedText"/>.
+/// </summary>
+/// <param name="Kind">"damage" or "heal".</param>
+/// <param name="Amount">HP lost (after the bearer's damage-taken modifiers) or healed.</param>
+/// <param name="ConditionDamage">How much the bearer's damage-taken modifiers changed the damage, signed.</param>
+/// <param name="Tags">The condition's tags (e.g. "flame"), for an icon.</param>
+/// <param name="NewHp">HP after all of the combatant's periodic effects.</param>
+/// <param name="Status">"standing", "downed" or "dead" afterwards.</param>
+/// <param name="Fell">These effects made the combatant fall (Downed or dead).</param>
+public record PeriodicResultDto(
+    string CombatantId,
+    string CombatantName,
+    string ConditionId,
+    string ConditionName,
+    bool Harmful,
+    IReadOnlyList<string> Tags,
+    string Kind,
+    int Amount,
+    int ConditionDamage,
+    int NewHp,
+    string Status,
+    bool Fell,
+    string FeedText);
+
 /// <summary>A condition that ran out at the end of the round (3B.4).</summary>
 public record ExpiredConditionDto(
     string CombatantId,

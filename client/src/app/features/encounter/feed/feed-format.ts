@@ -10,7 +10,9 @@
  *   ability names purple (3B.3: "Bruiser's Power Strike hits …", "Mira's Mend heals …",
  *   "Bruiser uses Power Strike on …", "… can't use Power Strike — …"), condition names blue (3B.4:
  *   "Goblin is Marked until the end of next round", "is still Marked, now …", "is no longer Marked",
- *   "isn't Marked — the attack missed", "resists Burning"; the ability in "Kestrel's Mark: …" is purple)
+ *   "isn't Marked — the attack missed", "resists Burning"; the ability in "Kestrel's Mark: …" is purple),
+ *   end-of-round periodic lines (3B.4 PR 2: "Goblin takes 3 damage from Burning (HP: 7 → 4)" orange,
+ *   "Mira heals 2 from Regenerating" teal, the condition blue)
  */
 
 export type FeedLineKind = 'round' | 'tick' | 'event';
@@ -34,9 +36,10 @@ export interface FeedLine {
 export type NameSides = ReadonlyMap<string, 'party' | 'enemy'>;
 
 // From ResolutionFeedFormatter (server): "for {damage} damage (HP: {before} → {after})" or "… — defeated!".
-const DAMAGE = String.raw`for \d+ damage(?: \(\+\d+ from moving\))?(?: \([+-]\d+ from conditions\))?(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left`;
+// Periodic damage at the end of the round (3B.4 PR 2): "takes 3 damage from Burning (-1 from conditions) — defeated!".
+const DAMAGE = String.raw`for \d+ damage(?: \(\+\d+ from moving\))?(?: \([+-]\d+ from conditions\))?(?: \(HP: -?\d+ → -?\d+\)| — defeated!| — goes down!)?|— finished off!|bleeds out|is bleeding out — \d+ rounds? left|takes \d+ damage|\([+-]\d+ from conditions\)|— defeated!|— goes down!`;
 const MISS = String.raw`and misses|misses`;
-const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on their feet!)?`;
+const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on their feet!)?|heals \d+(?= from )`;
 // Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
 // or after "uses " / "can't use " and before " on " / " —" / the end; and in movement lines made by
 // an ability: "moves to (9, 5) with Dash", "stays at (5, 6) (Charge)".
@@ -44,8 +47,9 @@ const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on th
 const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) |: )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
 
 // Condition names in the server's condition lines (3B.4): after "is ", "is still ", "is no longer ",
-// "isn't " or "resists ", a capitalised name, up to " until", " for N", ",", " —" or the end.
-const CONDITION = String.raw`(?<=(?:\bis (?:still |no longer )?|\bisn't |\bresists ))\p{Lu}[\p{L}\p{N} ]*?(?= until | for \d|,| —|$)`;
+// "isn't " or "resists ", a capitalised name, up to " until", " for N", ",", " —" or the end; and in periodic
+// lines (3B.4 PR 2) after "damage from " / "heals N from ", up to " (" or the end.
+const CONDITION = String.raw`(?<=(?:\bis (?:still |no longer )?|\bisn't |\bresists |\bdamage from |\bheals \d+ from ))\p{Lu}[\p{L}\p{N} ]*?(?= until | for \d|,| —| \(|$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {

@@ -86,6 +86,8 @@ public sealed class BattlePresetCatalog
             if (c.Move is <= 0) Fail($"{who}: 'move' must be at least 1");
             if (c.Ap is < CombatProfileCatalog.MinAp or > CombatProfileCatalog.MaxApLimit)
                 Fail($"{who}: 'ap' must be between {CombatProfileCatalog.MinAp} and {CombatProfileCatalog.MaxApLimit}");
+            if (c.ConditionResist is < 0 or > CombatProfileCatalog.MaxConditionResist)
+                Fail($"{who}: 'conditionResist' must be between 0 and {CombatProfileCatalog.MaxConditionResist}");
             if (c.Damage is not null)
             {
                 try { DamageDie.Parse(c.Damage); }
@@ -107,6 +109,7 @@ public sealed class BattlePresetCatalog
             profile.Dodge = c.Dodge ?? profile.Dodge;
             profile.BaseDamage = c.Damage?.Trim() ?? profile.BaseDamage;
             profile.MaxAp = c.Ap ?? profile.MaxAp;
+            profile.ConditionResist = c.ConditionResist ?? profile.ConditionResist;
             profile.CanBeDowned = c.Downs; // null: by side (party goes down, enemies die) (3B.5)
             if (c.Abilities is not null) // replaces the profile's loadout (3B.3)
                 profile.Abilities = profiles.Abilities.Resolve(c.Abilities.Select(id => id.Trim()),
@@ -152,6 +155,8 @@ public sealed class BattlePresetCatalog
         public int? RangedAccuracy { get; set; }
         public int? Dodge { get; set; }
         public int? Ap { get; set; }
+        /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
+        public int? ConditionResist { get; set; }
         /// <summary>Goes Downed at 0 HP (true) or dies (false); unset: by side (3B.5).</summary>
         public bool? Downs { get; set; }
         /// <summary>Ability ids replacing the profile's loadout (3B.3).</summary>

@@ -63,6 +63,7 @@ Comments (`//`, `/* */`) and trailing commas are allowed.
 | `abilities` | none | Ability ids from the scenario's top-level `abilities` block (3B.3): the loadout |
 | `cooldowns` | none | `{ "power_strike": 1 }`: abilities already on cooldown at the start of the round |
 | `conditions` | none | `[{ "id": "marked", "rounds": 1 }]`: conditions at the start of the round (3B.4). `rounds` = full rounds it lasts after this one (default 0: until the end of this round) |
+| `conditionResist` | 0 | Percent chance (0–100) to resist a harmful condition from an enemy: a d100 at or under it resists (3B.4 PR 2). At 0 nothing is rolled |
 
 ### `plans`
 
@@ -166,7 +167,7 @@ of the round every cooldown goes down by one, then each ability used this round 
 
 A combatant's `conditions` list and an ability's `apply_condition` effect name conditions by id. They
 come from the **shared library**, [`library/conditions.json`](library/conditions.json) (Blessed,
-Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward), owned by these tests like the ability
+Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward, Burning, Poisoned, Regenerating), owned by these tests like the ability
 library. A scenario's own `conditions` block adds or overrides entries, in the same shape as
 `server/src/RpgGame.Api/Conditions/conditions.json`:
 
@@ -177,8 +178,8 @@ library. A scenario's own `conditions` block adds or overrides entries, in the s
 ```
 
 Modifiers: `accuracy`, `dodge` (with `attackKind`: `any` / `melee` / `ranged`), `damageDealt`,
-`damageTaken` (`{ percent, flat, tags }`), and, parsed but not acted on until later PRs, `movement`,
-`ap`, `periodic`, `blocks`. Numbers from several conditions are added up. **Guarded** (Defend's +3
+`damageTaken` (`{ percent, flat, tags }`), `periodic` (`{ kind: "damage" | "heal", die, bonus }`), and,
+parsed but not acted on until PR 3, `movement`, `ap`, `blocks`. Numbers from several conditions are added up. **Guarded** (Defend's +3
 Dodge) is built into the rules and needs no entry.
 
 An ability applies one with `{ "kind": "apply_condition", "condition": "marked", "duration": 1 }`
@@ -192,6 +193,21 @@ Durations: `duration` / `rounds` = full rounds after the current one. At every e
 condition at 0 is removed and any other goes down by one, so `duration: 1` lasts the rest of this
 round and all of the next.
 
+**Periodic effects** (3B.4 PR 2) resolve once, at the start of the end of round, before bleedout:
+every standing combatant rolls its conditions' `periodic` dice, in combatant order, then the order its
+conditions were applied. Damage goes through the bearer's own `damageTaken`, using the **condition's**
+`tags` (Burning carries `flame`, so Flame Ward halves it). A combatant's damage and healing are netted
+together, then HP is capped at max. Anyone this drops to 0 falls as in a tick (Downed, with no bleedout
+countdown that round, or dead), and falling clears their conditions. A condition with `duration: 1`
+therefore acts at the end of the round it lands in and the next.
+
+**Resistance** (C9): a **harmful** condition from an **enemy** is resisted when the target's d100 is at
+or under its `conditionResist`. Beneficial conditions, and conditions from allies or yourself, are never
+rolled against, and nothing is rolled when `conditionResist` is 0.
+
+The library's `firebolt` has no Burning (so older scenarios keep their dice); `ignite` is Firebolt as
+shipped from PR 2 (Burning on a hit, duration 1). `envenom` is a melee weapon hit that Poisons for 2.
+
 Hit check with conditions: d20 + accuracy (+ the attacker's `accuracy` modifiers) ≥ Dodge (+ the
 target's `dodge` modifiers). Damage: `(die + bonus + attacker's damageDealt) × multiplier`, then the
 target's `damageTaken`: flat added, then percent (rounded down, never below 0). Finishing blows ignore
@@ -204,6 +220,11 @@ hit. It hits on **10 or higher**. A hit then rolls the attacker's damage die, ex
 against a Downed or Stable target: that's a finishing blow, and a hit kills with no damage
 roll. Within a tick, attackers and healers roll in plan order (an ability rolls once per target, in target order; a heal rolls only its die). Wasted attacks don't roll at all. A
 wasted attack is one where the target is already dead, or a melee target is out of reach.
+
+Conditions add two kinds of rolls (3B.4 PR 2): a **resist d100** for each harmful condition an enemy
+puts on a combatant whose `conditionResist` is above 0, in the Effects phase (after that tick's attack
+and heal rolls, in plan order, then effect order, then target order); and **periodic dice** at the end of
+the round, before anything else rolls there (combatant order, then the order the conditions were applied).
 
 The test fails if the resolver asks for more rolls than you listed. It also fails if a
 roll is impossible for the die (for example, 7 on a d6), or if any rolls are left over.
@@ -254,8 +275,8 @@ ability uses, Defend's Guarded, moves, attacks, heals, effects, conditions from 
 | Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`, `t1 A melee B: hit 3 (-4 conditions)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
 | Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |
 | Effect | `t1 Hero defends`, `t1 Knight stabilizes Archer`, `t1 Knight stabilizes Archer: wasted target_not_downed` |
-| Condition (3B.4) | `t1 Kestrel mark Goblin: marked applied (1)`, `t1 Kestrel mark Goblin: marked refreshed (2)`, `t1 A blinding_strike B: dazzled wasted missed`; Defend's: `t1 B defend B: guarded applied (0)`. The number is rounds left |
-| End of round | `end Hero bleeds, 1 left`, `end Hero bleeds out`, `end Goblin: marked expires` |
+| Condition (3B.4) | `t1 Kestrel mark Goblin: marked applied (1)`, `t1 Kestrel mark Goblin: marked refreshed (2)`, `t1 A blinding_strike B: dazzled wasted missed`, `t1 Kestrel mark Brute: marked resisted`; Defend's: `t1 B defend B: guarded applied (0)`. The number is rounds left |
+| End of round | Periodic effects first (3B.4 PR 2): `end G burning: -3`, `end G burning: -1 (-2 conditions)`, `end Mira regenerating: +4`, `end Hero burning: -3, Hero downed`; then `end Hero bleeds, 1 left`, `end Hero bleeds out`, `end Goblin: marked expires` |
 
 Attacks name the ability that made them (`cleave`), or `melee` / `ranged` for basic attacks.
 Wasted reasons are written in snake case, as on the wire. A new kind of outcome gets one line

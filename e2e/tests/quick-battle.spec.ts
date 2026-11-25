@@ -222,5 +222,6 @@ test('Conditions: the Scout Marks a goblin; the chip shows and lasts into the ne
   const goblinRow = page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' });
   await expect(goblinRow.locator('.chip[data-condition="marked"]')).toContainText('this round');
   await expect(goblinRow.locator('.chip[data-condition="exposed"]')).toBeVisible();
-  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.chip')).toHaveCount(0);
+  // (Only Guarded is checked: Goblin 2's Envenom may have Poisoned the Bruiser.)
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.chip[data-condition="guarded"]')).toHaveCount(0);
 });

@@ -1,0 +1,28 @@
+{
+  // 3B.4 PR 2 (C10, C11): a hero who falls to periodic damage goes Downed at the end of the round. They fell
+  // this round, so bleedout doesn't count down yet, and falling clears their conditions (no more burning).
+  "description": "Periodic: Burning downs a hero; bleedout starts next round",
+  "combatants": [
+    { "id": "Hero", "hp": 2, "maxHp": 20, "downs": true, "at": [2, 2], "conditions": [ { "id": "burning", "rounds": 1 } ] },
+    { "id": "Goblin", "at": [8, 8] }
+  ],
+  "rounds": [
+    {
+      "plans": {},
+      "dice": [3],
+      "expect": {
+        "hp": { "Hero": 0 },
+        "status": { "Hero": "downed" },
+        "bleedout": { "Hero": 2 },
+        "defeated": ["Hero"],
+        "conditions": { "Hero": {} },
+        "events": ["end Hero burning: -3, Hero downed"]
+      }
+    },
+    {
+      "plans": {},
+      "dice": [],
+      "expect": { "bleedout": { "Hero": 1 }, "events": ["end Hero bleeds, 1 left"] }
+    }
+  ]
+}

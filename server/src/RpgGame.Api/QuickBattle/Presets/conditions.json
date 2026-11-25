@@ -2,20 +2,22 @@
   // 3B.4 conditions. Party: the Bruiser has Battle Cry (it and allies within 3 deal +2 damage) and
   // Power Strike; the Skirmisher has Stoneskin (takes half damage), Mend and Charge; the Scout has
   // Mark (a goblin becomes easier to hit and takes +2 per hit) and Twin Shot. Defending grants
-  // Guarded (+3 Dodge) for the rest of the round.
+  // Guarded (+3 Dodge) for the rest of the round. The Scout's Firebolt sets its target Burning (d4 at
+  // the end of this round and the next).
   // Enemies: the Shaman (a Grunt given Battle Cry) shouts when an ally next to it isn't Emboldened
-  // yet; the Ogre (a Brute) charges.
+  // yet; Goblin 2 opens with Envenom (Poisoned: 2 damage at the end of each of the next three rounds);
+  // the Ogre (a Brute) charges and has the Brute's 25% chance to shrug off a harmful condition.
   // Used by the conditions E2E test: keep Goblin 1 within Mark's range (8) of the Scout at the start.
   "id": "conditions",
   "name": "Conditions",
-  "description": "Try Battle Cry, Stoneskin, Mark and Defend's Guarded against goblins, a shouting shaman and an ogre.",
+  "description": "Try Battle Cry, Stoneskin, Mark, Firebolt's Burning and Defend's Guarded against goblins (one with a poisoned blade), a shouting shaman and a stubborn ogre.",
   "order": 6,
   "combatants": [
     { "name": "Bruiser",    "side": "party", "profile": "bruiser",    "at": [9, 12],  "abilities": ["battle_cry", "power_strike"] },
     { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [10, 13], "abilities": ["stoneskin", "mend", "charge"] },
-    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 13], "abilities": ["mark", "twin_shot"] },
+    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 13], "abilities": ["mark", "twin_shot", "firebolt"] },
     { "name": "Goblin 1",   "side": "enemy", "profile": "grunt",      "at": [10, 7] },
-    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [12, 7] },
+    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [12, 7], "abilities": ["envenom"] },
     { "name": "Shaman",     "side": "enemy", "profile": "grunt",      "at": [11, 6], "abilities": ["battle_cry"] },
     { "name": "Ogre",       "side": "enemy", "profile": "brute",      "at": [8, 5] }
   ]

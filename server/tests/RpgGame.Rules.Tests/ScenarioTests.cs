@@ -148,6 +148,7 @@ public partial class ScenarioTests
                 MaxAp: c.MaxAp ?? d.MaxAp,
                 CanBeDowned: c.Downs ?? false)
             {
+                ConditionResist = c.ConditionResist ?? 0,
                 Abilities = (c.Abilities ?? []).Select(id => abilities.TryGetValue(id, out var a) ? a
                     : throw new InvalidDataException($"{file}: combatant {c.Id} lists ability '{id}', which is neither in 'abilities' nor in Scenarios/library/abilities.json")).ToList(),
             };
@@ -483,7 +484,7 @@ public partial class ScenarioTests
     /// Everything the round did, one line per event, in resolution order: per tick (from 1) the ability
     /// uses, Defend's Guarded, moves, attacks, heals, effects and conditions, then the end of round.
     /// Lines use ids and wire-style reasons, e.g. "t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6,
-    /// revived", "t1 Kestrel mark Goblin: marked applied (1)", "end Hero bleeds out", "end Goblin: marked expires". A new kind of outcome needs one line here to be checkable with
+    /// revived", "t1 Kestrel mark Goblin: marked applied (1)", "end Goblin burning: -3", "end Hero bleeds out", "end Goblin: marked expires". A new kind of outcome needs one line here to be checkable with
     /// <c>expect.events</c>. Printed whenever a scenario fails, so it doubles as an authoring aid.
     /// </summary>
     internal static List<string> EventLog(RoundOutcome o)
@@ -533,6 +534,13 @@ public partial class ScenarioTests
                     : $"{at} {e.CombatantId} stabilizes {e.TargetId}");
             foreach (var c in t.Conditions.Where(c => c.AbilityId is not null))
                 log.Add(ConditionLine(at, c));
+        }
+        foreach (var p in o.PeriodicEffects)
+        {
+            var amount = p.Kind == PeriodicKind.Heal ? $"+{p.Amount}" : $"-{p.Amount}";
+            var changed = p.ConditionDamage != 0 ? $" ({p.ConditionDamage:+#;-#} conditions)" : "";
+            var fell = p.Fell ? $", {p.CombatantId} {p.Status.ToString().ToLowerInvariant()}" : "";
+            log.Add($"end {p.CombatantId} {p.ConditionId}: {amount}{changed}{fell}");
         }
         foreach (var b in o.EndOfRound)
             log.Add(b.Died ? $"end {b.CombatantId} bleeds out" : $"end {b.CombatantId} bleeds, {b.RoundsLeft} left");
@@ -727,6 +735,8 @@ public partial class ScenarioTests
         public Dictionary<string, int>? Cooldowns { get; set; }
         /// <summary>Conditions at the start of the round (3B.4).</summary>
         public List<ActiveConditionDto>? Conditions { get; set; }
+        /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
+        public int? ConditionResist { get; set; }
     }
 
     private sealed class ConfigDto

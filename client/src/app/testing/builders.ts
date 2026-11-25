@@ -26,6 +26,7 @@ import {
   ExpiredConditionDto,
   HealResult,
   MovementResult,
+  PeriodicResultDto,
   PlanningCombatantDto,
   PositionDto,
   QueuedActionDto,
@@ -113,6 +114,16 @@ export function makeExpiredCondition(overrides: Partial<ExpiredConditionDto> = {
   const combatantId = overrides.combatantId ?? 'c1';
   const conditionId = overrides.conditionId ?? 'marked';
   return { combatantId, combatantName: combatantId, conditionId, conditionName: conditionId, feedText: '', ...overrides };
+}
+
+/** One periodic effect at the end of the round (3B.4 PR 2); defaults to Burning dealing 3 to c1 (10 → 7). */
+export function makePeriodic(overrides: Partial<PeriodicResultDto> = {}): PeriodicResultDto {
+  const combatantId = overrides.combatantId ?? 'c1';
+  return {
+    combatantId, combatantName: combatantId, conditionId: 'burning', conditionName: 'Burning', harmful: true,
+    tags: ['flame'], kind: 'damage', amount: 3, conditionDamage: 0, newHp: 7, status: 'standing', fell: false, feedText: '',
+    ...overrides,
+  };
 }
 
 // --- Combatants ---
@@ -235,7 +246,7 @@ export function makeBleedout(overrides: Partial<BleedoutResultDto> = {}): Bleedo
 export function makePayload(overrides: Partial<ResolutionPayload> = {}): ResolutionPayload {
   return {
     ticks: [], newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
-    expiredConditions: [],
+    expiredConditions: [], periodic: [],
     ...overrides,
   };
 }

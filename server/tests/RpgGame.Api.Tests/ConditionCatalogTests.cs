@@ -33,7 +33,8 @@ public class ConditionCatalogTests : IDisposable
     public void ShippedConditions_Load_AndMapToTheRulesEngine()
     {
         var catalog = TestProfiles.Catalog.Abilities.Conditions;
-        Assert.Equal(["blessed", "dazzled", "exposed", "emboldened", "fortified", "marked", "flame_ward"], catalog.All.Select(c => c.Id));
+        Assert.Equal(["blessed", "dazzled", "exposed", "emboldened", "fortified", "marked", "flame_ward", "burning", "poisoned", "regenerating"],
+            catalog.All.Select(c => c.Id));
 
         var dazzled = ConditionMapping.ToRules(catalog.Find("dazzled")!);
         Assert.Equal(new Modifiers(Accuracy: -3, AttackKind: AttackKindFilter.Ranged), dazzled.Modifiers);
@@ -42,6 +43,30 @@ public class ConditionCatalogTests : IDisposable
         var ward = ConditionMapping.ToRules(catalog.Find("flame_ward")!);
         Assert.Equal(new DamageTakenModifier(-50, 0, ["flame"]), ward.Modifiers.DamageTaken);
         Assert.False(ward.Harmful);
+    }
+
+    [Fact]
+    public void ShippedPeriodicConditions_MapToTheRulesEngine()
+    {
+        var catalog = TestProfiles.Catalog.Abilities.Conditions;
+        var burning = ConditionMapping.ToRules(catalog.Find("burning")!);
+        Assert.Equal(new PeriodicEffect(PeriodicKind.Damage, DamageDie.D4), burning.Modifiers.Periodic);
+        Assert.Equal(["flame"], burning.Tags);
+        Assert.True(burning.Harmful);
+        Assert.Equal(new PeriodicEffect(PeriodicKind.Damage, null, 2), ConditionMapping.ToRules(catalog.Find("poisoned")!).Modifiers.Periodic);
+        Assert.Equal(new PeriodicEffect(PeriodicKind.Heal, DamageDie.D4), ConditionMapping.ToRules(catalog.Find("regenerating")!).Modifiers.Periodic);
+    }
+
+    [Fact]
+    public void ShippedFireboltAndEnvenom_ApplyTheirConditionsOnHit()
+    {
+        var abilities = TestProfiles.Catalog.Abilities;
+        var firebolt = AbilityMapping.ToRules(abilities.Find("firebolt")!);
+        var burn = Assert.Single(firebolt.ConditionEffects);
+        Assert.Equal(("burning", 1, true), (burn.Condition.Id, burn.Duration, burn.RequiresHit));
+        var envenom = AbilityMapping.ToRules(abilities.Find("envenom")!);
+        var poison = Assert.Single(envenom.ConditionEffects);
+        Assert.Equal(("poisoned", 2, true), (poison.Condition.Id, poison.Duration, poison.RequiresHit));
     }
 
     [Fact]
@@ -163,5 +188,17 @@ public class ConditionCatalogTests : IDisposable
         var ex = Assert.Throws<InvalidDataException>(() => AbilityCatalog.Load(path, Conditions()));
         Assert.Contains("abilities.json: x", ex.Message);
         Assert.Contains(expected, ex.Message);
+    }
+
+    [Fact]
+    public void ResonanceThresholdEffects_MustNameAConditionOrAReservedEffect()
+    {
+        const string Bolt = """{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ], "resonanceScaling": { "flame": { "thresholdEffects": { "2": "ember", "3": "%EFFECT%" } } } }""";
+        Assert.Single(AbilityCatalog.Load(Write("abilities.json", $$"""{ "abilities": [ {{Bolt.Replace("%EFFECT%", "marked")}} ] }"""), Conditions()));
+
+        var path = Write("abilities.json", $$"""{ "abilities": [ {{Bolt.Replace("%EFFECT%", "burnin")}} ] }""");
+        var ex = Assert.Throws<InvalidDataException>(() => AbilityCatalog.Load(path, Conditions()));
+        Assert.Contains("abilities.json: x", ex.Message);
+        Assert.Contains("'burnin' isn't a condition", ex.Message);
     }
 }

@@ -1,0 +1,17 @@
+{
+  // 3B.4 PR 2 (C11): a combatant's periodic damage and healing are netted as one batch, then HP is capped
+  // at max. Rolls go in combatant order, then the order the conditions were applied (Poisoned has no die).
+  "description": "Periodic: poison and regeneration net out; regeneration caps at max HP",
+  "combatants": [
+    { "id": "Hero", "hp": 10, "maxHp": 20, "at": [2, 2],
+      "conditions": [ { "id": "poisoned", "rounds": 1 }, { "id": "regenerating", "rounds": 1 } ] },
+    { "id": "Mira", "hp": 19, "maxHp": 20, "at": [4, 2], "conditions": [ { "id": "regenerating", "rounds": 0 } ] }
+  ],
+  "plans": {},
+  "dice": [4, 3],                     // Hero regenerates d4 4; Mira regenerates d4 3
+  "expect": {
+    "hp": { "Hero": 12, "Mira": 20 },
+    "conditions": { "Hero": { "poisoned": 0, "regenerating": 0 }, "Mira": {} },
+    "events": ["end Hero poisoned: -2", "end Hero regenerating: +4", "end Mira regenerating: +3", "end Mira: regenerating expires"]
+  }
+}

@@ -51,6 +51,9 @@ public static class RoundResolver
             });
         }
 
+        // End of round (SPRINT_3B4 C11): periodic effects (and anyone they drop) → bleedout → cooldowns →
+        // conditions count down and expire.
+        var periodic = ResolvePeriodic(round);
         var endOfRound = ResolveBleedout(round);
         var cooldowns = ResolveCooldowns(round);
         var (conditions, expired) = ResolveConditionCountdown(round);
@@ -75,6 +78,7 @@ public static class RoundResolver
         {
             RevivedThisRound = revived,
             ExpiredConditions = expired,
+            PeriodicEffects = periodic,
         };
     }
 
@@ -511,25 +515,8 @@ public static class RoundResolver
         }
 
         // The 0-HP check runs once, after ALL damage is applied — enables mutual kills
-        // (DESIGN_SPIKE Decision 2). It deliberately covers every combatant, not just this
-        // tick's targets: anyone standing at HP ≤ 0 falls however they got there (e.g. future
-        // damage-over-time statuses), even if nobody attacked them. Those who can be downed go
-        // Downed and start bleeding out; everyone else dies (3B.5). HP stops at 0.
-        foreach (var c in round.State.Combatants)
-        {
-            if (round.IsOut(c.Id) || round.Hp[c.Id] > 0) continue;
-            round.Hp[c.Id] = 0;
-            if (c.Profile.CanBeDowned)
-            {
-                round.SetStatus(c.Id, CombatantStatus.Downed);
-                round.Bleedout[c.Id] = round.Config.BleedoutRounds;
-            }
-            else
-            {
-                round.SetStatus(c.Id, CombatantStatus.Dead);
-            }
-            fellThisTick.Add(c.Id);
-        }
+        // (DESIGN_SPIKE Decision 2).
+        ResolveFalls(round, fellThisTick);
 
         var attackOutcomes = pending.Select(a => new AttackOutcome(
             a.AttackerId,
@@ -561,6 +548,32 @@ public static class RoundResolver
             TargetStatus: round.Status.GetValueOrDefault(h.TargetId, CombatantStatus.Standing))).ToList();
 
         return (attackOutcomes, healOutcomes);
+    }
+
+    /// <summary>
+    /// The 0-HP check, shared by every tick's attacks and the end of round's periodic effects. It
+    /// deliberately covers every combatant, not just the ones just hit: anyone standing at HP ≤ 0 falls
+    /// however they got there. Those who can be downed go Downed and start bleeding out (their countdown
+    /// starts next round); everyone else dies (3B.5). HP stops at 0. Falling clears conditions (C10).
+    /// </summary>
+    /// <param name="fell">Collects the ids of those who fell.</param>
+    private static void ResolveFalls(RoundContext round, HashSet<string> fell)
+    {
+        foreach (var c in round.State.Combatants)
+        {
+            if (round.IsOut(c.Id) || round.Hp[c.Id] > 0) continue;
+            round.Hp[c.Id] = 0;
+            if (c.Profile.CanBeDowned)
+            {
+                round.SetStatus(c.Id, CombatantStatus.Downed);
+                round.Bleedout[c.Id] = round.Config.BleedoutRounds;
+            }
+            else
+            {
+                round.SetStatus(c.Id, CombatantStatus.Dead);
+            }
+            fell.Add(c.Id);
+        }
     }
 
     /// <summary>
@@ -763,11 +776,31 @@ public static class RoundResolver
                 var wasted = CheckConditionTarget(round, casterId, targetId, ability.Targeting);
                 if (wasted == WastedReason.None && effect.RequiresHit && hits?.Contains(targetId) != true)
                     wasted = WastedReason.Missed;
-                round.TickConditions.Add(wasted == WastedReason.None
-                    ? round.ApplyCondition(casterId, targetId, effect.Condition, effect.Duration, ability.Id)
-                    : new ConditionOutcome(casterId, targetId, effect.Condition.Id, ability.Id, ConditionResultKind.Wasted, 0, wasted));
+                if (wasted != WastedReason.None)
+                    round.TickConditions.Add(new ConditionOutcome(
+                        casterId, targetId, effect.Condition.Id, ability.Id, ConditionResultKind.Wasted, 0, wasted));
+                else if (Resists(round, casterId, targetId, effect.Condition))
+                    round.TickConditions.Add(new ConditionOutcome(
+                        casterId, targetId, effect.Condition.Id, ability.Id, ConditionResultKind.Resisted, 0));
+                else
+                    round.TickConditions.Add(round.ApplyCondition(casterId, targetId, effect.Condition, effect.Duration, ability.Id));
             }
         }
+    }
+
+    /// <summary>
+    /// ConditionResist (SPRINT_3B4 C9): a harmful condition from an enemy is resisted when the target's d100
+    /// comes up at or under its <see cref="CombatProfile.ConditionResist"/>. The d100 is only rolled when that
+    /// is above 0, so combatants without resistance never change the dice sequence; beneficial conditions and
+    /// conditions from allies or yourself are never rolled against.
+    /// </summary>
+    private static bool Resists(RoundContext round, string casterId, string targetId, ConditionDefinition condition)
+    {
+        var target = round.Combatants[targetId];
+        int resist = target.Profile.ConditionResist;
+        if (!condition.Harmful || resist <= 0) return false;
+        if (Relations.Between(round.Combatants[casterId], target) != Relation.Enemy) return false;
+        return round.Dice.Roll(100) <= resist;
     }
 
     /// <summary>
@@ -813,6 +846,57 @@ public static class RoundResolver
     }
 
     // ----- End of round -----
+
+    /// <summary>
+    /// Periodic effects at the start of the end of round (SPRINT_3B4 C11): every standing combatant rolls its
+    /// conditions' periodic damage and healing, in combatant order, then the order the conditions were applied
+    /// (damage dice go into the dice sequence here). Damage goes through the bearer's own damage-taken
+    /// modifiers with the condition's tags. Everything is netted per combatant as one batch, capped at MaxHp,
+    /// then the same 0-HP check as a tick runs: whoever falls here fell this round, so their bleedout doesn't
+    /// count down yet, and falling clears their conditions.
+    /// </summary>
+    private static List<PeriodicOutcome> ResolvePeriodic(RoundContext round)
+    {
+        var rolled = new List<(string CombatantId, ActiveCondition Condition, PeriodicEffect Effect, int Amount, int ConditionDamage)>();
+        var deltas = new Dictionary<string, int>();
+        foreach (var c in round.State.Combatants)
+        {
+            if (round.IsOut(c.Id)) continue;
+            var conditions = round.Conditions[c.Id];
+            foreach (var condition in conditions)
+            {
+                if (condition.Definition.Modifiers.Periodic is not { } effect) continue;
+                int raw = Math.Max(0, (effect.Die is { } die ? round.Dice.Roll(die.Sides) : 0) + effect.Bonus);
+                int amount = raw, conditionDamage = 0;
+                if (effect.Kind == PeriodicKind.Damage)
+                {
+                    amount = ConditionMath.ApplyDamageTaken(raw, conditions, condition.Definition.Tags);
+                    conditionDamage = amount - raw;
+                }
+                rolled.Add((c.Id, condition, effect, amount, conditionDamage));
+                deltas[c.Id] = deltas.GetValueOrDefault(c.Id) + (effect.Kind == PeriodicKind.Heal ? amount : -amount);
+            }
+        }
+        if (rolled.Count == 0) return [];
+
+        var hpBefore = new Dictionary<string, int>(round.Hp);
+        foreach (var (id, delta) in deltas)
+            round.Hp[id] = Math.Min(round.Hp[id] + delta, round.Combatants[id].MaxHp);
+
+        var fell = new HashSet<string>();
+        ResolveFalls(round, fell);
+
+        return rolled.Select(r => new PeriodicOutcome(
+            r.CombatantId,
+            r.Condition.Id,
+            r.Effect.Kind,
+            r.Amount,
+            HpBefore: hpBefore[r.CombatantId],
+            HpAfter: round.Hp[r.CombatantId],
+            Status: round.Status[r.CombatantId],
+            Fell: fell.Contains(r.CombatantId),
+            ConditionDamage: r.ConditionDamage)).ToList();
+    }
 
     /// <summary>
     /// Bleedout countdown (3B.5): everyone who was Downed when the round started and still is

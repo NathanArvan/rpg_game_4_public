@@ -122,6 +122,22 @@ export interface ConditionResult {
   feedText: string;
 }
 
+export interface PeriodicResultDto {
+  combatantId: string;
+  combatantName: string;
+  conditionId: string;
+  conditionName: string;
+  harmful: boolean;
+  tags: string[];
+  kind: string;
+  amount: number;
+  conditionDamage: number;
+  newHp: number;
+  status: string;
+  fell: boolean;
+  feedText: string;
+}
+
 export interface ExpiredConditionDto {
   combatantId: string;
   combatantName: string;
@@ -234,6 +250,7 @@ export interface ResolutionPayload {
   endOfRound: BleedoutResultDto[];
   revivedCombatantIds: string[] | null;
   expiredConditions: ExpiredConditionDto[] | null;
+  periodic: PeriodicResultDto[] | null;
 }
 
 export interface BleedoutResultDto {

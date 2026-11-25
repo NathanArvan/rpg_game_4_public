@@ -1,0 +1,12 @@
+{
+  // Integration tests (3B.4 PR 2): a hero with Firebolt and a weak manual (GM-planned) goblin in range.
+  // The goblin defends unless a test plans for it, so it's Guarded (+3 Dodge) for the round.
+  "id": "it-burn",
+  "name": "IT: Burn",
+  "description": "Integration tests: Hero with Firebolt and a 4-HP manual Goblin.",
+  "order": 4,
+  "combatants": [
+    { "name": "Hero",   "side": "party", "profile": "skirmisher", "hp": 20, "abilities": ["firebolt"], "at": [9, 9] },
+    { "name": "Goblin", "side": "enemy", "profile": "grunt", "hp": 4, "dodge": 10, "ai": false, "at": [9, 14] }
+  ]
+}

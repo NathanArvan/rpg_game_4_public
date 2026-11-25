@@ -1,0 +1,17 @@
+{
+  // 3B.4 PR 2 (C11): a monster that falls to periodic damage dies at the end of the round.
+  "description": "Periodic: Burning kills a monster at the end of the round",
+  "combatants": [
+    { "id": "Goblin", "side": "enemy", "hp": 2, "maxHp": 10, "at": [2, 2], "conditions": [ { "id": "burning", "rounds": 1 } ] },
+    { "id": "Hero", "side": "party", "at": [8, 8] }
+  ],
+  "plans": {},
+  "dice": [4],
+  "expect": {
+    "hp": { "Goblin": 0 },
+    "status": { "Goblin": "dead" },
+    "defeated": ["Goblin"],
+    "conditions": { "Goblin": {} },
+    "events": ["end Goblin burning: -4, Goblin dead"]
+  }
+}

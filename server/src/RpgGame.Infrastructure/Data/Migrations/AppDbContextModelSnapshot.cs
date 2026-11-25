@@ -582,6 +582,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                             b1.Property<bool?>("CanBeDowned");
 
+                            b1.Property<int?>("ConditionResist");
+
                             b1.Property<int>("Dodge");
 
                             b1.Property<int?>("MaxAp");
