@@ -53,6 +53,17 @@ export function describeModifiers(m: ConditionModifiersDto): string[] {
   return parts;
 }
 
+/**
+ * Which conditions change a round budget (3B.4 PR 3), for the AP counter: "-1 Weakened", "+1 Hasted, -1 Weakened".
+ * Empty when none does. The numbers come from the server's effective values; this only names the causes.
+ */
+export function budgetNote(conditions: readonly ActiveConditionDto[], field: 'ap' | 'movement'): string {
+  return conditions
+    .filter(c => c.condition.modifiers[field] !== 0)
+    .map(c => `${signed(c.condition.modifiers[field])} ${c.condition.name}`)
+    .join(', ');
+}
+
 /** A condition's tooltip: name, what it does, how long it lasts. */
 export function conditionTooltip(c: ConditionDto, roundsLeft?: number): string {
   const lines = [c.name];

@@ -1,0 +1,16 @@
+{
+  // 3B.4 PR 3: Hamstring is a melee attack that slows on a hit, so the AI opens with it on a target that isn't
+  // Slowed yet (the C14 / A13 step-4 preference for an ability that adds a condition).
+  "description": "AI: a goblin opens with Hamstring, then swings with the AP left",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0] },
+    { "id": "G", "side": "enemy", "at": [1, 0], "abilities": ["hamstring"] }
+  ],
+  "plans": { "G": ["ai"] },
+  "dice": [15, 3, 5],
+  "expect": {
+    "plans": { "G": ["ability hamstring Hero", "melee Hero"] },
+    "hp": { "Hero": 17 },
+    "conditions": { "Hero": { "slowed": 0 } }
+  }
+}

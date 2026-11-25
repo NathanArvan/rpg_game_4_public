@@ -38,6 +38,8 @@ public static class RoundResolver
         {
             // Combatants defeated in an earlier tick are skipped (CanAct), which voids
             // their remaining queued actions.
+            // A combatant a condition stops from acting (Stunned) loses this tick's action (C8).
+            ResolveBlocks(round, tick);
             ResolveAbilityActivations(round, tick);
             ResolveGuards(round, tick);
             var movements = ResolveMovementPhase(round, tick);
@@ -48,6 +50,7 @@ public static class RoundResolver
                 AbilityUses = round.TickUses.ToList(),
                 Heals = heals,
                 Conditions = round.TickConditions.ToList(),
+                Blocked = round.TickBlocked.ToList(),
             });
         }
 
@@ -82,6 +85,27 @@ public static class RoundResolver
         };
     }
 
+    // ----- Blocked actions (start of each tick) -----
+
+    /// <summary>
+    /// SPRINT_3B4 C8: a combatant whose conditions block every action (Stunned), from the start of the round or
+    /// from an earlier tick, doesn't act this tick. Its queued action is reported once, in
+    /// <see cref="TickOutcome.Blocked"/>, and doesn't resolve: a blocked ability isn't used, so no cooldown.
+    /// Conditions applied in this tick's Effects phase count from the next tick.
+    /// </summary>
+    private static void ResolveBlocks(RoundContext round, int tick)
+    {
+        round.TickStunned.Clear();
+        round.TickBlocked.Clear();
+        foreach (var (combatantId, queue) in round.Plans)
+        {
+            if (!round.CanAct(combatantId) || ActionAt(queue, tick) is not { } action) continue;
+            if (ConditionMath.BlockingCondition(round.Conditions[combatantId], BlockKind.All) is not { } stun) continue;
+            round.TickStunned.Add(combatantId);
+            round.TickBlocked.Add(new BlockedAction(combatantId, action, stun.Id));
+        }
+    }
+
     // ----- Ability activations (start of each tick) -----
 
     /// <summary>
@@ -102,7 +126,7 @@ public static class RoundResolver
         var uses = round.TickUses;
         foreach (var (casterId, queue) in round.Plans)
         {
-            if (!round.CanAct(casterId)) continue;
+            if (!round.Acts(casterId)) continue;
             var action = ActionAt(queue, tick);
             if (action?.Type != ActionType.Ability) continue;
 
@@ -195,7 +219,7 @@ public static class RoundResolver
     {
         foreach (var (combatantId, queue) in round.Plans)
         {
-            if (!round.CanAct(combatantId) || ActionAt(queue, tick)?.Type != ActionType.Defend) continue;
+            if (!round.Acts(combatantId) || ActionAt(queue, tick)?.Type != ActionType.Defend) continue;
             round.TickConditions.Add(round.ApplyCondition(
                 combatantId, combatantId, round.Config.GuardedCondition, duration: 0, abilityId: null));
         }
@@ -211,7 +235,7 @@ public static class RoundResolver
         var movers = new List<Mover>();
         foreach (var (combatantId, queue) in round.Plans)
         {
-            if (!round.CanAct(combatantId)) continue;
+            if (!round.Acts(combatantId)) continue;
             var action = ActionAt(queue, tick);
             if (action?.Type == ActionType.Ability)
             {
@@ -222,14 +246,22 @@ public static class RoundResolver
             }
             if (action?.Type != ActionType.Move || action.TargetCell is not { } target) continue;
 
+            // Rooted (C8): the move doesn't happen, and is reported as blocked.
+            if (ConditionMath.BlockingCondition(round.Conditions[combatantId], BlockKind.Move) is { } root)
+            {
+                round.TickBlocked.Add(new BlockedAction(combatantId, action, root.Id, BlockKind.Move));
+                continue;
+            }
+
             // A combatant with no map position isn't on the map, so it can't move.
             if (!round.Positions.TryGetValue(combatantId, out var start)) continue;
 
             // Re-check the move against the rules (PlanningService also validates it): the path
             // stops when the mover's movement budget for the round runs out (all moves share
-            // MovementRange cells, roadmap 3B.2) or at the grid edge, whichever comes first.
+            // MovementRange cells, roadmap 3B.2, changed by conditions at the start of the round, C6)
+            // or at the grid edge, whichever comes first.
             var mover = round.Combatants[combatantId];
-            int cellsLeft = mover.Profile.MovementRange - round.CellsMoved.GetValueOrDefault(combatantId);
+            int cellsLeft = round.MovementRange[combatantId] - round.CellsMoved.GetValueOrDefault(combatantId);
             var path = LegalPrefix(ComputeChebyshevPath(start, target), round.State, Math.Max(0, cellsLeft));
 
             // A move to the combatant's own cell is a mover with a one-cell path: it never steps,
@@ -347,6 +379,8 @@ public static class RoundResolver
     {
         if (active.Ability.Move is not { } move) return null;
         if (!round.Positions.TryGetValue(casterId, out var start)) return null;
+        // Rooted (C8): the ability's move doesn't happen; its other effects resolve from where the caster stands.
+        if (ConditionMath.IsBlocked(round.Conditions[casterId], BlockKind.Move)) return null;
 
         var destination = start;
         if (move.To == MoveTo.Cell)
@@ -364,7 +398,7 @@ public static class RoundResolver
         var caster = round.Combatants[casterId];
         int cells = move.MaxCells;
         if (move.UsesMovementBudget)
-            cells = Math.Min(cells, caster.Profile.MovementRange - round.CellsMoved.GetValueOrDefault(casterId));
+            cells = Math.Min(cells, round.MovementRange[casterId] - round.CellsMoved.GetValueOrDefault(casterId));
         var path = LegalPrefix(ComputeChebyshevPath(start, destination), round.State, Math.Max(0, cells));
         return new Mover(casterId, path, caster.Speed) { AbilityId = active.Ability.Id, UsesBudget = move.UsesMovementBudget };
     }
@@ -418,7 +452,7 @@ public static class RoundResolver
 
         foreach (var (attackerId, queue) in round.Plans)
         {
-            if (!round.CanAct(attackerId)) continue;
+            if (!round.Acts(attackerId)) continue;
             var action = ActionAt(queue, tick);
             switch (action?.Type)
             {
@@ -740,7 +774,7 @@ public static class RoundResolver
         foreach (var (combatantId, queue) in round.Plans)
         {
             // Includes combatants who fell in this tick's attack phase.
-            if (!round.CanAct(combatantId)) continue;
+            if (!round.Acts(combatantId)) continue;
             var action = ActionAt(queue, tick);
             switch (action?.Type)
             {
@@ -1064,6 +1098,18 @@ public static class RoundResolver
         /// <summary>Everyone's conditions as the round goes (3B.4).</summary>
         public Dictionary<string, IReadOnlyList<ActiveCondition>> Conditions { get; }
 
+        /// <summary>Combatants a condition stops from acting in the current tick (Stunned, C8).</summary>
+        public HashSet<string> TickStunned { get; } = [];
+
+        /// <summary>Actions conditions stopped in the current tick, in order.</summary>
+        public List<BlockedAction> TickBlocked { get; } = [];
+
+        /// <summary>
+        /// Each combatant's movement budget for the round: its profile's range changed by the conditions it had
+        /// when the round started (C6). Conditions applied during the round don't change it.
+        /// </summary>
+        public Dictionary<string, int> MovementRange { get; }
+
         /// <summary>Conditions applied in the current tick, in order.</summary>
         public List<ConditionOutcome> TickConditions { get; } = [];
 
@@ -1097,6 +1143,7 @@ public static class RoundResolver
             Bleedout = state.Combatants.ToDictionary(c => c.Id, c => c.BleedoutRoundsLeft);
             // Someone who is already down carries no conditions (SPRINT_3B4 C10), whatever the input says.
             Conditions = state.Combatants.ToDictionary(c => c.Id, c => c.IsDefeated ? [] : c.Conditions);
+            MovementRange = state.Combatants.ToDictionary(c => c.Id, c => ConditionMath.EffectiveMovementRange(c.Profile, Conditions[c.Id]));
             DownedAtStart = state.Combatants.Where(c => c.Status == CombatantStatus.Downed).Select(c => c.Id).ToHashSet();
             OutAtStart = state.Combatants
                 .Where(c => c.Status is CombatantStatus.Downed or CombatantStatus.Stable).Select(c => c.Id).ToHashSet();
@@ -1106,13 +1153,14 @@ public static class RoundResolver
                 if (!Combatants.ContainsKey(id))
                     throw new ArgumentException($"Plan given for unknown combatant '{id}'.", nameof(plans));
 
-            // Each queue is cut to the actions its combatant can afford (roadmap 3B.2).
-            // PlanningService rejects over-budget plans, so this only guards the engine.
+            // Each queue is cut to the actions its combatant can afford (roadmap 3B.2), with the AP its
+            // conditions left it at the start of the round (C6). PlanningService rejects over-budget plans,
+            // so this only guards the engine.
             // A new insertion-ordered dictionary keeps plan order.
             var affordable = new Dictionary<string, IReadOnlyList<PlannedAction>>();
             foreach (var (id, queue) in plans)
             {
-                int n = PlanValidator.AffordableCount(queue, Combatants[id].Profile, config);
+                int n = PlanValidator.AffordableCount(queue, ConditionMath.EffectiveProfile(Combatants[id].Profile, Conditions[id]), config);
                 affordable[id] = n == queue.Count ? queue : queue.Take(n).ToList();
             }
             Plans = affordable;
@@ -1123,6 +1171,9 @@ public static class RoundResolver
 
         /// <summary>Its queued actions still run: standing since the start of the round.</summary>
         public bool CanAct(string id) => Acting.Contains(id);
+
+        /// <summary>Its action at the current tick resolves: it can act and no condition stops it this tick (C8).</summary>
+        public bool Acts(string id) => Acting.Contains(id) && !TickStunned.Contains(id);
 
         /// <summary>Changes a status, recording anyone who stops standing this round (their queue is void from then on).</summary>
         public void SetStatus(string id, CombatantStatus status)

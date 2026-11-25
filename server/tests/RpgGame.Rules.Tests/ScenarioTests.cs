@@ -484,7 +484,7 @@ public partial class ScenarioTests
     /// Everything the round did, one line per event, in resolution order: per tick (from 1) the ability
     /// uses, Defend's Guarded, moves, attacks, heals, effects and conditions, then the end of round.
     /// Lines use ids and wire-style reasons, e.g. "t1 Bruiser cleave G1: hit 5", "t2 Mira mend Hero: +6,
-    /// revived", "t1 Kestrel mark Goblin: marked applied (1)", "end Goblin burning: -3", "end Hero bleeds out", "end Goblin: marked expires". A new kind of outcome needs one line here to be checkable with
+    /// revived", "t1 Kestrel mark Goblin: marked applied (1)", "t2 Goblin stunned: melee Hero blocked", "end Goblin burning: -3", "end Hero bleeds out", "end Goblin: marked expires". A new kind of outcome needs one line here to be checkable with
     /// <c>expect.events</c>. Printed whenever a scenario fails, so it doubles as an authoring aid.
     /// </summary>
     internal static List<string> EventLog(RoundOutcome o)
@@ -493,6 +493,8 @@ public partial class ScenarioTests
         foreach (var t in o.Ticks)
         {
             var at = $"t{t.Index + 1}";
+            foreach (var b in t.Blocked)
+                log.Add($"{at} {b.CombatantId} {b.ConditionId}: {Describe(b.Action).Trim('"')} blocked");
             foreach (var u in t.AbilityUses)
             {
                 var targets = u.TargetIds.Count > 0 ? $" on {string.Join(",", u.TargetIds)}" : "";

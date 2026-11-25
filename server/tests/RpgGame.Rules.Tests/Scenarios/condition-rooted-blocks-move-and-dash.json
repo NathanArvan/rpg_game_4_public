@@ -1,0 +1,15 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C8): Rooted blocks plain moves (reported) and an ability's move. Dash is still used
+  // (its cooldown starts): only its move doesn't happen.
+  "description": "Conditions: a Rooted hero neither walks nor dashes",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0], "abilities": ["dash"], "conditions": [{ "id": "rooted", "rounds": 0 }] }
+  ],
+  "plans": { "Hero": ["move 3,0", "ability dash 0,3"] },
+  "dice": [],
+  "expect": {
+    "positions": { "Hero": [0, 0] },
+    "cooldowns": { "Hero": { "dash": 2 } },
+    "events": ["t1 Hero rooted: move 3,0 blocked", "t2 Hero uses dash", "end Hero: rooted expires"]
+  }
+}

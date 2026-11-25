@@ -101,6 +101,12 @@ export interface ActiveConditionDto {
   sourceId: string | null;
 }
 
+export interface ConditionBlockDto {
+  kind: string;
+  conditionId: string;
+  conditionName: string;
+}
+
 export interface AbilityConditionDto {
   condition: ConditionDto;
   duration: number;
@@ -212,6 +218,9 @@ export interface PlanningCombatantDto {
   abilities: AbilityDto[] | null;
   cooldowns: { [key: string]: number } | null;
   conditions: ActiveConditionDto[] | null;
+  baseMovementRange: number;
+  baseMaxAp: number;
+  blocks: ConditionBlockDto[] | null;
 }
 
 export interface PlayerLockedInPayload {
@@ -285,6 +294,18 @@ export interface TickResult {
   abilityUses: AbilityUseResult[] | null;
   heals: HealResult[] | null;
   conditions: ConditionResult[] | null;
+  blocked: BlockedActionResult[] | null;
+}
+
+export interface BlockedActionResult {
+  combatantId: string;
+  combatantName: string;
+  actionType: string;
+  abilityId: string | null;
+  conditionId: string;
+  conditionName: string;
+  block: string;
+  feedText: string;
 }
 
 export interface HealResult {

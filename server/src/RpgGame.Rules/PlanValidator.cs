@@ -16,6 +16,8 @@ public sealed record PlanCheck(string? Error, int ApSpent, int MoveCellsUsed)
 /// queued moves would leave the combatant, ignoring everyone else (who may block it at resolution).
 /// Ability entries (3B.3) must name a loadout ability that isn't on cooldown, appear at most once
 /// if the ability has a cooldown, and carry the target shape its targeting kind needs.
+/// Conditions (3B.4 PR 3, SPRINT_3B4 C6, C8) change the AP and movement budgets, reject any plan while
+/// they block every action (Stunned), and reject moves and abilities that move while they block moves (Rooted).
 /// </summary>
 /// <remarks>
 /// Checks only budgets, the loadout and the grid. Whether attack targets exist, are already
@@ -29,6 +31,8 @@ public static class PlanValidator
     /// Where everyone stands at the start of planning, to estimate a move to a target (Charge). Without
     /// it (or for an unknown target) such a move is counted as zero cells.
     /// </param>
+    /// <param name="conditions">The combatant's conditions at the start of this planning phase (3B.4): they set the
+    /// effective budgets and what it can't do.</param>
     public static PlanCheck Validate(
         GridPosition? start,
         CombatProfile profile,
@@ -37,11 +41,18 @@ public static class PlanValidator
         int gridHeight,
         RulesConfig? config = null,
         IReadOnlyDictionary<string, int>? cooldowns = null,
-        IReadOnlyDictionary<string, GridPosition>? positions = null)
+        IReadOnlyDictionary<string, GridPosition>? positions = null,
+        IReadOnlyList<ActiveCondition>? conditions = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(queue);
         config ??= RulesConfig.Default;
+        conditions ??= [];
+        profile = ConditionMath.EffectiveProfile(profile, conditions);
+
+        if (queue.Count > 0 && ConditionMath.BlockingCondition(conditions, BlockKind.All) is { } stun)
+            return new PlanCheck($"This combatant is {stun.Definition.Name} and can't act this round.", 0, 0);
+        var root = ConditionMath.BlockingCondition(conditions, BlockKind.Move);
 
         int ap = 0, cells = 0;
         var position = start;
@@ -51,6 +62,10 @@ public static class PlanValidator
             if (action.Type == ActionType.Ability
                 && CheckAbility(action, profile, cooldowns, abilitiesQueued) is { } abilityError)
                 return new PlanCheck(abilityError, ap, cells);
+
+            if (root is not null
+                && (action.Type == ActionType.Move || profile.FindAbility(action.AbilityId) is { Move: not null }))
+                return new PlanCheck($"This combatant is {root.Definition.Name} and can't move.", ap, cells);
 
             ap += config.ApCost(action, profile);
             if (ap > profile.MaxAp)

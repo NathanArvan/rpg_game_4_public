@@ -78,27 +78,38 @@
       <span class="hint">(click one of your tokens to switch)</span>
     </div>
     <div class="action-buttons">
-      <span class="ap-budget" *ngIf="selected" [class.ap-spent]="apUsed >= maxAp"
-            [title]="'Moves left this round: ' + moveCellsLeft + ' cells'">
-        AP {{ apUsed }}/{{ maxAp }}
-      </span>
-      <app-ability-bar
-        [combatant]="selected"
-        [queue]="selectedPlan"
-        [apCosts]="apCosts"
-        [armedAbilityId]="armedAbilityId"
-        [disabled]="lockedIn"
-        (toggle)="toggleAbility($event)"></app-ability-bar>
-      <button
-        class="action-btn"
-        [class.active]="hasDefendPlanned"
-        [disabled]="lockedIn || !canAffordDefend"
-        (click)="planDefend()">
-        🛡 Defend
-      </button>
+      <ng-container *ngIf="selectedSkips as skips; else planning">
+        <span class="skip-round" data-testid="skips-round" [title]="skips">
+          ⛔ {{ selected?.characterName }} — {{ selected?.blocks?.length ? selected?.blocks?.[0]?.conditionName : 'no AP' }}, skips this round
+        </span>
+      </ng-container>
+      <ng-template #planning>
+        <span class="ap-budget" *ngIf="selected" [class.ap-spent]="apUsed >= maxAp"
+              [title]="'Moves left this round: ' + moveCellsLeft + ' cells' + (moveNote ? ' (' + moveNote + ')' : '')">
+          AP {{ apUsed }}/{{ maxAp }}<span class="budget-note" *ngIf="apNote"> ({{ apNote }})</span>
+        </span>
+        <span class="move-note" *ngIf="moveNote" data-testid="move-note" title="Movement this round">🦶 {{ selected?.movementRange }} ({{ moveNote }})</span>
+        <span class="root-note" *ngIf="selected && selected.blocks.length && selected.blocks[0].kind === 'move'" data-testid="rooted">
+          {{ selected.blocks[0].conditionName }}: can't move this round
+        </span>
+        <app-ability-bar
+          [combatant]="selected"
+          [queue]="selectedPlan"
+          [apCosts]="apCosts"
+          [armedAbilityId]="armedAbilityId"
+          [disabled]="lockedIn"
+          (toggle)="toggleAbility($event)"></app-ability-bar>
+        <button
+          class="action-btn"
+          [class.active]="hasDefendPlanned"
+          [disabled]="lockedIn || !canAffordDefend"
+          (click)="planDefend()">
+          🛡 Defend
+        </button>
+      </ng-template>
       <button
         class="lock-in-btn"
-        [disabled]="plannedCount === 0 || lockedIn"
+        [disabled]="actingPlannedCount === 0 || lockedIn"
         (click)="onLockIn()">
         {{ lockInLabel }}
       </button>

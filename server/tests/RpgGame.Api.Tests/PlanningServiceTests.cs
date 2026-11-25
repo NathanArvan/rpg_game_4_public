@@ -549,6 +549,15 @@ public class PlanningServiceTests
         public readonly HashSet<string> Locked = [];
         public readonly HashSet<string> Defeated = [];
         public readonly Dictionary<string, CombatantStatusEntry> Statuses = [];
+        public readonly Dictionary<string, List<ActiveConditionValues>> Conditions = [];
+
+        /// <summary>Puts a shipped condition on a combatant for this planning phase (3B.4 PR 3).</summary>
+        public void Give(string id, string conditionId) =>
+            (Conditions.TryGetValue(id, out var list) ? list : Conditions[id] = []).Add(new ActiveConditionValues
+            {
+                Condition = TestProfiles.Catalog.Abilities.Conditions.Find(conditionId)!.Copy(),
+                RoundsLeft = 0,
+            });
 
         /// <summary>Puts a combatant out of the fight with a status ("downed", "stable", "dead") (3B.5).</summary>
         public void SetStatus(string id, string status)
@@ -584,6 +593,8 @@ public class PlanningServiceTests
             Redis.Setup(r => r.SetPlannedActionAsync(EncounterId, It.IsAny<string>(), It.IsAny<string>()))
                 .Callback<string, string, string>((_, id, json) => Plans[id] = json).Returns(Task.CompletedTask);
             Redis.Setup(r => r.IsLockedInAsync(EncounterId, It.IsAny<string>())).ReturnsAsync((string _, string id) => Locked.Contains(id));
+            Redis.Setup(r => r.GetConditionsAsync(EncounterId, It.IsAny<string>()))
+                .ReturnsAsync((string _, string id) => Conditions.TryGetValue(id, out var c) ? c : []);
             Redis.Setup(r => r.AddLockedInAsync(EncounterId, It.IsAny<string>()))
                 .Callback<string, string>((_, id) => Locked.Add(id)).Returns(Task.CompletedTask);
             Redis.Setup(r => r.AddLockedInBatchAsync(EncounterId, It.IsAny<IEnumerable<string>>()))
@@ -595,6 +606,69 @@ public class PlanningServiceTests
 
     private static PlannedActionArray Move(int x, int y) => new([new PlannedActionEntry("move", new PositionDto(x, y), null)]);
     private static PlannedActionArray Targeting(string type, string target) => new([new PlannedActionEntry(type, null, target)]);
+
+    // ----- Conditions at planning (3B.4 PR 3) -----
+
+    [Fact]
+    public async Task PlanAction_ForAStunnedCharacter_IsRejected_EvenAnEmptyPlan()
+    {
+        var f = new PartyFixture();
+        f.Give(f.Bruiser, "stunned");
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("ranged_attack", f.Goblin), f.Bruiser));
+        Assert.Equal("Bruiser is Stunned and can't act this round.", ex.Message);
+        await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, new PlannedActionArray([]), f.Bruiser));
+        Assert.Empty(f.Plans);
+    }
+
+    [Fact]
+    public async Task PlanAction_ForARootedCharacter_RejectsAMove_ButAllowsAnAttack()
+    {
+        var f = new PartyFixture();
+        f.Give(f.Bruiser, "rooted");
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 3), f.Bruiser));
+        Assert.Equal("This combatant is Rooted and can't move.", ex.Message);
+
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Targeting("ranged_attack", f.Goblin), f.Bruiser);
+        Assert.Contains("ranged_attack", f.Plans[f.Bruiser]);
+    }
+
+    [Fact]
+    public async Task PlanAction_UsesTheEffectiveBudgets()
+    {
+        var f = new PartyFixture();
+        f.Give(f.Bruiser, "weakened");
+        f.Give(f.Scout, "slowed");
+        var attacks = new PlannedActionArray([new("ranged_attack", null, f.Goblin), new("ranged_attack", null, f.Goblin)]);
+        var ex = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, attacks, f.Bruiser));
+        Assert.Contains("only 3 AP are available", ex.Message);
+
+        var walk = await Assert.ThrowsAsync<GameActionException>(
+            () => f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(12, 7), f.Scout));
+        Assert.Contains($"maximum range ({TestProfiles.Values().MovementRange - 2} squares)", walk.Message);
+    }
+
+    [Fact]
+    public async Task LockIn_SkipsAStunnedCharacter_AndIsANoOpWhenEveryoneIsStunned()
+    {
+        var f = new PartyFixture();
+        f.Give(f.Scout, "stunned");
+        await f.Service().PlanActionAsync(PartyFixture.JoinCode, PartyFixture.UserId, Move(8, 5), f.Bruiser);
+        var result = await f.Service().LockInAsync(PartyFixture.JoinCode, PartyFixture.UserId);
+        Assert.Equal(["Bruiser"], result.LockedInNames);
+        Assert.False(f.Plans.ContainsKey(f.Scout)); // not defaulted to defend
+
+        var g = new PartyFixture();
+        g.Give(g.Bruiser, "stunned");
+        g.Give(g.Scout, "stunned");
+        var none = await g.Service().LockInAsync(PartyFixture.JoinCode, PartyFixture.UserId);
+        Assert.Empty(none.LockedInNames!);
+        Assert.False(none.AllLockedIn);
+        Assert.Empty(g.Plans);
+    }
 
     // ----- Stabilize and finishing blows (3B.5) -----
 

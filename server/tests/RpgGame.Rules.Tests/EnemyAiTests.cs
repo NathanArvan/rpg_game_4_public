@@ -239,4 +239,30 @@ public class EnemyAiTests
         Assert.DoesNotContain(plans["goblin"], a => a.TargetCombatantId == "downedHero");
         Assert.Equal(ActionType.Move, plans["goblin"][0].Type);
     }
+
+    [Fact]
+    public void StunnedAi_IsNotPlanned_AndStillBlocksItsCell()
+    {
+        var stun = new ActiveCondition(new ConditionDefinition("stunned", "Stunned", true, [], new Modifiers(Blocks: [BlockKind.All])), 0);
+        var stunned = C("g1", 1, 0) with { Conditions = [stun] };
+        var plans = Plan(C("hero", 0, 0), stunned, C("g2", 5, 0));
+        Assert.False(plans.ContainsKey("g1"));
+        Assert.True(plans.ContainsKey("g2"));
+    }
+
+    [Fact]
+    public void AiAtZeroEffectiveAp_IsNotPlanned()
+    {
+        var drained = new ActiveCondition(new ConditionDefinition("drained", "Drained", true, [], new Modifiers(Ap: -4)), 0);
+        var plans = Plan(C("hero", 0, 0), C("g1", 1, 0) with { Conditions = [drained] });
+        Assert.False(plans.ContainsKey("g1"));
+    }
+
+    [Fact]
+    public void SlowedAi_WalksOnlyItsReducedBudget()
+    {
+        var slowed = new ActiveCondition(new ConditionDefinition("slowed", "Slowed", true, [], new Modifiers(Movement: -2)), 0);
+        var plans = Plan(C("hero", 0, 0), C("g1", 10, 0) with { Conditions = [slowed] });
+        Assert.Equal(Q(PlannedAction.Move(6, 0)), plans["g1"]);
+    }
 }

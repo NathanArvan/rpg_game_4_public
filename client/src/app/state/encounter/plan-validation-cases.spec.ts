@@ -17,6 +17,7 @@ interface SharedCase {
   abilities?: string[];
   cooldowns?: Record<string, number>;
   positions?: Record<string, number[]>;
+  conditions?: { name: string; movement?: number; ap?: number; blocks?: string[] }[];
   queue: string[];
   expect: { error?: string; ap?: number; cells?: number };
 }
@@ -74,9 +75,19 @@ describe('validatePlan: shared plan-validation cases', () => {
   for (const c of file.cases) {
     it(c.name, () => {
       const start = c.start === undefined ? file.defaults.start : c.start;
+      // The server sends the effective budgets and blocks (3B.4 PR 3); this works them out the same way.
+      const conditions = c.conditions ?? [];
+      const sum = (f: (x: typeof conditions[number]) => number | undefined) => conditions.reduce((n, x) => n + (f(x) ?? 0), 0);
+      const firstBlocking = (kind: string) => conditions.find(x => x.blocks?.includes('all'))
+        ?? (kind === 'move' ? conditions.find(x => x.blocks?.includes('move')) : undefined);
+      const blocks = (['all', 'move'] as const).flatMap(kind => {
+        const by = firstBlocking(kind);
+        return by ? [{ kind, conditionName: by.name }] : [];
+      });
       const result = validatePlan(c.queue.map(parse), {
-        maxAp: c.maxAp ?? file.defaults.maxAp,
-        movementRange: c.movementRange ?? file.defaults.movementRange,
+        maxAp: Math.max(0, (c.maxAp ?? file.defaults.maxAp) + sum(x => x.ap)),
+        movementRange: Math.max(0, (c.movementRange ?? file.defaults.movementRange) + sum(x => x.movement)),
+        blocks,
         abilities: (c.abilities ?? []).map(toAbility),
         cooldowns: c.cooldowns ?? {},
         start: start ? at(start) : undefined,

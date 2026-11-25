@@ -1,0 +1,12 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C6): the resolver cuts a queue to the AP its conditions left at the start of the round
+  // (planning rejects such a plan; this only guards the engine).
+  "description": "Conditions: a Weakened hero (3 AP) only gets one of two 2-AP attacks",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0], "conditions": [{ "id": "weakened", "rounds": 0 }] },
+    { "id": "G", "side": "enemy", "at": [1, 0] }
+  ],
+  "plans": { "Hero": ["melee G", "melee G"] },
+  "dice": [12, 3],
+  "expect": { "ticks": 1, "hp": { "G": 17 } }
+}

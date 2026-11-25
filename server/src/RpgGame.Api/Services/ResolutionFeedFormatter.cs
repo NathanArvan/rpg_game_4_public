@@ -101,6 +101,13 @@ internal static class ResolutionFeedFormatter
         return $"{line} (HP: {periodic.HpBefore} → {periodic.HpAfter})";
     }
 
+    /// <summary>
+    /// An action a condition stopped (3B.4 PR 3): "Brakka is Stunned and can't act", "Goblin is Rooted and can't move".
+    /// </summary>
+    public static string Blocked(BlockKind block, string combatantName, string conditionName) => block == BlockKind.All
+        ? $"{combatantName} is {conditionName} and can't act"
+        : $"{combatantName} is {conditionName} and can't move";
+
     /// <summary>End-of-round line for a condition that ran out (3B.4).</summary>
     public static string ConditionExpired(string combatantName, string conditionName) =>
         $"{combatantName} is no longer {conditionName}";

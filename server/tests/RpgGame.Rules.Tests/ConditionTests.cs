@@ -203,4 +203,62 @@ public class ConditionTests
         Assert.NotEqual(CombatProfile.Default, CombatProfile.Default with { ConditionResist = 25 });
         Assert.Equal(CombatProfile.Default with { ConditionResist = 25 }, CombatProfile.Default with { ConditionResist = 25 });
     }
+
+    // ----- Budgets and blocks (3B.4 PR 3) -----
+
+    [Fact]
+    public void EffectiveBudgets_SumConditions_AndNeverGoBelowZero()
+    {
+        var profile = CombatProfile.Default with { MovementRange = 6, MaxAp = 4 };
+        var slowedHasted = new[] { Active(new Modifiers(Movement: -2), "slowed"), Active(new Modifiers(Movement: 2, Ap: 1), "hasted") };
+        Assert.Equal(6, ConditionMath.EffectiveMovementRange(profile, slowedHasted));
+        Assert.Equal(5, ConditionMath.EffectiveMaxAp(profile, slowedHasted));
+
+        var crushed = new[] { Active(new Modifiers(Movement: -10, Ap: -10)) };
+        Assert.Equal(0, ConditionMath.EffectiveMovementRange(profile, crushed));
+        Assert.Equal(0, ConditionMath.EffectiveMaxAp(profile, crushed));
+        Assert.True(ConditionMath.CannotAct(profile, crushed)); // 0 AP skips the round like a stun
+    }
+
+    [Fact]
+    public void EffectiveProfile_OnlyChangesTheBudgets()
+    {
+        var profile = CombatProfile.Default with { Dodge = 12 };
+        var effective = ConditionMath.EffectiveProfile(profile, [Active(new Modifiers(Movement: -2, Ap: -1, Dodge: 3))]);
+        Assert.Equal(profile with { MovementRange = profile.MovementRange - 2, MaxAp = profile.MaxAp - 1 }, effective);
+        Assert.Same(profile, ConditionMath.EffectiveProfile(profile, []));
+    }
+
+    [Fact]
+    public void Blocks_AllAlsoBlocksMoves_MoveDoesNotBlockActing()
+    {
+        var stunned = new[] { Active(new Modifiers(Blocks: [BlockKind.All]), "stunned") };
+        var rooted = new[] { Active(new Modifiers(Blocks: [BlockKind.Move]), "rooted") };
+        Assert.True(ConditionMath.IsBlocked(stunned, BlockKind.All));
+        Assert.True(ConditionMath.IsBlocked(stunned, BlockKind.Move));
+        Assert.False(ConditionMath.IsBlocked(rooted, BlockKind.All));
+        Assert.Equal("rooted", ConditionMath.BlockingCondition(rooted, BlockKind.Move)?.Id);
+        Assert.True(ConditionMath.CannotAct(CombatProfile.Default, stunned));
+        Assert.False(ConditionMath.CannotAct(CombatProfile.Default, rooted));
+    }
+
+    [Fact]
+    public void BlockedAbility_StartsNoCooldown_AndRollsNothing()
+    {
+        var bash = new AbilityDefinition("bash", "Bash", 2, 3, [], new Targeting(TargetKind.Combatant, TargetFilter.Enemy, 1),
+            [new AttackEffect(AttackKind.Melee, DamageSpec.Weapon)]);
+        var stunned = Active(new Modifiers(Blocks: [BlockKind.All]), "stunned");
+        var a = new CombatantState("a", "a", 20, CombatProfile.Default with { Abilities = [bash] }, new GridPosition(0, 0))
+            { Team = "party", Conditions = [stunned] };
+        var b = new CombatantState("b", "b", 20, CombatProfile.Default, new GridPosition(1, 0)) { Team = "enemy" };
+        var outcome = RoundResolver.Resolve(new EncounterState(20, 20, [a, b]),
+            new Dictionary<string, IReadOnlyList<PlannedAction>> { ["a"] = [PlannedAction.Ability("bash", "b")] },
+            new ScriptedDice());
+
+        var blocked = Assert.Single(outcome.Ticks[0].Blocked);
+        Assert.Equal(("a", "stunned"), (blocked.CombatantId, blocked.ConditionId));
+        Assert.Empty(outcome.Ticks[0].AbilityUses);
+        Assert.Empty(outcome.Ticks[0].Attacks);
+        Assert.Empty(outcome.Next.Combatants[0].Cooldowns);
+    }
 }

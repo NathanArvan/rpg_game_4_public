@@ -1,0 +1,23 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C8): Shield Bash stuns in tick 1 (duration 0). The Goblin's tick-1 action already
+  // resolved; its tick-2 Power Strike is blocked and, never used, starts no cooldown.
+  "description": "Conditions: a Goblin stunned in tick 1 loses the rest of its round",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["shield_bash"] },
+    { "id": "Goblin", "side": "enemy", "at": [1, 0], "abilities": ["power_strike"] }
+  ],
+  "plans": { "Bruiser": ["ability shield_bash Goblin"], "Goblin": ["move 1,0", "ability power_strike Bruiser"] },
+  "dice": [14, 2],
+  "expect": {
+    "ticks": 2,
+    "hp": { "Bruiser": 20, "Goblin": 18 },
+    "cooldowns": { "Bruiser": { "shield_bash": 3 }, "Goblin": {} },
+    "conditions": { "Goblin": {} },
+    "events": [
+      "t1 Bruiser shield_bash Goblin: hit 2",
+      "t1 Bruiser shield_bash Goblin: stunned applied (0)",
+      "t2 Goblin stunned: ability power_strike Bruiser blocked",
+      "end Goblin: stunned expires"
+    ]
+  }
+}

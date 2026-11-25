@@ -15,11 +15,12 @@
   //                             takes: flat is added, then percent scales it (rounded down, never below
   //                             0). -50 = resistant, +50 = vulnerable, -100 = immune. tags: only damage
   //                             from a source with one of them (empty = all damage)
-  //               movement      ± cells of movement per round, from the next round (3B.4 PR 3)
-  //               ap            ± AP per round, from the next round (3B.4 PR 3)
+  //               movement      ± cells of movement per round, from the next planning phase
+  //               ap            ± AP per round, from the next planning phase
   //               periodic      { "kind": "damage" | "heal", "die": "d4", "bonus": 0 } at the end of
   //                             every round (3B.4 PR 2)
-  //               blocks        ["all"] (no actions) | ["move"] (no movement) (3B.4 PR 3)
+  //               blocks        ["all"] (no actions: from the next tick, and a whole round at planning) |
+  //                             ["move"] (no movement, plain or from an ability)
   //
   // Guarded (+3 Dodge until the end of the round, from Defend) is built into the rules: don't list it.
   "conditions": [
@@ -72,6 +73,31 @@
       "id": "regenerating", "name": "Regenerating", "harmful": false,
       "description": "Heals d4 HP at the end of every round.",
       "modifiers": { "periodic": { "kind": "heal", "die": "d4" } }
+    },
+    {
+      "id": "slowed", "name": "Slowed", "harmful": true,
+      "description": "2 fewer cells of movement each round.",
+      "modifiers": { "movement": -2 }
+    },
+    {
+      "id": "hasted", "name": "Hasted", "harmful": false,
+      "description": "2 more cells of movement and 1 more AP each round.",
+      "modifiers": { "movement": 2, "ap": 1 }
+    },
+    {
+      "id": "rooted", "name": "Rooted", "harmful": true,
+      "description": "Can't move.",
+      "modifiers": { "blocks": ["move"] }
+    },
+    {
+      "id": "weakened", "name": "Weakened", "harmful": true,
+      "description": "1 less AP each round.",
+      "modifiers": { "ap": -1 }
+    },
+    {
+      "id": "stunned", "name": "Stunned", "harmful": true,
+      "description": "Can't act: queued actions don't happen, and a stunned character skips its planning.",
+      "modifiers": { "blocks": ["all"] }
     }
   ]
 }

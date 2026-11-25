@@ -16,6 +16,11 @@
     { "id": "flame_ward", "name": "Flame Ward", "harmful": false, "modifiers": { "damageTaken": { "percent": -50, "tags": ["flame"] } } },
     { "id": "burning",      "name": "Burning",      "harmful": true,  "tags": ["flame"], "modifiers": { "periodic": { "kind": "damage", "die": "d4" } } },
     { "id": "poisoned",     "name": "Poisoned",     "harmful": true,  "tags": ["poison"], "modifiers": { "periodic": { "kind": "damage", "bonus": 2 } } },
-    { "id": "regenerating", "name": "Regenerating", "harmful": false, "modifiers": { "periodic": { "kind": "heal", "die": "d4" } } }
+    { "id": "regenerating", "name": "Regenerating", "harmful": false, "modifiers": { "periodic": { "kind": "heal", "die": "d4" } } },
+    { "id": "slowed",       "name": "Slowed",       "harmful": true,  "modifiers": { "movement": -2 } },
+    { "id": "hasted",       "name": "Hasted",       "harmful": false, "modifiers": { "movement": 2, "ap": 1 } },
+    { "id": "rooted",       "name": "Rooted",       "harmful": true,  "modifiers": { "blocks": ["move"] } },
+    { "id": "weakened",     "name": "Weakened",     "harmful": true,  "modifiers": { "ap": -1 } },
+    { "id": "stunned",      "name": "Stunned",      "harmful": true,  "modifiers": { "blocks": ["all"] } }
   ]
 }

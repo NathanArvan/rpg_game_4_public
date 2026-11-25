@@ -225,3 +225,27 @@ test('Conditions: the Scout Marks a goblin; the chip shows and lasts into the ne
   // (Only Guarded is checked: Goblin 2's Envenom may have Poisoned the Bruiser.)
   await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('.chip[data-condition="guarded"]')).toHaveCount(0);
 });
+
+test('Crowd Control: the Scout Entangles a goblin; it is Rooted into the next round (3B.4 PR 3)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Crowd Control');
+
+  // Scout (11,13) has Entangle (range 6, no roll); Goblin 1 starts at (9,9).
+  const actionBar = page.locator('.action-bar');
+  await tokenAt(page, 11, 13).click();
+  await expect(actionBar).toContainText('Planning for Scout');
+  const entangle = actionBar.locator('.ability-btn', { hasText: 'Entangle' });
+  await expect(entangle).toHaveAttribute('title', /Applies Rooted \(can't move\)/);
+  await entangle.click();
+  await tokenAt(page, 9, 9).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Entangle on Goblin 1');
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expect(feedEntries(page).filter({ hasText: "Scout's Entangle: Goblin 1 is Rooted until the end of next round" }))
+    .toHaveCount(1, { timeout: 20_000 });
+
+  // Round 2: the chip is still on Goblin 1 (it lasts until the end of this round).
+  await expectPlanningRound(page, 2, 30_000);
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' }).locator('.chip[data-condition="rooted"]'))
+    .toContainText('this round');
+});

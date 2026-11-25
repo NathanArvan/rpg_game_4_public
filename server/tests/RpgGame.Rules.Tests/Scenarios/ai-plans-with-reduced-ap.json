@@ -1,0 +1,11 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C14): the AI plans within the AP its conditions leave it.
+  "description": "AI: a Weakened goblin (3 AP) plans one attack, not two",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0] },
+    { "id": "G", "side": "enemy", "at": [1, 0], "conditions": [{ "id": "weakened", "rounds": 0 }] }
+  ],
+  "plans": { "G": ["ai"] },
+  "dice": [5],
+  "expect": { "plans": { "G": "melee Hero" } }
+}

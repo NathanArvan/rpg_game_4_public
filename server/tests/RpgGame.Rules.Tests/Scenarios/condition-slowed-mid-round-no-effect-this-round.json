@@ -1,0 +1,30 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C6): budgets only change at the next planning phase. Hamstring slows the Goblin in
+  // tick 1, but its tick-2 move still uses the full 6 cells; next round its budget is 4.
+  "description": "Conditions: Slowed applied mid-round leaves this round's move alone and cuts the next round's",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["hamstring"] },
+    { "id": "Goblin", "side": "enemy", "at": [1, 0] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Bruiser": ["ability hamstring Goblin"], "Goblin": ["move 1,0", "move 1,6"] },
+      "dice": [15, 3],
+      "expect": {
+        "hp": { "Goblin": 17 },
+        "positions": { "Goblin": [1, 6] },
+        "conditions": { "Goblin": { "slowed": 0 } },
+        "events": ["t1 Bruiser hamstring Goblin: hit 3", "t1 Bruiser hamstring Goblin: slowed applied (1)", "t2 Goblin moves to 1,6"]
+      }
+    },
+    {
+      "plans": { "Goblin": ["move 1,12"] },
+      "dice": [],
+      "expect": {
+        "positions": { "Goblin": [1, 10] },
+        "conditions": { "Goblin": {} },
+        "events": ["t1 Goblin moves to 1,10", "end Goblin: slowed expires"]
+      }
+    }
+  ]
+}

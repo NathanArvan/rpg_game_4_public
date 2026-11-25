@@ -1,5 +1,6 @@
 using RpgGame.Rules;
 using RpgGame.Api.CombatProfiles;
+using RpgGame.Api.Conditions;
 using RpgGame.Api.Contracts.CombatProfiles;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Domain.Entities;
@@ -29,7 +30,14 @@ internal static class CombatantDtos
     /// <param name="conditions">Conditions at the start of the planning phase (3B.4); null = none.</param>
     public static PlanningCombatantDto Planning(
         EncounterCombatant c, int currentHp, CombatantStatus status = CombatantStatus.Standing, int bleedoutRoundsLeft = 0,
-        IReadOnlyDictionary<string, int>? cooldowns = null, IReadOnlyList<ActiveConditionValues>? conditions = null) => new(
+        IReadOnlyDictionary<string, int>? cooldowns = null, IReadOnlyList<ActiveConditionValues>? conditions = null)
+    {
+        conditions ??= [];
+        // Budgets and blocks for the round this planning phase opens (3B.4 PR 3, SPRINT_3B4 C6): worked out here
+        // once, so the client shows and checks the server's numbers instead of recomputing them.
+        var rulesProfile = CombatProfileMapping.ToRules(c.Profile);
+        var rulesConditions = conditions.Select(ConditionMapping.ToRules).ToList();
+        return new(
         c.Id.ToString(),
         c.UserId,
         c.CharacterName,
@@ -40,13 +48,28 @@ internal static class CombatantDtos
         c.IsAiControlled,
         c.Profile?.ProfileId ?? "",
         c.Profile?.ProfileName ?? "",
-        CombatProfileMapping.MovementRange(c.Profile),
-        CombatProfileMapping.MaxAp(c.Profile),
+        ConditionMath.EffectiveMovementRange(rulesProfile, rulesConditions),
+        ConditionMath.EffectiveMaxAp(rulesProfile, rulesConditions),
         RulesWireMapping.ToWire(status),
         bleedoutRoundsLeft,
         Abilities(c.Profile),
         cooldowns is null ? [] : new Dictionary<string, int>(cooldowns),
-        (conditions ?? []).Select(ActiveCondition).ToList());
+        conditions.Select(ActiveCondition).ToList(),
+        CombatProfileMapping.MovementRange(c.Profile),
+        CombatProfileMapping.MaxAp(c.Profile),
+        Blocks(rulesConditions));
+    }
+
+    /// <summary>What the conditions stop the combatant doing (3B.4 PR 3): "all" and/or "move", with the condition that does it.</summary>
+    public static List<ConditionBlockDto> Blocks(IReadOnlyList<ActiveCondition> conditions)
+    {
+        var blocks = new List<ConditionBlockDto>();
+        if (ConditionMath.BlockingCondition(conditions, BlockKind.All) is { } stun)
+            blocks.Add(new ConditionBlockDto("all", stun.Id, stun.Definition.Name));
+        if (ConditionMath.BlockingCondition(conditions, BlockKind.Move) is { } root)
+            blocks.Add(new ConditionBlockDto("move", root.Id, root.Definition.Name));
+        return blocks;
+    }
 
     public static CombatProfileDto Profile(CombatProfileDefinition p) => new(
         p.Id, p.Name, p.Description, p.Side, p.MaxHp, p.MovementRange, p.Speed,

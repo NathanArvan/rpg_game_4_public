@@ -1,0 +1,18 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C8): a Rooted Charge doesn't move, but still strikes a target already in reach (with
+  // no run-up bonus). A Rooted Charge at a target out of reach is wasted.
+  "description": "Conditions: a Rooted Charge strikes an adjacent goblin, and can't reach a distant one",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [0, 0], "abilities": ["charge"], "conditions": [{ "id": "rooted", "rounds": 0 }] },
+    { "id": "Rook", "side": "party", "at": [0, 5], "abilities": ["charge"], "conditions": [{ "id": "rooted", "rounds": 0 }] },
+    { "id": "G1", "side": "enemy", "at": [1, 0] },
+    { "id": "G2", "side": "enemy", "at": [4, 5] }
+  ],
+  "plans": { "Kestrel": ["ability charge G1"], "Rook": ["ability charge G2"] },
+  "dice": [15, 4],
+  "expect": {
+    "positions": { "Kestrel": [0, 0], "Rook": [0, 5] },
+    "hp": { "G1": 16, "G2": 20 },
+    "events": ["t1 Kestrel charge G1: hit 4", "t1 Rook charge G2: wasted out_of_range"]
+  }
+}

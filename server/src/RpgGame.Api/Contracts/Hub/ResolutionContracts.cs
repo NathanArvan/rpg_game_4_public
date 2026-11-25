@@ -60,7 +60,25 @@ public record TickResult(
     IReadOnlyList<EffectResult> Effects,
     IReadOnlyList<AbilityUseResult>? AbilityUses = null,
     IReadOnlyList<HealResult>? Heals = null,
-    IReadOnlyList<ConditionResult>? Conditions = null);
+    IReadOnlyList<ConditionResult>? Conditions = null,
+    IReadOnlyList<BlockedActionResult>? Blocked = null);
+
+/// <summary>
+/// A queued action a condition stopped this tick (3B.4 PR 3): a Stunned combatant's action, or a Rooted
+/// combatant's move. It didn't resolve (a blocked ability starts no cooldown).
+/// </summary>
+/// <param name="ActionType">The blocked action's wire type ("move", "melee_attack", "ability", …).</param>
+/// <param name="AbilityId">For a blocked ability, which one.</param>
+/// <param name="Block">"all" (can't act) or "move" (can't move).</param>
+public record BlockedActionResult(
+    string CombatantId,
+    string CombatantName,
+    string ActionType,
+    string? AbilityId,
+    string ConditionId,
+    string ConditionName,
+    string Block,
+    string FeedText);
 
 /// <summary>One heal on one target (3B.3).</summary>
 /// <param name="Amount">HP rolled, before netting and the max-HP cap; 0 when wasted.</param>

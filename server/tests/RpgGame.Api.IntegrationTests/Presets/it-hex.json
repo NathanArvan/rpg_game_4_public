@@ -1,0 +1,12 @@
+{
+  // Integration tests (3B.4 PR 3): a lone hero and an AI Shaman whose Hex stuns for this round and the next.
+  // The Shaman opens with Hex (its condition step), then walks up next to the hero.
+  "id": "it-hex",
+  "name": "IT: Hex",
+  "description": "Integration tests: Hero alone against an AI Shaman with Hex.",
+  "order": 5,
+  "combatants": [
+    { "name": "Hero",   "side": "party", "profile": "skirmisher", "hp": 20, "at": [9, 9] },
+    { "name": "Shaman", "side": "enemy", "profile": "grunt", "abilities": ["hex"], "at": [9, 14] }
+  ]
+}

@@ -39,7 +39,7 @@ export class AbilityBarComponent {
     const c = this.combatant;
     if (!c) return [];
     return c.abilities.map(ability => {
-      const unavailable = abilityUnavailableReason(ability, this.queue, c.maxAp, this.apCosts, c.abilities, c.cooldowns);
+      const unavailable = abilityUnavailableReason(ability, this.queue, c.maxAp, this.apCosts, c.abilities, c.cooldowns, c.blocks);
       return {
         ability,
         unavailable,

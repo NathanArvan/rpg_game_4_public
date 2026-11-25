@@ -1,0 +1,15 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C14): a Rooted AI doesn't walk: it attacks if it's in reach, otherwise it defends.
+  "description": "AI: a Rooted goblin next to the hero attacks; a Rooted one far away defends",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0] },
+    { "id": "G1", "side": "enemy", "at": [1, 0], "conditions": [{ "id": "rooted", "rounds": 0 }] },
+    { "id": "G2", "side": "enemy", "at": [5, 5], "conditions": [{ "id": "rooted", "rounds": 0 }] }
+  ],
+  "plans": { "G1": ["ai"], "G2": ["ai"] },
+  "dice": [5, 5],
+  "expect": {
+    "plans": { "G1": ["melee Hero", "melee Hero"], "G2": "defend" },
+    "positions": { "G2": [5, 5] }
+  }
+}

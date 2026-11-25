@@ -50,11 +50,22 @@ const ABILITIES: Record<string, AbilityDto[]> = { c1: [POWER_STRIKE, CLEAVE, FIR
 const COOLDOWNS: Record<string, Record<string, number>> = { c1: { firebolt: 1 } };
 /** Conditions (3B.4): Zara is Emboldened, Goblin 1 is Marked and Exposed. */
 const CONDITIONS: Record<string, ActiveConditionDto[]> = {
-  c1: [makeActiveCondition({ condition: { id: 'emboldened', name: 'Emboldened', harmful: false, description: '+2 damage on every hit.', modifiers: { damageDealt: 2 } }, roundsLeft: 0 })],
+  c1: [
+    makeActiveCondition({ condition: { id: 'emboldened', name: 'Emboldened', harmful: false, description: '+2 damage on every hit.', modifiers: { damageDealt: 2 } }, roundsLeft: 0 }),
+    makeActiveCondition({ condition: { id: 'slowed', name: 'Slowed', description: '2 fewer cells of movement each round.', modifiers: { movement: -2 } }, roundsLeft: 0, sourceId: 'c3' }),
+    makeActiveCondition({ condition: { id: 'weakened', name: 'Weakened', description: '1 less AP each round.', modifiers: { ap: -1 } }, roundsLeft: 0, sourceId: 'c4' }),
+  ],
+  c4: [makeActiveCondition({ condition: { id: 'stunned', name: 'Stunned', description: "Can't act.", modifiers: { blocks: ['all'] } }, roundsLeft: 0, sourceId: 'c1' })],
   c3: [
     makeActiveCondition({ condition: { id: 'marked', name: 'Marked', description: 'Takes 2 extra damage from every hit.', modifiers: { damageTaken: { percent: 0, flat: 2, tags: [] } } }, roundsLeft: 1, sourceId: 'c2' }),
     makeActiveCondition({ condition: { id: 'exposed', name: 'Exposed', description: '-3 Dodge: easier to hit.', modifiers: { dodge: -3 } }, roundsLeft: 1, sourceId: 'c2' }),
   ],
+};
+
+/** Effective budgets and blocks the server would send for the mock conditions above (3B.4 PR 3). */
+const BUDGETS: Record<string, Partial<PlanningCombatantDto>> = {
+  c1: { movementRange: 2, maxAp: 3, baseMovementRange: 4, baseMaxAp: 4 },
+  c4: { blocks: [{ kind: 'all', conditionId: 'stunned', conditionName: 'Stunned' }, { kind: 'move', conditionId: 'stunned', conditionName: 'Stunned' }] },
 };
 
 const COMBATANTS_DTO: CombatantDto[] = [
@@ -65,7 +76,7 @@ const COMBATANTS_DTO: CombatantDto[] = [
 ].map(c => ({ ...c, abilities: ABILITIES[c.id] ?? [] }));
 
 const PLANNING_COMBATANTS: PlanningCombatantDto[] = COMBATANTS_DTO.map(({ characterId, ...c }) =>
-  makePlanningCombatant({ ...c, cooldowns: COOLDOWNS[c.id] ?? {}, conditions: CONDITIONS[c.id] ?? [] }));
+  makePlanningCombatant({ ...c, cooldowns: COOLDOWNS[c.id] ?? {}, conditions: CONDITIONS[c.id] ?? [], ...BUDGETS[c.id] }));
 
 const NAMES: Record<string, string> = Object.fromEntries(COMBATANTS_DTO.map(c => [c.id, c.characterName]));
 

@@ -128,6 +128,54 @@
         { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
         { "kind": "apply_condition", "condition": "poisoned", "duration": 2 }
       ]
+    },
+    {
+      "id": "hamstring", "name": "Hamstring",
+      "description": "A crippling strike with your weapon: a hit leaves the target Slowed (2 fewer cells of movement) next round.",
+      "ap": 2, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
+        { "kind": "apply_condition", "condition": "slowed", "duration": 1 }
+      ]
+    },
+    {
+      "id": "haste", "name": "Haste",
+      "description": "You or an ally within 3 cells is Hasted next round: 2 more cells of movement and 1 more AP.",
+      "ap": 2, "cooldown": 3, "tags": ["buff"],
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "apply_condition", "condition": "hasted", "duration": 1 } ]
+    },
+    {
+      "id": "entangle", "name": "Entangle",
+      "description": "Roots an enemy up to 6 cells away: it can't move for the rest of this round and all of the next.",
+      "ap": 2, "cooldown": 3, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "rooted", "duration": 1 } ]
+    },
+    {
+      "id": "sap", "name": "Sap",
+      "description": "Saps an enemy up to 6 cells away: it has 1 less AP next round.",
+      "ap": 2, "cooldown": 2, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "weakened", "duration": 1 } ]
+    },
+    {
+      "id": "shield_bash", "name": "Shield Bash",
+      "description": "A d4 shield blow: a hit Stuns the target for the rest of this round, so it's worth most early in your queue.",
+      "ap": 3, "cooldown": 3, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "d4" } },
+        { "kind": "apply_condition", "condition": "stunned", "duration": 0 }
+      ]
+    },
+    {
+      "id": "hex", "name": "Hex",
+      "description": "Stuns an enemy up to 6 cells away for the rest of this round and all of the next (it skips that round). It can be resisted.",
+      "ap": 3, "cooldown": 4, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "stunned", "duration": 1 } ]
     }
   ]
 }

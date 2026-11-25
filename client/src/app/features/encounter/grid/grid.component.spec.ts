@@ -9,7 +9,7 @@ import { PlanningCombatantDto, AbilityDto } from '../../../contracts/hub-contrac
 import { MapInitialized } from '../../../state/map/map.actions';
 import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 import { PLAYBACK_TIMING } from '../../../core/services/playback-timeline';
-import { makeAbility, makeAttack, makeMove, makePayload, makePlanningCombatant, makeTick } from '../../../testing/builders';
+import { makeAbility, makeActiveCondition, makeAttack, makeCondition, makeMove, makePayload, makePlanningCombatant, makeTick } from '../../../testing/builders';
 
 describe('GridComponent', () => {
   let fixture: ComponentFixture<GridComponent>;
@@ -143,6 +143,74 @@ describe('GridComponent', () => {
       grid.onCellClick({ x: 2, y: 0 });
       grid.onCellClick({ x: 2, y: 0 });
       expect(grid.selectedPlan).toEqual([]);
+    });
+  });
+
+  describe('conditions at planning (3B.4 PR 3)', () => {
+    const condition = (id: string, name: string, modifiers: { movement?: number; ap?: number; blocks?: string[] }) =>
+      makeActiveCondition({ condition: makeCondition({ id, name, modifiers }) });
+
+    it('uses the effective budgets the server sends and names the conditions behind them', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        makePlanningCombatant({ id: 'bruiser', characterName: 'Bruiser', movementRange: 4, maxAp: 3, baseMovementRange: 6, baseMaxAp: 4,
+          conditions: [condition('slowed', 'Slowed', { movement: -2 }), condition('weakened', 'Weakened', { ap: -1 })] }),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, goblin: { x: 9, y: 9 } }));
+
+      expect(grid.maxAp).toBe(3);
+      expect(grid.apNote).toBe('-1 Weakened');
+      expect(grid.moveNote).toBe('-2 Slowed');
+      expect(grid.isInRange({ x: 4, y: 0 })).toBeTrue();
+      expect(grid.isInRange({ x: 5, y: 0 })).toBeFalse();
+    });
+
+    it('a Rooted character gets no move highlight and can\'t queue a move, but can still attack', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        makePlanningCombatant({ id: 'bruiser', characterName: 'Bruiser', blocks: [{ kind: 'move', conditionId: 'rooted', conditionName: 'Rooted' }] }),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, goblin: { x: 5, y: 0 } }));
+
+      expect(grid.isInRange({ x: 1, y: 0 })).toBeFalse();
+      grid.onCellClick({ x: 1, y: 0 });
+      grid.onCellClick({ x: 5, y: 0 });
+      expect(grid.selectedPlan.map(a => a.type)).toEqual(['ranged_attack']);
+    });
+
+    it('a Stunned character skips the round: nothing to plan, counted as done for Lock In All', () => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        makePlanningCombatant({ id: 'bruiser', characterName: 'Bruiser', blocks: [{ kind: 'all', conditionId: 'stunned', conditionName: 'Stunned' }] }),
+        row('scout', 'Scout', 'player'),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 0, y: 0 }, scout: { x: 0, y: 2 }, goblin: { x: 5, y: 0 } }));
+
+      expect(grid.selected?.id).toBe('scout'); // the one who can act is picked first
+      expect(grid.lockInLabel).toBe('Lock In All (1/2 planned)');
+      expect(grid.actingPlannedCount).toBe(0);
+
+      store.dispatch(new SelectMyCombatant('bruiser'));
+      expect(grid.selectedSkips).toBe("Bruiser is Stunned and can't act this round.");
+      grid.planDefend();
+      grid.onCellClick({ x: 5, y: 0 });
+      expect(grid.selectedPlan).toEqual([]);
+      expect(hub.planAction).not.toHaveBeenCalled();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="skips-round"]')?.textContent).toContain('Stunned, skips this round');
+    });
+
+    it('when every character is stunned there is nothing to lock in', () => {
+      const stun = [{ kind: 'all', conditionId: 'stunned', conditionName: 'Stunned' }];
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        makePlanningCombatant({ id: 'bruiser', characterName: 'Bruiser', blocks: stun }),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      expect(grid.allSkip).toBeTrue();
+      expect(grid.lockInLabel).toBe('Locked in ✓');
+      hub.lockIn.calls.reset();
+      grid.onLockIn();
+      expect(hub.lockIn).not.toHaveBeenCalled();
     });
   });
 

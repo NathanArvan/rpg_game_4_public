@@ -267,3 +267,8 @@
   75%  { opacity: 1; transform: translateY(-12px); }
   100% { opacity: 0; transform: translateY(-18px); }
 }
+/* Conditions at planning (3B.4 PR 3) */
+.budget-note { font-weight: normal; color: #6a1b9a; }
+.move-note { color: #555; padding: 4px 6px; font-size: 0.9em; }
+.root-note, .skip-round { color: #6a1b9a; padding: 4px 8px; border: 1px solid #ce93d8; border-radius: 4px; background: #f3e5f5; }
+.skip-round { font-weight: bold; }

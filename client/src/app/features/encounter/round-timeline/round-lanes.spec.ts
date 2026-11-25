@@ -1,6 +1,6 @@
 import { AttackResult, CombatantQueueDto, HealResult, MovementResult, QueuedActionDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import {
-  makeAbilityUse, makeAttack, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeRoll, makeTick,
+  makeAbilityUse, makeAttack, makeBlocked, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeRoll, makeTick,
 } from '../../../testing/builders';
 import { buildLanes } from './round-lanes';
 
@@ -75,6 +75,18 @@ describe('buildLanes', () => {
     expect(lanes[0].slots[0].detail).toBe('A is blocked by C after 0 cells, stopping at (0, 0).');
     expect(lanes[1].slots[0].detail).toBe("B's melee attack on C is wasted (out of reach).");
     expect(lanes[2].slots[0].detail).toBe('C defends: Guarded (+3 Dodge) until the end of the round.');
+  });
+
+  it('shows an action a condition stopped as struck out (3B.4 PR 3)', () => {
+    const lanes = buildLanes(payload(
+      [q('G', 4, ['defend', 1], ['melee_attack', 2, 'A'])],
+      tick(0, { effects: [makeEffect({ combatantId: 'G', effectType: 'defend' })] }),
+      tick(1, { blocked: [makeBlocked({ combatantId: 'G', feedText: "G is Stunned and can't act" })] }),
+    ));
+
+    const slot = lanes[0].slots[1];
+    expect(slot.outcome).toBe('stopped');
+    expect(slot.detail).toMatch(/^G is Stunned and can't act: this melee attack on .+ never happens\.$/);
   });
 
   it('shows a used-up queue as idle and the actions of a defeated combatant as lost', () => {

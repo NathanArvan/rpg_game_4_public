@@ -88,6 +88,42 @@
         { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
         { "kind": "apply_condition", "condition": "poisoned", "duration": 2 }
       ]
+    },
+    {
+      "id": "hamstring", "name": "Hamstring", "ap": 2, "cooldown": 2, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "weapon" } },
+        { "kind": "apply_condition", "condition": "slowed", "duration": 1 }
+      ]
+    },
+    {
+      "id": "haste", "name": "Haste", "ap": 2, "cooldown": 3, "tags": ["buff"],
+      "target": { "kind": "combatant", "filter": "ally", "range": 3, "includeSelf": true },
+      "effects": [ { "kind": "apply_condition", "condition": "hasted", "duration": 1 } ]
+    },
+    {
+      "id": "entangle", "name": "Entangle", "ap": 2, "cooldown": 3, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "rooted", "duration": 1 } ]
+    },
+    {
+      "id": "sap", "name": "Sap", "ap": 2, "cooldown": 2, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "weakened", "duration": 1 } ]
+    },
+    {
+      "id": "shield_bash", "name": "Shield Bash", "ap": 3, "cooldown": 3, "tags": ["melee"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 1 },
+      "effects": [
+        { "kind": "attack", "roll": "melee", "damage": { "die": "d4" } },
+        { "kind": "apply_condition", "condition": "stunned", "duration": 0 }
+      ]
+    },
+    {
+      "id": "hex", "name": "Hex", "ap": 3, "cooldown": 4, "tags": ["debuff"],
+      "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
+      "effects": [ { "kind": "apply_condition", "condition": "stunned", "duration": 1 } ]
     }
   ]
 }
