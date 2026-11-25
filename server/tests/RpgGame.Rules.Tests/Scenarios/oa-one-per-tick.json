@@ -1,0 +1,16 @@
+{
+  // TICK_RESOLUTION D4 / SPRINT_3B6 X5: one passive reaction per combatant per tick. Both heroes step out of the
+  // Grunt's reach on step 1; it strikes the first mover in plan order only.
+  "description": "Opportunity attacks: two heroes leave one Grunt in the same tick; only the first is hit",
+  "combatants": [
+    { "id": "A",     "side": "party", "at": [4, 5] },
+    { "id": "B",     "side": "party", "at": [6, 5] },
+    { "id": "Grunt", "side": "enemy", "at": [5, 5] }
+  ],
+  "plans": { "A": ["move 2,5"], "B": ["move 8,5"] },
+  "dice": [12, 3],
+  "expect": {
+    "hp": { "A": 17, "B": 20 },
+    "events": ["t1 s1 Grunt opportunity A: hit 3"]
+  }
+}

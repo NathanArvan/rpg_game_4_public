@@ -13,7 +13,9 @@ namespace RpgGame.Rules;
 /// reach doesn't have it yet, or a debuff on its target if the target doesn't have it yet. With
 /// nothing to do, it defends. It plans within the AP and movement its conditions leave it (3B.4 PR 3); one
 /// whose conditions stop it acting (Stunned, or 0 AP) isn't planned (the Api locks it in with an empty plan),
-/// and a Rooted one doesn't walk or charge: it attacks if it's in reach, else defends.
+/// and a Rooted one doesn't walk or charge: it attacks if it's in reach, else defends. A walk that would leave a
+/// standing enemy's reach (an opportunity attack, 3B.6) becomes a Disengage if the AP allows, else it attacks the
+/// enemy next to it instead; a Charge that would provoke isn't used.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -128,8 +130,10 @@ public static class EnemyAi
                 continue;
             }
 
-            // Step 3: a ready Charge that gets next to the target closes and strikes in one tick.
-            if (ChooseCharge(state, self, from, target, apLeft, config, occupied, blockers, reservedPaths) is { } charge)
+            // Step 3: a ready Charge that gets next to the target closes and strikes in one tick. One that would run out
+            // of a standing enemy's reach (an opportunity attack, 3B.6) is left to the walk below, which can Disengage.
+            if (ChooseCharge(state, self, from, target, apLeft, config, occupied, blockers, reservedPaths) is { } charge
+                && !Provokes(state, self, charge.Path, config))
             {
                 var end = charge.Path[^1];
                 reservedPaths.Add(charge.Path);
@@ -151,14 +155,33 @@ public static class EnemyAi
                 continue;
             }
 
+            // A walk out of a standing enemy's reach provokes an opportunity attack (3B.6, SPRINT_3B6 X15): Disengage
+            // for it if the AP allows, else stay and fight the enemy next to it.
+            bool disengage = false;
+            if (Provokes(state, self, path, config))
+            {
+                if (apLeft >= config.DisengageApCost)
+                    disengage = true;
+                else if (AdjacentEnemy(state, self, from, config) is { } adjacent)
+                {
+                    AddAttacks(queue, state, self, from, adjacent, apLeft, config);
+                    plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
+                    blockers.Add(from);
+                    continue;
+                }
+            }
+
             var destination = path[^1];
             reservedPaths.Add(path);
             occupied.Add(destination);
             blockers.Add(destination);
-            queue.Add(PlannedAction.Move(destination.X, destination.Y));
+            queue.Add(disengage
+                ? PlannedAction.Disengage(destination.X, destination.Y)
+                : PlannedAction.Move(destination.X, destination.Y));
             // Strike with what's left if the walk ends in reach (the target may still step away).
             if (destination.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
-                AddAttacks(queue, state, self, destination, target, apLeft - config.MoveApCost, config);
+                AddAttacks(queue, state, self, destination, target,
+                    apLeft - (disengage ? config.DisengageApCost : config.MoveApCost), config);
             plans[id] = queue;
         }
 
@@ -343,6 +366,32 @@ public static class EnemyAi
         }
         return null;
     }
+
+    /// <summary>
+    /// Whether walking <paramref name="path"/> would provoke an opportunity attack (3B.6, SPRINT_3B6 X2, X5), judged
+    /// from where everyone stands now: some step leaves the melee reach of a standing enemy that makes opportunity
+    /// attacks and isn't Stunned. It doesn't guess whether that enemy will be moving itself.
+    /// </summary>
+    private static bool Provokes(EncounterState state, CombatantState self, List<GridPosition> path, RulesConfig config)
+    {
+        int reach = config.MeleeReach;
+        var reactors = state.Combatants
+            .Where(c => !c.IsDefeated && c.Position.HasValue && c.Profile.OpportunityAttacks
+                        && Relations.Between(self, c) == Relation.Enemy
+                        && !ConditionMath.IsBlocked(c.Conditions, BlockKind.All))
+            .Select(c => c.Position!.Value)
+            .ToList();
+        for (int step = 1; step < path.Count; step++)
+            foreach (var at in reactors)
+                if (at.ChebyshevDistanceTo(path[step - 1]) <= reach && at.ChebyshevDistanceTo(path[step]) > reach)
+                    return true;
+        return false;
+    }
+
+    /// <summary>A standing enemy within melee reach of <paramref name="at"/> (state order), or null.</summary>
+    private static CombatantState? AdjacentEnemy(EncounterState state, CombatantState self, GridPosition at, RulesConfig config) =>
+        state.Combatants.FirstOrDefault(c => !c.IsDefeated && c.Position is { } p && Relations.Between(self, c) == Relation.Enemy
+                                             && at.ChebyshevDistanceTo(p) <= config.MeleeReach);
 
     /// <summary>Appends as many melee attacks on <paramref name="targetId"/> as <paramref name="apLeft"/> pays for.</summary>
     private static void AddMelees(List<PlannedAction> queue, string targetId, int apLeft, RulesConfig config)

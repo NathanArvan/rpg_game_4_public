@@ -8,7 +8,7 @@
   ],
   "plans": {
     "Orc":   ["melee Scout"],
-    "Scout": ["move 4,0"]
+    "Scout": ["disengage 4,0"]   // disengages, so the Orc gets no opportunity attack (3B.6)
   },
   "dice": [],
   "expect": {

@@ -5,6 +5,8 @@ namespace RpgGame.Api.Contracts.Hub;
 /// <param name="Cooldown">Rounds it can't be planned after the round it was used.</param>
 /// <param name="Move">How the ability moves its caster (Dash, Charge), or null if it doesn't.</param>
 /// <param name="AppliesConditions">The conditions it applies (3B.4).</param>
+/// <param name="Activation">"active" (resolves at its queue position) or "prepared" (watches for its trigger, 3B.6 PR 2).</param>
+/// <param name="Trigger">What sets off a prepared ability (3B.6 PR 2); null for an active one.</param>
 public record AbilityDto(
     string Id,
     string Name,
@@ -14,7 +16,20 @@ public record AbilityDto(
     IReadOnlyList<string> Tags,
     AbilityTargetingDto Targeting,
     AbilityMoveDto? Move = null,
-    IReadOnlyList<AbilityConditionDto>? AppliesConditions = null);
+    IReadOnlyList<AbilityConditionDto>? AppliesConditions = null,
+    string Activation = "active",
+    AbilityTriggerDto? Trigger = null);
+
+/// <summary>What sets off a prepared ability (3B.6 PR 2).</summary>
+/// <param name="Kind">"enemy_enters_reach", "enemy_moves_within", "attacked" or "ally_attacked".</param>
+/// <param name="Range">Cells, for "enemy_moves_within" and "ally_attacked".</param>
+/// <param name="AttackKind">For "attacked": "melee", "ranged" or null (any).</param>
+/// <param name="Description">The trigger in words, for tooltips ("Reacts when an enemy steps into reach").</param>
+public record AbilityTriggerDto(
+    string Kind,
+    int? Range,
+    string? AttackKind,
+    string Description);
 
 /// <summary>An ability's move effect (3B.3).</summary>
 /// <param name="To">"cell" (planned with a target cell) or "target" (to the free cell next to the ability's target closest to the caster).</param>

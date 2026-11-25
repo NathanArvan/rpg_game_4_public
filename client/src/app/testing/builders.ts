@@ -31,6 +31,7 @@ import {
   PositionDto,
   QueuedActionDto,
   ResolutionPayload,
+  ReactionResult,
   TickResult, BlockedActionResult } from '../contracts/hub-contracts.generated';
 import { Combatant } from '../state/encounter/encounter.model';
 
@@ -52,6 +53,7 @@ export function makeAbility(
   const id = rest.id ?? 'power_strike';
   return {
     id, name: id, description: '', apCost: 3, cooldown: 2, tags: [], move: null, appliesConditions: [],
+    activation: 'active', trigger: null,
     ...rest,
     targeting: makeTargeting(targeting),
   };
@@ -134,7 +136,7 @@ export function makePlanningCombatant(overrides: Partial<PlanningCombatantDto> =
     id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     combatantType: 'player', isAiControlled: false, profileId: 'test', profileName: 'Test',
     movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {}, conditions: [],
-    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [],
+    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [], opportunityAttacks: true,
     ...overrides,
   };
 }
@@ -145,7 +147,7 @@ export function makeCombatantDto(overrides: Partial<CombatantDto> = {}): Combata
   return {
     id, userId: 'me', characterId: '', characterName: id, currentHp: 10, maxHp: 10,
     combatantType: 'player', isAiControlled: false, profileId: 'test', profileName: 'Test',
-    movementRange: 6, maxAp: 4, abilities: [], conditions: [],
+    movementRange: 6, maxAp: 4, abilities: [], conditions: [], opportunityAttacks: true,
     ...overrides,
   };
 }
@@ -157,7 +159,7 @@ export function makeCombatant(overrides: Partial<Combatant> = {}): Combatant {
     id, userId: 'me', characterId: '', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     status: 'standing', bleedoutRoundsLeft: 0, combatantType: 'player', isAiControlled: false,
     profileName: 'Test', movementRange: 6, maxAp: 4, abilities: [], cooldowns: {}, conditions: [],
-    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [],
+    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [], opportunityAttacks: true,
     ...overrides,
   };
 }
@@ -183,7 +185,7 @@ export function makeMove(overrides: Partial<MovementResult> = {}): MovementResul
   const path: PositionDto[] = overrides.path ?? [{ x: 0, y: 0 }, { x: 1, y: 0 }];
   return {
     combatantId, combatantName: combatantId, path, finalPosition: path[path.length - 1],
-    wasBlocked: false, blockedByCombatantId: null, abilityId: null,
+    wasBlocked: false, blockedByCombatantId: null, abilityId: null, stopReason: 'none', disengaging: false,
     ...overrides,
   };
 }
@@ -196,14 +198,14 @@ export function makeAttack(overrides: Partial<AttackResult> = {}): AttackResult 
     attackerId, attackerName: attackerId, targetId, targetName: targetId, attackType: 'melee_attack',
     hit: false, damage: 0, targetNewHp: 10, targetDefeated: false, wasted: false, feedText: '',
     roll: null, wastedReason: null, targetStatus: 'standing', finishingBlow: false, abilityId: null, moveBonus: 0,
-    conditionDamage: 0,
+    conditionDamage: 0, interceptedFromId: null,
     ...overrides,
   };
 }
 
 /** A hit check; conditions changed nothing unless overridden (3B.4). */
 export function makeRoll(overrides: Partial<AttackRollDto> = {}): AttackRollDto {
-  return { d20: 10, accuracy: 0, targetDodge: 10, conditionAccuracy: 0, conditionDodge: 0, ...overrides };
+  return { d20: 10, accuracy: 0, targetDodge: 10, conditionAccuracy: 0, conditionDodge: 0, reactionDodge: 0, ...overrides };
 }
 
 /** A heal; defaults to a Mend for 0 on a standing target at 10 HP. */
@@ -234,7 +236,26 @@ export function makeAbilityUse(overrides: Partial<AbilityUseResult> = {}): Abili
 
 /** A tick with nothing in it; `tickIndex` defaults to 0. */
 export function makeTick(overrides: Partial<TickResult> = {}): TickResult {
-  return { tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], conditions: [], blocked: [], ...overrides };
+  return {
+    tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], conditions: [], blocked: [],
+    reactions: [], watching: [], ...overrides,
+  };
+}
+
+/**
+ * A reaction (3B.6); defaults to `b`'s opportunity attack on `a` at step 1, a hit for 3 (10 → 7). `attack` defaults to
+ * a matching hit by the reactor on the mover; pass `attack: null` for a reaction without one.
+ */
+export function makeReaction(overrides: Partial<ReactionResult> = {}): ReactionResult {
+  const reactorId = overrides.reactorId ?? 'b';
+  const triggerId = overrides.triggerId ?? 'a';
+  const feedText = overrides.feedText ?? `${reactorId}'s opportunity attack on ${triggerId} hits for 3 damage (HP: 10 → 7)`;
+  return {
+    reactorId, reactorName: reactorId, triggerId, triggerName: triggerId, kind: 'opportunity', abilityId: null, abilityName: null,
+    step: 1, feedText,
+    attack: makeAttack({ attackerId: reactorId, targetId: triggerId, hit: true, damage: 3, targetNewHp: 7, feedText, roll: makeRoll({ d20: 12 }) }),
+    ...overrides,
+  };
 }
 
 /** An action a condition stopped (3B.4 PR 3); defaults to `c1`'s melee attack blocked by Stunned. */
@@ -256,7 +277,7 @@ export function makeBleedout(overrides: Partial<BleedoutResultDto> = {}): Bleedo
 export function makePayload(overrides: Partial<ResolutionPayload> = {}): ResolutionPayload {
   return {
     ticks: [], newRoundNumber: 2, defeatedCombatantIds: [], updatedCombatants: [], queues: [], endOfRound: [], revivedCombatantIds: [],
-    expiredConditions: [], periodic: [],
+    expiredConditions: [], periodic: [], unusedReactions: [],
     ...overrides,
   };
 }

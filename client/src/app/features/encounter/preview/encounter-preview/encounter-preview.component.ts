@@ -8,7 +8,7 @@ import { AddFeedBatch, ClearFeed } from '../../../../state/feed/feed.actions';
 import { ResolutionPlaybackService } from '../../../../core/services/resolution-playback.service';
 import { AbilityDto, ActiveConditionDto, AttackResult, CombatantDto, PlanningCombatantDto, QueuedActionDto, ResolutionPayload } from '../../../../contracts/hub-contracts.generated';
 import {
-  makeAbility, makeActiveCondition, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeRoll, makeTick,
+  makeAbility, makeActiveCondition, makeAttack, makeCombatantDto, makePayload, makePlanningCombatant, makeEffect, makeMove, makeQueue, makeQueuedAction, makeReaction, makeRoll, makeTick,
 } from '../../../../testing/builders';
 
 const ENCOUNTER_ID = 'preview-encounter-1';
@@ -109,7 +109,7 @@ const defends = (id: string) => makeEffect({ combatantId: id, effectType: 'defen
 
 /**
  * A three-tick round (3B.2 queues): action i of every queue resolves in tick i.
- *   Zara (4 AP):   move → melee Goblin 1 → defend
+ *   Zara (4 AP):   move → melee Goblin 1 → move away (Goblin 1's opportunity attack hits her as she steps off, 3B.6)
  *   Isolde (5 AP): ranged Goblin 1 → ranged Goblin 2 → defend
  *   Goblin 1 (4):  ranged Isolde → melee Zara           (done after tick 2)
  *   Goblin 2 (4):  move → melee Zara (out of reach: wasted) → defend
@@ -121,7 +121,7 @@ const MOCK_RESOLUTION: ResolutionPayload = makePayload({
     queue('c1', 4,
       { type: 'move', apCost: 1, targetCell: { x: 6, y: 12 } },
       { type: 'melee_attack', apCost: 2, targetCombatantId: 'c3' },
-      { type: 'defend', apCost: 1 }),
+      { type: 'move', apCost: 1, targetCell: { x: 8, y: 10 } }),
     queue('c2', 5,
       { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c3' },
       { type: 'ranged_attack', apCost: 2, targetCombatantId: 'c4' },
@@ -152,7 +152,16 @@ const MOCK_RESOLUTION: ResolutionPayload = makePayload({
         strike('c4', 'c1', { hit: false, targetNewHp: 8, wasted: true, feedText: "Goblin 2's attack on Zara Forge fails — out of melee range", wastedReason: 'out_of_melee_reach' }),
       ],
     }),
-    makeTick({ tickIndex: 2, effects: [defends('c1'), defends('c2'), defends('c4')] }),
+    makeTick({
+      tickIndex: 2,
+      movements: [walk('c1', [6, 12], [7, 11], [8, 10])],
+      reactions: [makeReaction({
+        reactorId: 'c3', reactorName: NAMES['c3'], triggerId: 'c1', triggerName: NAMES['c1'], step: 1,
+        feedText: "Goblin 1's opportunity attack on Zara Forge hits for 2 damage (HP: 8 → 6)",
+        attack: strike('c3', 'c1', { hit: true, damage: 2, targetNewHp: 6, feedText: "Goblin 1's opportunity attack on Zara Forge hits for 2 damage (HP: 8 → 6)", roll: makeRoll({ d20: 14, accuracy: 2, targetDodge: 13 }) }),
+      })],
+      effects: [defends('c2'), defends('c4')],
+    }),
   ],
 });
 

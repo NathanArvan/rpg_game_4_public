@@ -1,5 +1,5 @@
 import {
-  ActiveConditionDto, ConditionDto, ConditionResult, MovementResult, PositionDto, ResolutionPayload, TickResult,
+  ActiveConditionDto, ConditionDto, ConditionResult, MovementResult, PositionDto, ReactionResult, ResolutionPayload, TickResult,
 } from '../../contracts/hub-contracts.generated';
 import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model';
 
@@ -15,9 +15,9 @@ import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model
 /**
  * Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized
  * (3B.5). Soft green: healed or back on their feet (3B.3). Blue / purple: got a beneficial / harmful
- * condition (3B.4).
+ * condition (3B.4). Orange lunge: struck out at a mover in a reaction (3B.6).
  */
-export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal' | 'buff' | 'debuff';
+export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal' | 'buff' | 'debuff' | 'lunge';
 
 /** A combatant's status as shown (3B.5). */
 export interface StatusView {
@@ -38,9 +38,10 @@ export interface FloatCue {
    * damage: red; miss: grey; wasted: grey italic, above the attacker; status: down / stabilized /
    * bleeding (3B.5); ability: the ability's name above its user (3B.3); heal: green +n, and UP for
    * someone back on their feet (3B.3); buff / debuff: a condition's name as it lands (3B.4);
-   * periodic: orange end-of-round damage from a condition, with an icon for its tag (3B.4 PR 2).
+   * periodic: orange end-of-round damage from a condition, with an icon for its tag (3B.4 PR 2);
+   * reaction: the reaction's label (OPPORTUNITY) above the reactor (3B.6).
    */
-  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff' | 'periodic';
+  kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff' | 'periodic' | 'reaction';
 }
 
 /** A small icon for a periodic effect's tags (3B.4 PR 2): flame, poison, or none. */
@@ -100,6 +101,8 @@ export interface PlaybackTiming {
   maxStepMs: number;
   /** Hold after a tick's attacks, so auras and numbers can be read. */
   attackMs: number;
+  /** Hold on a movement step where a reaction fired (3B.6), so the strike can be read before the mover walks on. */
+  reactionMs: number;
   /** Hold for a tick whose only attacks were wasted (long enough to read the label). */
   wastedMs: number;
   /** Hold for a tick with nothing to show (defend, idle, only wasted attacks). */
@@ -127,6 +130,7 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
   minStepMs: 150,
   maxStepMs: 300,
   attackMs: 1500,
+  reactionMs: 1100,
   wastedMs: 900,
   idleMs: 400,
   defeatMs: 600,
@@ -142,9 +146,13 @@ export const PLAYBACK_TIMING: PlaybackTiming = {
 /**
  * Feed line for one movement result. A one-cell path that wasn't blocked means the combatant chose
  * to stay put. A move made by an ability (Dash, Charge) names it: "Scout moves to (9, 5) with Dash".
+ * A Disengage says so ("Mira disengages to (5, 6)"), and a mover a reaction dropped "falls at (5, 7)" (3B.6).
  */
 export function movementFeedText(movement: MovementResult, abilityName?: string): string {
   const { x, y } = movement.finalPosition;
+  if (movement.stopReason === 'fell') return `${movement.combatantName} falls at (${x}, ${y})`;
+  if (movement.disengaging && !abilityName && movement.path.length > 1)
+    return `${movement.combatantName} disengages to (${x}, ${y})${movement.wasBlocked ? ' (blocked)' : ''}`;
   if (abilityName) {
     if (movement.path.length <= 1 && !movement.wasBlocked) return `${movement.combatantName} stays at (${x}, ${y}) (${abilityName})`;
     return `${movement.combatantName} moves to (${x}, ${y}) with ${abilityName}${movement.wasBlocked ? ' (blocked)' : ''}`;
@@ -227,7 +235,47 @@ class ConditionTracker {
 }
 
 /**
- * The beats of a round, in order. Each tick plays as: movement steps → attacks and heals →
+ * A reaction cue inside the movement beat of the step it fired on (3B.6): an orange lunge aura and its label
+ * (OPPORTUNITY, or the prepared ability's name) over the reactor, `⚔ -4` / MISS over the mover with its HP, and DOWN
+ * (with the status) for a mover it dropped, whose token stops there. The beat is held long enough to read it.
+ */
+function addReactionCues(
+  beat: PlaybackBeat, reactions: ReactionResult[], tracker: ConditionTracker, finalBleedout: Map<string, number>,
+  timing: PlaybackTiming,
+): void {
+  const auras: AuraCue[] = [...(beat.auras ?? [])];
+  const floats: FloatCue[] = [...(beat.floats ?? [])];
+  const hp: Record<string, number> = { ...beat.hp };
+  const statuses: Record<string, StatusView> = { ...beat.statuses };
+  const conditions: Record<string, ActiveConditionDto[]> = { ...beat.conditions };
+  for (const r of reactions) {
+    const label = r.kind === 'opportunity' ? 'OPPORTUNITY' : `⚡ ${(r.abilityName ?? r.abilityId ?? '').toUpperCase()}`;
+    if (!auras.some(a => a.combatantId === r.reactorId)) auras.push({ combatantId: r.reactorId, kind: 'lunge' });
+    floats.push({ combatantId: r.reactorId, text: label, kind: 'reaction' });
+    const a = r.attack;
+    if (!a) continue;
+    if (a.wasted) { floats.push({ combatantId: r.reactorId, text: wastedLabel(a.wastedReason), kind: 'wasted' }); continue; }
+    if (!a.hit) { floats.push({ combatantId: a.targetId, text: 'MISS', kind: 'miss' }); continue; }
+    if (!auras.some(x => x.combatantId === a.targetId && x.kind === 'hurt')) auras.push({ combatantId: a.targetId, kind: 'hurt' });
+    floats.push({ combatantId: a.targetId, text: `⚔ -${a.damage}`, kind: 'damage' });
+    hp[a.targetId] = a.targetNewHp;
+    if (a.targetDefeated && !statuses[a.targetId]) {
+      const status = toStatus(a.targetStatus, true);
+      statuses[a.targetId] = { status, bleedoutRoundsLeft: status === 'downed' ? finalBleedout.get(a.targetId) ?? 0 : 0 };
+      if (status === 'downed') floats.push({ combatantId: a.targetId, text: 'DOWN', kind: 'damage' });
+      if (tracker.clear(a.targetId)) conditions[a.targetId] = [];
+    }
+  }
+  beat.auras = auras;
+  beat.floats = floats;
+  if (Object.keys(hp).length > 0) beat.hp = hp;
+  if (Object.keys(statuses).length > 0) beat.statuses = statuses;
+  if (Object.keys(conditions).length > 0) beat.conditions = conditions;
+  beat.durationMs = Math.max(beat.durationMs, timing.reactionMs);
+}
+
+/**
+ * The beats of a round, in order. Each tick plays as: movement steps (with any reactions they provoked, 3B.6) → attacks and heals →
  * defeats → revives → effects (stabilize, conditions); after the last tick, the end of round:
  * periodic damage and healing (3B.4 PR 2), anyone that drops, the bleedout step (3B.5) and conditions
  * running out (3B.4). Defend's Guarded shows with the tick's first beat.
@@ -279,7 +327,9 @@ export function buildTimeline(
     const abilityNameOf = (m: MovementResult) => m.abilityId
       ? uses.find(u => u.combatantId === m.combatantId && u.abilityId === m.abilityId)?.abilityName ?? m.abilityId
       : undefined;
-    pendingFeed.push(...tick.movements.map(m => movementFeedText(m, abilityNameOf(m))));
+    // A mover a reaction dropped gets its line ("falls at") at the step it fell on, after the reaction's.
+    pendingFeed.push(...tick.movements.filter(m => m.stopReason !== 'fell').map(m => movementFeedText(m, abilityNameOf(m))));
+    const reactions = tick.reactions ?? [];
     const steps = Math.max(0, ...tick.movements.map(m => m.path.length - 1));
     // An ability that moves its user (Dash, Charge) shows its name as the move starts.
     const movedByAbility = new Set(tick.movements.filter(m => m.abilityId && m.path.length > 1).map(m => m.combatantId));
@@ -289,10 +339,14 @@ export function buildTimeline(
         const positions: Record<string, PositionDto> = {};
         for (const m of tick.movements)
           if (step < m.path.length) positions[m.combatantId] = m.path[step];
+        const stepReactions = reactions.filter(r => r.step === step);
+        const fellHere = tick.movements.filter(m => m.stopReason === 'fell' && m.path.length - 1 === step);
+        pendingFeed.push(...stepReactions.map(r => r.feedText), ...fellHere.map(m => movementFeedText(m)));
         const beat: PlaybackBeat = { tick: t, phase: 'movement', durationMs: stepMs, moveMs: stepMs, positions, feed: takeFeed() };
         if (step === 1 && movedByAbility.size > 0)
           beat.floats = uses.filter(u => !u.wastedReason && movedByAbility.has(u.combatantId))
             .map(u => ({ combatantId: u.combatantId, text: u.abilityName, kind: 'ability' as const }));
+        if (stepReactions.length > 0) addReactionCues(beat, stepReactions, tracker, finalBleedout, timing);
         beats.push(beat);
       }
     }

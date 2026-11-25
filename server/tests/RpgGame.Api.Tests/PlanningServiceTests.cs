@@ -156,6 +156,25 @@ public class PlanningServiceTests
         redis.Verify(r => r.SetPlannedActionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
+    [Fact]
+    public async Task PlanAction_Disengage_IsAMoveThatCostsTwoAp()
+    {
+        // 3B.6: Disengage + melee fits 4 AP; it shares the movement range with moves; it needs a cell.
+        await using var db = CreateDb();
+        var (service, _, joinCode, _) = await SetupMover(db, 6, maxAp: 4);
+        var disengage = new PlannedActionEntry("disengage", new PositionDto(2, 0), null);
+        Assert.True((await service.PlanActionAsync(joinCode, "user-1",
+            new PlannedActionArray([disengage, DefendEntry, DefendEntry]))).Success);
+
+        var over = new PlannedActionArray([disengage, disengage with { TargetCell = new PositionDto(4, 0) }, DefendEntry]);
+        Assert.Contains("Not enough AP",
+            (await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", over))).Message);
+
+        var noCell = new PlannedActionArray([new PlannedActionEntry("disengage", null, null)]);
+        Assert.Equal("Move action requires a target cell.",
+            (await Assert.ThrowsAsync<GameActionException>(() => service.PlanActionAsync(joinCode, "user-1", noCell))).Message);
+    }
+
     [Theory]
     [InlineData(6, true)]
     [InlineData(5, false)]

@@ -249,3 +249,38 @@ test('Crowd Control: the Scout Entangles a goblin; it is Rooted into the next ro
   await expect(page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' }).locator('.chip[data-condition="rooted"]'))
     .toContainText('this round');
 });
+
+test('Reactions: stepping away from the Brute draws an opportunity attack; a Disengage draws none (3B.6)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Reactions');
+
+  // Bruiser (9,10) next to the Brute (9,9); Skirmisher (11,10) next to Goblin 1 (11,9); Scout (13,11) next to Goblin 2.
+  // The AI enemies all attack the hero next to them, so none of them moves and each can react.
+  const actionBar = page.locator('.action-bar');
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  // The move preview marks cells that step out of the Brute's reach.
+  await expect(cell(page, 9, 12)).toHaveClass(/threatened/);
+  await expect(cell(page, 9, 12)).toHaveAttribute('title', /opportunity attack from Brute/);
+  await expect(cell(page, 8, 10)).not.toHaveClass(/threatened/); // still next to the Brute
+  await cell(page, 9, 12).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Move to (9, 12)');
+
+  // The Skirmisher Disengages away from Goblin 1 instead (2 AP): no threat shown while it's armed.
+  await tokenAt(page, 11, 10).click();
+  await expect(actionBar).toContainText('Planning for Skirmisher');
+  await expect(cell(page, 11, 12)).toHaveClass(/threatened/);
+  await page.getByTestId('disengage-toggle').click();
+  await expect(page.getByTestId('disengage-hint')).toBeVisible();
+  await expect(cell(page, 11, 12)).not.toHaveClass(/threatened/);
+  await cell(page, 11, 12).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Disengage to (11, 12)');
+  await expect(actionBar.locator('.ap-budget')).toHaveText(/AP 2\/5/); // the Skirmisher has 5 AP
+
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expect(feedEntries(page).filter({ hasText: 'Round 1 Resolution' })).toHaveCount(1);
+  await expect(feedEntries(page).filter({ hasText: "Brute's opportunity attack on Bruiser" })).toHaveCount(1, { timeout: 20_000 });
+  await expect(feedEntries(page).filter({ hasText: 'Skirmisher disengages to (11, 12)' })).toHaveCount(1);
+  await expect(feedEntries(page).filter({ hasText: 'opportunity attack on Skirmisher' })).toHaveCount(0);
+  await expectPlanningRound(page, 2, 20_000);
+  await expect(page.locator('app-round-timeline tr', { hasText: 'Bruiser' }).locator('.provoked')).toHaveCount(1);
+});

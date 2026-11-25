@@ -1,0 +1,11 @@
+{
+  // SPRINT_3B6 X5: a combatant whose profile has opportunityAttacks false (the training dummy) never reacts.
+  "description": "Opportunity attacks: a dummy with opportunityAttacks false lets a hero walk away",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Dummy", "side": "enemy", "at": [6, 5], "opportunityAttacks": false }
+  ],
+  "plans": { "Hero": ["move 3,5"] },
+  "dice": [],
+  "expect": { "positions": { "Hero": [3, 5] }, "hp": { "Hero": 20 } }
+}

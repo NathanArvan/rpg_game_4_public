@@ -149,6 +149,7 @@ export class EncounterState {
       abilities: c.abilities ?? [],
       cooldowns: {},
       conditions: c.conditions ?? [],
+      opportunityAttacks: c.opportunityAttacks ?? true,
     }));
     ctx.patchState({ encounterId, combatants: mapped, active: true });
   }
@@ -181,6 +182,7 @@ export class EncounterState {
       abilities: c.abilities ?? [],
       cooldowns: c.cooldowns ?? {},
       conditions: c.conditions ?? [],
+      opportunityAttacks: c.opportunityAttacks ?? true,
     }));
     ctx.patchState({
       roundPhase: 'planning',
@@ -309,6 +311,7 @@ export class EncounterState {
       abilities: payload.monster.abilities ?? [],
       cooldowns: payload.monster.cooldowns ?? {},
       conditions: payload.monster.conditions ?? [],
+      opportunityAttacks: payload.monster.opportunityAttacks ?? true,
     };
     ctx.patchState({ combatants: [...state.combatants, monster] });
   }

@@ -1,0 +1,21 @@
+{
+  // SPRINT_3B6 X3: the reactions of one step are one batch: both roll from the same HP, the damage is netted, and
+  // only then is anyone checked for 0 HP. Both lines report the hero going down.
+  "description": "Opportunity attacks: two goblins hit the same hero on one step; netted, then the fall check",
+  "combatants": [
+    { "id": "Hero", "side": "party", "hp": 6, "maxHp": 20, "downs": true, "at": [5, 5] },
+    { "id": "G1",   "side": "enemy", "at": [6, 5] },
+    { "id": "G2",   "side": "enemy", "at": [6, 4] }
+  ],
+  "plans": { "Hero": ["move 2,5"] },
+  "dice": [12, 4, 13, 4],
+  "expect": {
+    "positions": { "Hero": [4, 5] },
+    "status": { "Hero": "downed" },
+    "events": [
+      "t1 s1 G1 opportunity Hero: hit 4, Hero downed",
+      "t1 s1 G2 opportunity Hero: hit 4, Hero downed",
+      "t1 s1 Hero falls"
+    ]
+  }
+}

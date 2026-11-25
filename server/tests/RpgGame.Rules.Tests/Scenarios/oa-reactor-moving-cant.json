@@ -1,0 +1,12 @@
+{
+  // SPRINT_3B6 X5: a combatant whose own action this tick moves it makes no opportunity attacks that tick. Two
+  // fighters who step apart at once don't trade free hits.
+  "description": "Opportunity attacks: two adjacent fighters stepping apart in the same tick provoke nothing",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Hero": ["move 3,5"], "Goblin": ["move 8,5"] },
+  "dice": [],
+  "expect": { "positions": { "Hero": [3, 5], "Goblin": [8, 5] }, "hp": { "Hero": 20, "Goblin": 20 } }
+}

@@ -29,6 +29,9 @@ public sealed record CombatProfileDefinition(
     /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
     public int ConditionResist { get; init; }
 
+    /// <summary>Makes passive opportunity attacks (3B.6). Stored only when false, so ordinary rows stay as they were.</summary>
+    public bool OpportunityAttacks { get; init; } = true;
+
     /// <summary>A fresh copy of these values to store on a combatant.</summary>
     public CombatProfileValues Snapshot() => new()
     {
@@ -44,6 +47,7 @@ public sealed record CombatProfileDefinition(
         MaxAp = MaxAp,
         Abilities = Abilities.Select(a => a.Copy()).ToList(),
         ConditionResist = ConditionResist,
+        OpportunityAttacks = OpportunityAttacks ? null : false,
     };
 }
 
@@ -159,6 +163,7 @@ public sealed class CombatProfileCatalog
             p.Abilities?.Select(id => id.Trim()).ToList() ?? [])
         {
             ConditionResist = p.ConditionResist ?? 0,
+            OpportunityAttacks = p.OpportunityAttacks ?? true,
         };
     }
 
@@ -183,6 +188,7 @@ public sealed class CombatProfileCatalog
         public int? Ap { get; set; }
         public List<string>? Abilities { get; set; }
         public int? ConditionResist { get; set; }
+        public bool? OpportunityAttacks { get; set; }
     }
 }
 
@@ -199,7 +205,11 @@ internal static class CombatProfileMapping
             CanBeDowned = CanBeDowned(v, combatantType),
             Abilities = v?.Abilities?.Select(AbilityMapping.ToRules).ToList() ?? [],
             ConditionResist = ConditionResist(v),
+            OpportunityAttacks = OpportunityAttacks(v),
         };
+
+    /// <summary>Rows from before 3B.6 have no OpportunityAttacks: they make them.</summary>
+    public static bool OpportunityAttacks(CombatProfileValues? v) => v?.OpportunityAttacks ?? true;
 
     /// <summary>Rows from before 3B.4 PR 2 have no ConditionResist: 0.</summary>
     public static int ConditionResist(CombatProfileValues? v) => v?.ConditionResist ?? 0;

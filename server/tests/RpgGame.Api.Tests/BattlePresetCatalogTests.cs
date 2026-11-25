@@ -24,6 +24,7 @@ public class BattlePresetCatalogTests : IDisposable
         Assert.Contains(catalog.All, p => p.Id == "skirmish");
         Assert.Contains(catalog.All, p => p.Id == "training-dummy");
         Assert.Contains(catalog.All, p => p.Id == "rescue");
+        Assert.Contains(catalog.All, p => p.Id == "reactions");
         Assert.Equal("skirmish", catalog.All[0].Id); // default in the menu
     }
 
@@ -67,6 +68,39 @@ public class BattlePresetCatalogTests : IDisposable
         var a = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants[0].Profile;
         Assert.Equal((3, "d12", 1, 2, 5, -4, 17, (int?)7, (int?)40),
             (a.MaxHp, a.BaseDamage, a.Speed, a.MovementRange, a.MeleeAccuracy, a.RangedAccuracy, a.Dodge, a.MaxAp, a.ConditionResist));
+    }
+
+    [Fact]
+    public void OpportunityAttacks_Override_IsStoredOnlyWhenFalse()
+    {
+        // 3B.6: unset (or true) leaves the stored value null, which reads as "makes opportunity attacks".
+        Write("oa.json", """
+            { "id": "oa", "name": "OA", "combatants": [
+                { "name": "Hero",  "side": "party", "profile": "scout", "at": [0, 0] },
+                { "name": "Dummy", "side": "enemy", "profile": "grunt", "opportunityAttacks": false, "at": [0, 1] },
+                { "name": "Mook",  "side": "enemy", "profile": "grunt", "opportunityAttacks": true, "at": [0, 2] } ] }
+            """);
+        var combatants = new BattlePresetCatalog(_dir, TestProfiles.Catalog).All[0].Combatants;
+        Assert.Equal([null, false, null], combatants.Select(c => c.Profile.OpportunityAttacks));
+        Assert.Equal([true, false, true], combatants.Select(c => CombatProfileMapping.ToRules(c.Profile).OpportunityAttacks));
+    }
+
+    [Fact]
+    public void ShippedReactions_PutsEachHeroNextToExactlyOneEnemy()
+    {
+        // The first round is the choice between stepping away (an opportunity attack) and Disengaging.
+        var preset = BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog).All.Single(p => p.Id == "reactions");
+        var enemies = preset.Combatants.Where(c => c.Side == "enemy").ToList();
+        foreach (var hero in preset.Combatants.Where(c => c.Side == "party"))
+            Assert.Single(enemies, e => Math.Max(Math.Abs(e.X - hero.X), Math.Abs(e.Y - hero.Y)) == 1);
+    }
+
+    [Fact]
+    public void ShippedTrainingDummy_MakesNoOpportunityAttacks()
+    {
+        var dummy = BattlePresetCatalog.FromAppDirectory(TestProfiles.Catalog).All
+            .Single(p => p.Id == "training-dummy").Combatants.Single(c => c.Name == "Dummy");
+        Assert.False(CombatProfileMapping.ToRules(dummy.Profile).OpportunityAttacks);
     }
 
     [Fact]

@@ -1,0 +1,17 @@
+{
+  // SPRINT_3B6 X2, X3: a Charge that runs from one enemy to another provokes the one it leaves, on its first step,
+  // before the Charge strike rolls in the Attack phase (dice order: reaction, then the tick's attacks).
+  "description": "Opportunity attacks: charging from one goblin to another provokes the first",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["charge"] },
+    { "id": "G1",      "side": "enemy", "at": [5, 6] },
+    { "id": "G2",      "side": "enemy", "at": [5, 1] }
+  ],
+  "plans": { "Bruiser": ["ability charge G2"] },
+  "dice": [12, 3, 14, 5],                // G1's opportunity attack hits for 3; the Charge hits G2 for 5 + 3
+  "expect": {
+    "positions": { "Bruiser": [5, 2] },
+    "hp": { "Bruiser": 17, "G2": 12 },
+    "events": ["t1 Bruiser moves to 5,2 (charge)", "t1 s1 G1 opportunity Bruiser: hit 3", "t1 Bruiser charge G2: hit 8 (+3 moved)"]
+  }
+}

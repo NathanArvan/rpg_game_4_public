@@ -1,0 +1,20 @@
+{
+  // SPRINT_3B6 X3, X14: a mover an opportunity attack drops stops on the cell it reached, and like anyone who
+  // falls it loses the rest of its queue (no ranged attack in tick 2).
+  "description": "Opportunity attacks: a hero downed mid-move stops where they fell",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "hp": 3, "maxHp": 20, "downs": true, "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Hero": ["move 1,5", "ranged Goblin"] },
+  "dice": [12, 5],
+  "expect": {
+    "ticks": 2,
+    "positions": { "Hero": [4, 5] },
+    "hp": { "Hero": 0, "Goblin": 20 },
+    "status": { "Hero": "downed" },
+    "bleedout": { "Hero": 2 },
+    "defeated": ["Hero"],
+    "events": ["t1 Hero moves to 4,5", "t1 s1 Goblin opportunity Hero: hit 5, Hero downed", "t1 s1 Hero falls"]
+  }
+}

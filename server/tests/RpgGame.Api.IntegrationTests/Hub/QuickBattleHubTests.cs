@@ -94,6 +94,43 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Stepping_out_of_the_goblins_reach_draws_an_opportunity_attack_and_Disengage_doesnt()
+    {
+        // 3B.6 PR 1. it-duel: Hero (9,9) next to the manual Goblin (9,10), which defends (so it doesn't move and
+        // can react). Round 1: Hero walks to (9,7); its first step leaves the Goblin's reach: d20 20 hits, d6 3.
+        var (battle, ids) = await StartAsync("it-duel");
+        var (hero, goblin) = (ids["Hero"], ids["Goblin"]);
+
+        api.Dice.Script(20, 3);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Move(9, 7)), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+
+        var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
+        Assert.Equal(0, api.Dice.Remaining);
+        var reaction = Assert.Single(round1.Ticks.SelectMany(t => t.Reactions ?? []));
+        Assert.Equal((goblin, hero, "opportunity", 1), (reaction.ReactorId, reaction.TriggerId, reaction.Kind, reaction.Step));
+        Assert.Equal((true, 3, 17), (reaction.Attack!.Hit, reaction.Attack.Damage, reaction.Attack.TargetNewHp));
+        Assert.Equal("Goblin's opportunity attack on Hero hits for 3 damage (HP: 20 → 17)", reaction.FeedText);
+        Assert.Equal("none", Assert.Single(round1.Ticks[0].Movements).StopReason);
+
+        // Round 2: back next to the Goblin (stepping into reach is free), then Disengage away: no rolls at all.
+        await _client.NextAsync<PlanningPhaseStartedPayload>(Events.PlanningPhaseStarted, p => p.RoundNumber == 2);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode,
+            Queue(Move(9, 9), new PlannedActionEntry("disengage", new PositionDto(9, 7), null)), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+
+        var round2 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted, p => p.NewRoundNumber == 3);
+        Assert.Empty(round2.Ticks.SelectMany(t => t.Reactions ?? []));
+        Assert.True(round2.Ticks[1].Movements.Single().Disengaging);
+        Assert.Equal(("disengage", 2), (round2.Queues.Single(q => q.CombatantId == hero).Actions[1].Type,
+            round2.Queues.Single(q => q.CombatantId == hero).Actions[1].ApCost));
+
+        ContractShape.AssertEventsMatch(_client.Events);
+    }
+
+    [Fact]
     public async Task Mark_puts_conditions_on_the_goblin_that_change_the_next_hit_and_carry_into_the_next_round()
     {
         var (battle, ids) = await StartAsync("it-mark");

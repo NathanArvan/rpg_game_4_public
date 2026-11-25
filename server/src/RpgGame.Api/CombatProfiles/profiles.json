@@ -15,6 +15,7 @@
   //   abilities       optional list of ability ids from Abilities/abilities.json (3B.3): the loadout
   //   conditionResist optional percent chance (0-100, default 0) to shrug off a harmful condition an
   //                   enemy puts on it (3B.4): a d100 at or under it resists
+  //   opportunityAttacks optional (default true): strikes enemies that step out of its reach (3B.6)
   //
   // Keep values on a consistent scale: if core stats are adopted later, a stats → profile
   // function will be calibrated against these.

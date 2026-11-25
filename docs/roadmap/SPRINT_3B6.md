@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.6. Hand this to Claude Code alongside `CLAUDE.md`. The starting point is `TICK_RESOLUTION.md` Decisions 4 (reactive actions) and 5 (opportunity attacks and Disengage). The decisions below (X1–X16) make those concrete, and a few of them **change** D5 (see X2, X4). They are all settled; treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` and `SPRINT_3B4.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (A1 reserves `activation: "prepared"` for this slice, A9 split it out).
 >
-> **Status:** ⬜ Not started. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
+> **Status:** 🟡 In progress. PR 1 (opportunity attacks & Disengage) done; PR 2 and PR 3 to do. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
 >
 > **Goal:** Movement has a cost near enemies. Stepping out of an enemy's reach gives them a free **opportunity attack** (a full weapon hit, rolled and applied on the spot), unless the mover pays for a **Disengage**. Combatants can also spend AP and the rest of their queue on a **prepared reaction**: they watch for a trigger for the rest of the round and act the moment it happens. 3B.6 ships movement triggers (**Brace**: strike whoever steps into reach; **Overwatch**: shoot the first enemy who moves nearby) and attack triggers (**Parry**: harder to hit for the attacks aimed at you; **Intercept**: take a hit meant for an adjacent ally). The enemy AI uses them a little. All of it can be tried in a new **Reactions** Quick Battle.
 
@@ -186,6 +186,19 @@ Follow the design loop for each PR: rules + scenarios first (`dotnet test server
 ---
 
 ## PR 1 — Opportunity attacks & Disengage
+
+*Status: done. Differences from the plan below:*
+- *Reactors are checked in **combatant order** (the state's order, which the Api loads by `SortOrder`), not plan order, so a combatant with no plan this round (idle, or not listed in a scenario) can still react. In the Api the two orders are the same.*
+- *`TickOutcome.Reactions` holds each reaction's `Step` from 1 (a mover's first cell after its start). `MovementOutcome` also gained `Disengaging` (wire `disengaging`), so playback and the feed can say "disengages to" without reading the queue.*
+- *A combatant whose action this tick moves it is anyone with a mover this tick, including a move to its own cell; a move blocked by Rooted isn't a mover, so a Rooted combatant can still react (X5: Rooted doesn't block reactions).*
+- *The enemy AI rule (X15) is built, but with nearest-enemy targeting an AI walk can't step out of a standing enemy's reach: anyone next to a cell of the walk is at least as near as the target (triangle inequality on Chebyshev distance). So `ai-disengages-to-switch-target.json` became `EnemyAiTests` cases with a bystander the AI doesn't target (no team in `teamById`). The rule matters once targeting changes (focus fire, 3D). A Charge that would provoke isn't used; the walk logic then Disengages.*
+- *Profile value stored as `bool? OpportunityAttacks` on `CombatProfileValues` (null = yes), so existing rows and ordinary presets store nothing. That's a model change, so the migration is **`AddOpportunityAttacks`** (model snapshot only) in this PR rather than `AddReactions` in PR 2.*
+- *`MoveEffect.Disengage` exists in Rules and the scenario format; the server's `abilities.json` / `AbilityCatalog` don't read it yet (no shipped ability uses it).*
+- *Hub contracts got every field of the slice at once, as planned. The PR 2–3 ones (`watching`, `unusedReactions`, `reactionDodge`, `interceptedFromId`, `activation`, `trigger`) are sent empty or at their defaults for now.*
+- *GameEvent payload for `opportunity_attack`: `attackerId`, `targetId`, `roll`, `hit`, `damage`, `targetNewHp`, `step`. The `movement` event payload is unchanged.*
+- *"Mira disengages to (5, 6)" and "Mira falls at (5, 7)" are client lines (`movementFeedText`), like every movement line; the "falls at" line plays at the step it happened, after the reaction's line.*
+- *`PlanningService` accepts `"disengage"` (it has its own list of action types).*
+- *Client: the threat preview is `provokedBy` in `plan-queue.ts` (pure, shared helper) over enemies standing at planning time with `opportunityAttacks`; `Combatant.opportunityAttacks` carries the profile value. The Disengage toggle is local to the grid (players only; the GM planner doesn't have it). The grid stylesheet's warning budget went from 6 to 7 kB (`angular.json`), as 3B.5 did before.*
 
 ### Rules (`server/src/RpgGame.Rules/`)
 

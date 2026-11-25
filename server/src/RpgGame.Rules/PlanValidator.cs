@@ -16,6 +16,7 @@ public sealed record PlanCheck(string? Error, int ApSpent, int MoveCellsUsed)
 /// queued moves would leave the combatant, ignoring everyone else (who may block it at resolution).
 /// Ability entries (3B.3) must name a loadout ability that isn't on cooldown, appear at most once
 /// if the ability has a cooldown, and carry the target shape its targeting kind needs.
+/// Disengage (3B.6) counts as a move for the budget, the route and Rooted.
 /// Conditions (3B.4 PR 3, SPRINT_3B4 C6, C8) change the AP and movement budgets, reject any plan while
 /// they block every action (Stunned), and reject moves and abilities that move while they block moves (Rooted).
 /// </summary>
@@ -64,7 +65,7 @@ public static class PlanValidator
                 return new PlanCheck(abilityError, ap, cells);
 
             if (root is not null
-                && (action.Type == ActionType.Move || profile.FindAbility(action.AbilityId) is { Move: not null }))
+                && (action.Type is ActionType.Move or ActionType.Disengage || profile.FindAbility(action.AbilityId) is { Move: not null }))
                 return new PlanCheck($"This combatant is {root.Definition.Name} and can't move.", ap, cells);
 
             ap += config.ApCost(action, profile);
@@ -79,7 +80,8 @@ public static class PlanValidator
                 continue;
             }
 
-            if (action.Type != ActionType.Move) continue;
+            // A Disengage is a move for the budget and the route (SPRINT_3B6 X4).
+            if (action.Type is not (ActionType.Move or ActionType.Disengage)) continue;
 
             if (action.TargetCell is not { } target)
                 return new PlanCheck("Move action requires a target cell.", ap, cells);

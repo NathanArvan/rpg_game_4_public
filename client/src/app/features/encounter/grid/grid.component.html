@@ -15,6 +15,8 @@
           [class.ability-range]="isInAbilityRange(cell)"
           [class.ability-move-range]="isAbilityMoveTarget(cell)"
           [class.charge-path]="isChargePath(cell)"
+          [class.threatened]="isThreatened(cell)"
+          [attr.title]="threatTitle(cell)"
           [class.ghost]="isGhostTarget(cell)"
           [class.enemy-ghost]="isEnemyGhostTarget(cell)"
           (click)="onCellClick(cell)">
@@ -106,6 +108,15 @@
           (click)="planDefend()">
           🛡 Defend
         </button>
+        <button
+          class="action-btn"
+          data-testid="disengage-toggle"
+          [class.active]="disengageArmed"
+          [disabled]="lockedIn || !canAffordDisengage"
+          title="Your next move provokes no opportunity attacks (2 AP)"
+          (click)="toggleDisengage()">
+          🏃 Disengage
+        </button>
       </ng-template>
       <button
         class="lock-in-btn"
@@ -118,6 +129,9 @@
       🎯 {{ hint }}
       <button *ngIf="armedConfirmLabel as label" class="armed-confirm" type="button"
               [disabled]="!canConfirmArmed" (click)="confirmArmed()">{{ label }}</button>
+    </div>
+    <div class="armed-hint" *ngIf="disengageArmed" data-testid="disengage-hint">
+      🏃 Disengage: click a highlighted cell. That move provokes no opportunity attacks (2 AP). Esc or click the button again to cancel.
     </div>
     <div class="stabilize-hint" *ngIf="downedAllies.length && !lockedIn">
       ✚ {{ downedAllies[0].characterName }}{{ downedAllies.length > 1 ? ' and others are' : ' is' }} bleeding out:

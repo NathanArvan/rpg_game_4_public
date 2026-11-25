@@ -1,6 +1,6 @@
 import { AttackResult, CombatantQueueDto, HealResult, MovementResult, QueuedActionDto, ResolutionPayload, TickResult } from '../../../contracts/hub-contracts.generated';
 import {
-  makeAbilityUse, makeAttack, makeBlocked, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeRoll, makeTick,
+  makeAbilityUse, makeAttack, makeBlocked, makeConditionResult, makeEffect, makeHeal, makeMove, makePayload, makePlanningCombatant, makeQueue, makeQueuedAction, makeReaction, makeRoll, makeTick,
 } from '../../../testing/builders';
 import { buildLanes } from './round-lanes';
 
@@ -208,5 +208,38 @@ describe('buildLanes: movement abilities (3B.3)', () => {
     expect(lanes[0].slots[0].detail).toBe('Mark: G is Marked until end of next round. G is still Exposed, now for 2 more rounds.');
     expect(lanes[1].slots[0].detail).toBe(
       'F → G: rolled 8 + 2 (+2 from conditions) = 10 vs dodge 7 (-3 from conditions), hit for 6, incl. +2 from conditions (G now 14 HP).');
+  });
+
+  describe('reactions (3B.6)', () => {
+    const disengageQueue = (id: string) => makeQueue({ combatantId: id, maxAp: 4, actions: [
+      makeQueuedAction({ type: 'disengage', apCost: 2, targetCell: { x: 2, y: 5 } })] });
+
+    it('marks a move that drew an opportunity attack with ⚔ and adds the roll to its detail', () => {
+      const [lane] = buildLanes(payload([q('A', 4, ['move', 1])],
+        tick(0, { movements: [makeMove({ combatantId: 'A', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }] })],
+          reactions: [makeReaction({ reactorId: 'G', reactorName: 'Goblin', triggerId: 'A', triggerName: 'A' })] })));
+      const [slot] = lane.slots;
+      expect(slot.provoked).toBeTrue();
+      expect(slot.outcome).toBe('moved');
+      expect(slot.detail).toContain('⚔ Opportunity attack (step 1): Goblin → A: rolled 12 + 0 = 12 vs dodge 10, hit for 3');
+    });
+
+    it('shows a Disengage with its own icon and label', () => {
+      const [lane] = buildLanes(payload([disengageQueue('A')],
+        tick(0, { movements: [makeMove({ combatantId: 'A', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }, { x: 2, y: 5 }], disengaging: true })] })));
+      expect(lane.slots[0]).toEqual(jasmine.objectContaining({ kind: 'disengage', icon: '🏃', label: 'Disengage to (2, 5) (2 AP)', provoked: false }));
+    });
+
+    it('stops a mover a reaction dropped: that move is cut and the rest of its queue is lost', () => {
+      const [lane] = buildLanes(payload([q('A', 4, ['move', 1], ['melee_attack', 2, 'G'])],
+        tick(0, {
+          movements: [makeMove({ combatantId: 'A', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }], stopReason: 'fell' })],
+          reactions: [makeReaction({ reactorId: 'G', triggerId: 'A',
+            attack: attack('G', 'A', { targetNewHp: 0, targetDefeated: true, targetStatus: 'downed' }) })],
+        }),
+        tick(1)));
+      expect(lane.slots.map(s => `${s.kind}:${s.outcome}`)).toEqual(['move:stopped', 'lost:none']);
+      expect(lane.slots[0].detail).toContain('A falls at (4, 5) after 1 cell.');
+    });
   });
 });

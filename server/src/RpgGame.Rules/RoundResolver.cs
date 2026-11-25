@@ -51,6 +51,7 @@ public static class RoundResolver
                 Heals = heals,
                 Conditions = round.TickConditions.ToList(),
                 Blocked = round.TickBlocked.ToList(),
+                Reactions = round.TickReactions.ToList(),
             });
         }
 
@@ -230,6 +231,8 @@ public static class RoundResolver
     private static List<MovementOutcome> ResolveMovementPhase(RoundContext round, int tick)
     {
         round.AbilityCellsMoved.Clear();
+        round.TickReactions.Clear();
+        round.PassiveUsedThisTick.Clear();
         // Where everyone stands as the phase starts: a move to a target heads for this position.
         var startPositions = new Dictionary<string, GridPosition>(round.Positions);
         var movers = new List<Mover>();
@@ -244,7 +247,7 @@ public static class RoundResolver
                     movers.Add(abilityMover);
                 continue;
             }
-            if (action?.Type != ActionType.Move || action.TargetCell is not { } target) continue;
+            if (action?.Type is not (ActionType.Move or ActionType.Disengage) || action.TargetCell is not { } target) continue;
 
             // Rooted (C8): the move doesn't happen, and is reported as blocked.
             if (ConditionMath.BlockingCondition(round.Conditions[combatantId], BlockKind.Move) is { } root)
@@ -266,10 +269,12 @@ public static class RoundResolver
 
             // A move to the combatant's own cell is a mover with a one-cell path: it never steps,
             // blocks like any stationary occupant, and still reports a (stay-put) result.
-            movers.Add(new Mover(combatantId, path, mover.Speed));
+            movers.Add(new Mover(combatantId, path, mover.Speed) { Disengaging = action.Type == ActionType.Disengage });
         }
 
         if (movers.Count == 0) return [];
+        // A combatant whose own action this tick moves it can't make opportunity attacks this tick (SPRINT_3B6 X5).
+        var moving = movers.Select(m => m.CombatantId).ToHashSet();
 
         var byId = movers.ToDictionary(m => m.CombatantId);
         int maxSteps = movers.Max(m => m.FullPath.Count - 1);
@@ -335,6 +340,7 @@ public static class RoundResolver
                 }
             }
 
+            var stepped = new List<(Mover Mover, GridPosition From, GridPosition To)>();
             foreach (var mover in active)
             {
                 if (blocked.Contains(mover.CombatantId))
@@ -343,6 +349,7 @@ public static class RoundResolver
                 }
                 else
                 {
+                    stepped.Add((mover, mover.FullPath[mover.CurrentStep], mover.FullPath[mover.CurrentStep + 1]));
                     mover.CurrentStep++;
                     round.Positions[mover.CombatantId] = mover.FullPath[mover.CurrentStep];
                     // Only steps actually taken use up the movement budget; an ability's own cells
@@ -351,6 +358,9 @@ public static class RoundResolver
                         round.CellsMoved[mover.CombatantId] = round.CellsMoved.GetValueOrDefault(mover.CombatantId) + 1;
                 }
             }
+
+            // The reaction hook (SPRINT_3B6 X1, X3): everything this step provoked resolves now, as one batch.
+            ResolveStepReactions(round, step + 1, stepped, moving);
         }
 
         foreach (var m in movers.Where(m => m.AbilityId is not null))
@@ -360,10 +370,91 @@ public static class RoundResolver
             m.CombatantId,
             m.FullPath.Take(m.CurrentStep + 1).ToList(),
             m.FullPath[m.CurrentStep],
-            m.Stopped,
-            m.BlockedBy,
-            m.AbilityId)).ToList();
+            m.Stopped && !m.Fell,
+            m.Fell ? null : m.BlockedBy,
+            m.AbilityId,
+            m.Fell ? StopReason.Fell : m.Stopped ? StopReason.Blocked : StopReason.None,
+            m.Disengaging)).ToList();
     }
+
+    // ----- Reactions at a movement step (3B.6) -----
+
+    /// <summary>
+    /// Passive opportunity attacks provoked by one lockstep step (SPRINT_3B6 X2, X3, X5): a mover that isn't
+    /// disengaging and steps from a cell within an enemy's melee reach to one outside it gives that enemy a free
+    /// melee weapon hit, if the enemy is standing, not stopped from acting (Stunned), makes opportunity attacks,
+    /// isn't moving this tick itself and hasn't already reacted this tick. Movers in plan order, then reactors in
+    /// combatant order; each rolls d20 then damage. The step's reactions are one netted batch, then the 0-HP check:
+    /// a mover dropped here stops on the cell it reached.
+    /// </summary>
+    private static void ResolveStepReactions(
+        RoundContext round, int step, List<(Mover Mover, GridPosition From, GridPosition To)> stepped, HashSet<string> moving)
+    {
+        if (stepped.Count == 0) return;
+        int reach = round.Config.MeleeReach;
+        var pending = new List<PendingAttack>();
+        var hpDeltas = new Dictionary<string, int>();
+        foreach (var (mover, from, to) in stepped)
+        {
+            if (mover.Disengaging) continue;
+            var moverState = round.Combatants[mover.CombatantId];
+            foreach (var reactor in round.State.Combatants)
+            {
+                if (reactor.Id == mover.CombatantId
+                    || !reactor.Profile.OpportunityAttacks
+                    || round.IsOut(reactor.Id)
+                    || moving.Contains(reactor.Id)
+                    || round.PassiveUsedThisTick.Contains(reactor.Id)
+                    || ConditionMath.IsBlocked(round.Conditions[reactor.Id], BlockKind.All)
+                    || Relations.Between(reactor, moverState) != Relation.Enemy
+                    || !round.Positions.TryGetValue(reactor.Id, out var at)
+                    || at.ChebyshevDistanceTo(from) > reach
+                    || at.ChebyshevDistanceTo(to) <= reach)
+                    continue;
+
+                round.PassiveUsedThisTick.Add(reactor.Id);
+                pending.Add(RollAttack(round, hpDeltas, reactor.Id, mover.CombatantId, ActionType.MeleeAttack,
+                    AttackKind.Melee, DamageSpec.Weapon, accuracyBonus: 0, WastedReason.None, ability: null,
+                    tags: OpportunityTags));
+            }
+        }
+        if (pending.Count == 0) return;
+
+        var hpBefore = new Dictionary<string, int>(round.Hp);
+        foreach (var (targetId, delta) in hpDeltas)
+            round.Hp[targetId] += delta;
+        var fell = new HashSet<string>();
+        ResolveFalls(round, fell);
+
+        foreach (var (mover, _, _) in stepped)
+            if (fell.Contains(mover.CombatantId))
+                mover.Stopped = mover.Fell = true;
+
+        foreach (var a in pending)
+            round.TickReactions.Add(new ReactionOutcome(a.AttackerId, a.TargetId, ReactionKind.Opportunity, AbilityId: null, step,
+                ToOutcome(round, a, hpBefore, fell)));
+    }
+
+    /// <summary>Source tags of an opportunity attack, for damage-taken modifiers (SPRINT_3B6 X5).</summary>
+    private static readonly string[] OpportunityTags = ["melee", "opportunity"];
+
+    private static AttackOutcome ToOutcome(RoundContext round, PendingAttack a, Dictionary<string, int> hpBefore, HashSet<string> fell) =>
+        new(a.AttackerId,
+            a.TargetId,
+            a.Type,
+            a.Hit,
+            a.Damage,
+            a.IsCrit,
+            TargetHpBefore: hpBefore.GetValueOrDefault(a.TargetId, 0),
+            TargetHpAfter: round.Hp.GetValueOrDefault(a.TargetId, 0),
+            TargetDefeated: fell.Contains(a.TargetId),
+            a.Wasted,
+            a.Roll,
+            TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
+            FinishingBlow: a.Finishing,
+            AbilityId: a.AbilityId,
+            MoveBonus: a.MoveBonus,
+            ConditionDamage: a.ConditionDamage);
 
     /// <summary>
     /// The mover for an ability's move effect (ABILITIES.md A5, A7), or null if it has none or the
@@ -400,7 +491,10 @@ public static class RoundResolver
         if (move.UsesMovementBudget)
             cells = Math.Min(cells, round.MovementRange[casterId] - round.CellsMoved.GetValueOrDefault(casterId));
         var path = LegalPrefix(ComputeChebyshevPath(start, destination), round.State, Math.Max(0, cells));
-        return new Mover(casterId, path, caster.Speed) { AbilityId = active.Ability.Id, UsesBudget = move.UsesMovementBudget };
+        return new Mover(casterId, path, caster.Speed)
+        {
+            AbilityId = active.Ability.Id, UsesBudget = move.UsesMovementBudget, Disengaging = move.Disengage,
+        };
     }
 
     /// <summary>
@@ -552,23 +646,7 @@ public static class RoundResolver
         // (DESIGN_SPIKE Decision 2).
         ResolveFalls(round, fellThisTick);
 
-        var attackOutcomes = pending.Select(a => new AttackOutcome(
-            a.AttackerId,
-            a.TargetId,
-            a.Type,
-            a.Hit,
-            a.Damage,
-            a.IsCrit,
-            TargetHpBefore: hpBefore.GetValueOrDefault(a.TargetId, 0),
-            TargetHpAfter: round.Hp.GetValueOrDefault(a.TargetId, 0),
-            TargetDefeated: fellThisTick.Contains(a.TargetId),
-            a.Wasted,
-            a.Roll,
-            TargetStatus: round.Status.GetValueOrDefault(a.TargetId, CombatantStatus.Standing),
-            FinishingBlow: a.Finishing,
-            AbilityId: a.AbilityId,
-            MoveBonus: a.MoveBonus,
-            ConditionDamage: a.ConditionDamage)).ToList();
+        var attackOutcomes = pending.Select(a => ToOutcome(round, a, hpBefore, fellThisTick)).ToList();
 
         var healOutcomes = heals.Select(h => new HealOutcome(
             h.HealerId,
@@ -688,9 +766,11 @@ public static class RoundResolver
     /// <summary>Rolls one attack (unless wasted) and adds its damage to the tick's netting batch.</summary>
     /// <param name="cellsMoved">Cells the same activation's move effect covered this tick (for <see cref="DamageSpec.BonusIfMoved"/>).</param>
     /// <param name="ability">The ability making the attack, or null for a basic attack (its tags filter damage-taken modifiers).</param>
+    /// <param name="tags">Source tags to use instead of the ability's or the attack kind's (opportunity attacks).</param>
     private static PendingAttack RollAttack(
         RoundContext round, Dictionary<string, int> hpDeltas, string attackerId, string targetId, ActionType type,
-        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, AbilityDefinition? ability, int cellsMoved = 0)
+        AttackKind kind, DamageSpec damage, int accuracyBonus, WastedReason wasted, AbilityDefinition? ability, int cellsMoved = 0,
+        IReadOnlyCollection<string>? tags = null)
     {
         bool hit = false, isCrit = false, finishing = false;
         int amount = 0, moveBonus = 0, conditionDamage = 0;
@@ -702,7 +782,7 @@ public static class RoundResolver
             // Conditions as they stand now: anything applied in this tick's Effects phase counts from the
             // next tick (SPRINT_3B4 C6). Defend's Guarded, applied at the start of the tick, already counts.
             var mods = new AttackConditions(
-                round.Conditions[attackerId], round.Conditions[targetId], ConditionMath.AttackTags(ability, kind));
+                round.Conditions[attackerId], round.Conditions[targetId], tags ?? ConditionMath.AttackTags(ability, kind));
             (hit, amount, isCrit, roll, moveBonus, conditionDamage) = ComputeAttack(
                 round.Combatants[attackerId], round.Combatants[targetId], kind, damage, accuracyBonus, round.Dice,
                 mods, rollDamage: !finishing, cellsMoved);
@@ -1048,8 +1128,12 @@ public static class RoundResolver
         public string? AbilityId { get; init; }
         /// <summary>Steps taken count toward the round's shared movement budget.</summary>
         public bool UsesBudget { get; init; } = true;
+        /// <summary>Provokes no passive opportunity attacks (Disengage, SPRINT_3B6 X4).</summary>
+        public bool Disengaging { get; init; }
         public int CurrentStep { get; set; }
         public bool Stopped { get; set; }
+        /// <summary>A reaction dropped it mid-path (it also has <see cref="Stopped"/>).</summary>
+        public bool Fell { get; set; }
         public string? BlockedBy { get; set; }
     }
 
@@ -1109,6 +1193,12 @@ public static class RoundResolver
         /// when the round started (C6). Conditions applied during the round don't change it.
         /// </summary>
         public Dictionary<string, int> MovementRange { get; }
+
+        /// <summary>Reactions in the current tick, in resolution order (3B.6).</summary>
+        public List<ReactionOutcome> TickReactions { get; } = [];
+
+        /// <summary>Combatants who have made their one passive reaction this tick (SPRINT_3B6 X5).</summary>
+        public HashSet<string> PassiveUsedThisTick { get; } = [];
 
         /// <summary>Conditions applied in the current tick, in order.</summary>
         public List<ConditionOutcome> TickConditions { get; } = [];

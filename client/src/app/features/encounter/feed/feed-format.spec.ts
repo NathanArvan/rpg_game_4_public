@@ -139,4 +139,11 @@ describe('formatFeedLine conditions (3B.4)', () => {
     expect(show(formatFeedLine('Kestrel is bleeding out — 2 rounds left', sides).segments))
       .toEqual(['[party]Kestrel', ' ', '[damage]is bleeding out — 2 rounds left']);
   });
+
+  it('styles an opportunity attack like an attack, not as an ability (3B.6)', () => {
+    const sides: NameSides = new Map([['Zara Forge', 'party'], ['Goblin 1', 'enemy']]);
+    expect(show(formatFeedLine("Goblin 1's opportunity attack on Zara Forge hits for 4 damage (HP: 12 → 8)", sides).segments))
+      .toEqual(['[enemy]Goblin 1', "'s opportunity attack on ", '[party]Zara Forge', ' hits ', '[damage]for 4 damage (HP: 12 → 8)']);
+    expect(show(formatFeedLine("Goblin 1's opportunity attack on Zara Forge misses", sides).segments).pop()).toBe('[miss]misses');
+  });
 });

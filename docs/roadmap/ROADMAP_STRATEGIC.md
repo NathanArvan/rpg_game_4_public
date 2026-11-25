@@ -100,9 +100,11 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
-### ⬜ Slice 3B.6 — Prepared Reactions & Opportunity Attacks
+### 🟡 Slice 3B.6 — Prepared Reactions & Opportunity Attacks
 
 *Split out of 3B.3 in November 2026 (`ABILITIES.md` A9). Runs after 3B.4.*
+
+*Status: in progress (`SPRINT_3B6.md`). PR 1 done: passive **opportunity attacks** (leaving an enemy's reach provokes a full weapon hit at that step; a mover it drops stops there), **Disengage** (2 AP, provokes none), the `opportunityAttacks` profile value, a threat preview on the move highlight, a playback cue, the AI Disengaging rather than walking out of reach, and the **Reactions** Quick Battle. Next: PR 2 (prepared reactions: Brace, Overwatch), PR 3 (attack triggers: Parry, Intercept).*
 
 Delivers: The reactive action framework from `TICK_RESOLUTION.md` Decisions 4–5. **Passive reactions:** opportunity attacks when an adjacent enemy moves away, and **Disengage** (a move that doesn't provoke them). **Prepared reactions:** an ability with `activation: "prepared"` takes a queue slot and AP and puts the combatant in a watching state for the rest of the round; it fires when its trigger is met (enemy enters/leaves melee range, enemy attacks me or an ally, enemy uses a tagged ability, ally HP drops below a threshold), with interrupt / simultaneous / response timing. Counterspell, overwatch, parry and intercept become possible. `EnemyAi` gets a minimal use (e.g. it doesn't walk out of melee range carelessly). Decisions to settle in its sprint doc: AP refund for unused prepared actions, duplicate triggers, same-tick readiness, whether Disengage avoids prepared movement reactions (current leans in `TICK_RESOLUTION.md` → Open Questions).
 
@@ -579,6 +581,10 @@ Ley point and resonance tuning defaults are in `MAGIC_SYSTEM.md`.
 | Doors | Doorways are gaps in v1; open / closed / locked doors later as interactive objects | This roadmap (Nov 2026) | Gaps cost nothing beyond walls; real doors need dynamic map state (3D.4) |
 | Healing a Downed ally | Brings them back to Standing with the healed HP; a finishing blow in the same tick wins | `ABILITIES.md` A8 (Nov 2026) | Makes healers a real role; Stabilize stays the cheap option anyone has |
 | Prepared reactions | Own slice (3B.6) after 3B.4, with opportunity attacks and Disengage | `ABILITIES.md` A9 (Nov 2026) | A separate framework (watching state, triggers, interrupts); keeps 3B.3 focused |
+| What provokes an opportunity attack | Only leaving an enemy's reach (entering is the Brace prepared reaction) | `SPRINT_3B6.md` X2 (Nov 2026) | Paths are server-picked, so an entering tax couldn't be planned around |
+| When an opportunity attack resolves | At the movement step that provoked it, netted per step; it stops the mover only if it drops them | `SPRINT_3B6.md` X3 (Nov 2026) | Reads naturally in playback; keeps the tick's Attack phase as it was |
+| Disengage cost | 2 AP (a move otherwise) | `SPRINT_3B6.md` X4 (Nov 2026) | At 1 AP it would cost nothing over a Move |
+| Opportunity attack strength | A full weapon hit; one per reactor per tick; nobody moving in the same tick reacts | `SPRINT_3B6.md` X5 (Nov 2026) | Makes retreating a real choice; stops two fighters stepping apart from trading free hits |
 | Environmental magic timing | Ability-side hooks in 3B.3; map side (ley points, resonance) in 3M.5 after 3M.2 | `ABILITIES.md` A12 (Nov 2026) | Ley points and resonance are map content and should land once, in the map file format |
 | High ground | Affects combat, not just movement | This roadmap (Nov 2026); details in `ELEVATION.md` | Makes elevation a tactical objective, like ley points |
 | Condition storage | JSON catalog, definition copied into each ability snapshot; active conditions in a per-encounter Redis hash | `SPRINT_3B4.md` C1, C13 (Nov 2026) | Same pattern as abilities; retuning never changes a running fight |

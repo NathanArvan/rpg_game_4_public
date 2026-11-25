@@ -1,4 +1,6 @@
-import { AttackResult, ConditionResult, HealResult, MovementResult, ResolutionPayload } from '../../../contracts/hub-contracts.generated';
+import {
+  AttackResult, ConditionResult, HealResult, MovementResult, ReactionResult, ResolutionPayload,
+} from '../../../contracts/hub-contracts.generated';
 import { wastedLabel } from '../../../core/services/playback-timeline';
 import { describeDuration } from '../condition-chips/condition-format';
 
@@ -8,7 +10,7 @@ import { describeDuration } from '../condition-chips/condition-format';
  * Pure, so it's easy to test; RoundTimelineComponent renders it.
  */
 
-export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'ability' | 'idle' | 'lost';
+export type SlotKind = 'move' | 'disengage' | 'melee_attack' | 'ranged_attack' | 'defend' | 'stabilize' | 'ability' | 'idle' | 'lost';
 
 /** What happened. 'none' = nothing to report (idle, lost). */
 export type SlotOutcome =
@@ -25,6 +27,8 @@ export interface LaneSlot {
   label: string;
   /** What happened, with the roll for attacks. */
   detail: string;
+  /** This combatant's move drew a reaction this tick (an opportunity attack, 3B.6): shown as ⚔ on the cell. */
+  provoked: boolean;
 }
 
 export interface Lane {
@@ -37,6 +41,7 @@ export interface Lane {
 
 const ICONS: Record<SlotKind, string> = {
   move: '➜',
+  disengage: '🏃',
   melee_attack: '⚔',
   ranged_attack: '🏹',
   defend: '🛡',
@@ -48,6 +53,7 @@ const ICONS: Record<SlotKind, string> = {
 
 const ACTION_NAMES: Record<string, string> = {
   move: 'Move',
+  disengage: 'Disengage',
   melee_attack: 'Melee attack',
   ranged_attack: 'Ranged attack',
   defend: 'Defend',
@@ -79,10 +85,12 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
   for (const tick of payload.ticks)
     for (const u of tick.abilityUses ?? []) abilityNames.set(u.abilityId, u.abilityName);
 
-  // The tick each combatant fell in (went down or died): its later actions never happen.
+  // The tick each combatant fell in (went down or died): its later actions never happen. Reactions (3B.6) can drop
+  // someone mid-move, before the tick's attacks.
   const defeatedIn = new Map<string, number>();
   payload.ticks.forEach((tick, i) => {
-    for (const a of tick.attacks)
+    const reactionAttacks = (tick.reactions ?? []).flatMap(r => r.attack ? [r.attack] : []);
+    for (const a of [...reactionAttacks, ...tick.attacks])
       if (a.targetDefeated && !defeatedIn.has(a.targetId)) defeatedIn.set(a.targetId, i);
   });
 
@@ -95,7 +103,8 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
   return queues.map(q => {
     const name = q.combatantName;
     const downAt = defeatedIn.get(q.combatantId);
-    const slots: LaneSlot[] = payload.ticks.map((tick, i) => {
+    const slots: LaneSlot[] = payload.ticks.map((tick, i) => withReactions(tick.reactions ?? [], q.combatantId, buildSlot(tick, i)));
+    function buildSlot(tick: ResolutionPayload['ticks'][number], i: number): LaneSlot {
       const action = q.actions[i];
       const isDown = downAt !== undefined && i > downAt;
 
@@ -119,11 +128,13 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       const stopped = (tick.blocked ?? []).find(b => b.combatantId === q.combatantId);
       if (stopped) return slot(i, kind, action.apCost, 'stopped', label, `${stopped.feedText}: this ${lowerFirst(what)} never happens.`);
 
-      if (kind === 'move') {
+      if (kind === 'move' || kind === 'disengage') {
         const m = tick.movements.find(r => r.combatantId === q.combatantId);
         if (!m) return lost();
         const cells = m.path.length - 1;
         const { x, y } = m.finalPosition;
+        if (m.stopReason === 'fell')
+          return slot(i, kind, action.apCost, 'stopped', label, `${name} falls at (${x}, ${y}) after ${cells} ${cells === 1 ? 'cell' : 'cells'}.`);
         if (m.wasBlocked) {
           const by = m.blockedByCombatantId ? ` by ${nameOf(m.blockedByCombatantId)}` : '';
           return slot(i, kind, action.apCost, 'blocked', label,
@@ -195,7 +206,7 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       return slot(i, kind, action.apCost, 'defended', label, guard
         ? `${name} defends: ${guard.conditionName} (+3 Dodge) until the end of the round.`
         : `${name} defends.`);
-    });
+    }
 
     return {
       combatantId: q.combatantId,
@@ -213,14 +224,25 @@ function lowerFirst(text: string): string {
 }
 
 function slot(tick: number, kind: SlotKind, apCost: number, outcome: SlotOutcome, label: string, detail: string): LaneSlot {
-  return { tick, kind, apCost, icon: ICONS[kind], outcome, label, detail };
+  return { tick, kind, apCost, icon: ICONS[kind], outcome, label, detail, provoked: false };
+}
+
+/** Marks a slot whose combatant drew reactions this tick (3B.6) and adds their lines, with the rolls, to its detail. */
+function withReactions(reactions: ReactionResult[], combatantId: string, s: LaneSlot): LaneSlot {
+  const mine = reactions.filter(r => r.triggerId === combatantId);
+  if (mine.length === 0) return s;
+  const lines = mine.map(r => {
+    const what = r.kind === 'opportunity' ? 'Opportunity attack' : r.abilityName ?? 'Reaction';
+    return r.attack ? `${what} (step ${r.step}): ${attackDetail(r.reactorName, r.attack)}` : `${what} (step ${r.step}) by ${r.reactorName}.`;
+  });
+  return { ...s, provoked: true, detail: `${s.detail} ⚔ ${lines.join(' ')}` };
 }
 
 function actionLabel(
   type: string, targetName: string | null, cell: { x: number; y: number } | null, abilityName: string | null = null,
 ): string {
   const action = type === 'ability' ? abilityName ?? 'Ability' : ACTION_NAMES[type] ?? type;
-  if ((type === 'move' || type === 'ability') && cell) return `${action} to (${cell.x}, ${cell.y})`;
+  if ((type === 'move' || type === 'disengage' || type === 'ability') && cell) return `${action} to (${cell.x}, ${cell.y})`;
   return targetName ? `${action} on ${targetName}` : action;
 }
 

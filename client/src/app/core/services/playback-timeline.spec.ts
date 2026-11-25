@@ -1,7 +1,7 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import {
   makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeBlocked, makeConditionResult, makeEffect,
-  makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeTick,
+  makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeReaction, makeTick,
 } from '../../testing/builders';
 import { PLAYBACK_TIMING, buildTimeline, periodicIcon, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
 
@@ -390,6 +390,64 @@ describe('playback timeline: conditions (3B.4)', () => {
       expect(periodicIcon(['flame'])).toBe('🔥');
       expect(periodicIcon(['poison'])).toBe('☠');
       expect(periodicIcon([])).toBe('');
+    });
+  });
+
+  describe('reactions (3B.6)', () => {
+    it('shows an opportunity attack in the movement beat of the step it fired on, and holds that beat to read it', () => {
+      const beats = buildTimeline(payload(tick(0, {
+        movements: [move('a', [[5, 5], [4, 5], [3, 5]])],
+        reactions: [makeReaction({ reactorId: 'g', triggerId: 'a', step: 1 })],
+      }), ), PLAYBACK_TIMING);
+
+      expect(beats.map(b => b.phase)).toEqual(['movement', 'movement']);
+      const [first, second] = beats;
+      expect(first.auras).toEqual([{ combatantId: 'g', kind: 'lunge' }, { combatantId: 'a', kind: 'hurt' }]);
+      expect(first.floats).toEqual([
+        { combatantId: 'g', text: 'OPPORTUNITY', kind: 'reaction' },
+        { combatantId: 'a', text: '⚔ -3', kind: 'damage' },
+      ]);
+      expect(first.hp).toEqual({ a: 7 });
+      expect(first.durationMs).toBe(PLAYBACK_TIMING.reactionMs);
+      expect(first.feed).toEqual(['— Round 1 Resolution —', 'a moves to (3, 5)', "g's opportunity attack on a hits for 3 damage (HP: 10 → 7)"]);
+      expect(second.auras).toBeUndefined();
+      expect(second.durationMs).toBe(second.moveMs!);
+    });
+
+    it('shows MISS over the mover for a miss', () => {
+      const [beat] = buildTimeline(payload(tick(0, {
+        movements: [move('a', [[5, 5], [4, 5]])],
+        reactions: [makeReaction({ reactorId: 'g', triggerId: 'a', attack: makeAttack({ attackerId: 'g', targetId: 'a', hit: false }) })],
+      })));
+      expect(beat.floats).toContain({ combatantId: 'a', text: 'MISS', kind: 'miss' });
+      expect(beat.hp).toBeUndefined();
+    });
+
+    it('stops a mover dropped mid-path where it fell, with DOWN and "falls at" after the reaction line', () => {
+      const fell = makeMove({ combatantId: 'a', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }], stopReason: 'fell' });
+      const beats = buildTimeline(makePayload({
+        ticks: [tick(0, {
+          movements: [fell, move('b', [[0, 0], [1, 0], [2, 0]])],
+          reactions: [makeReaction({
+            reactorId: 'g', triggerId: 'a', feedText: 'g hits a — goes down!',
+            attack: makeAttack({ attackerId: 'g', targetId: 'a', hit: true, damage: 5, targetNewHp: 0, targetDefeated: true, targetStatus: 'downed' }),
+          })],
+        })],
+        updatedCombatants: [makePlanningCombatant({ id: 'a', status: 'downed', bleedoutRoundsLeft: 2, isDefeated: true })],
+      }));
+
+      expect(beats[0].positions).toEqual({ a: { x: 4, y: 5 }, b: { x: 1, y: 0 } });
+      expect(beats[0].statuses).toEqual({ a: { status: 'downed', bleedoutRoundsLeft: 2 } });
+      expect(beats[0].floats).toContain({ combatantId: 'a', text: 'DOWN', kind: 'damage' });
+      expect(beats[0].feed).toEqual(['— Round 1 Resolution —', 'b moves to (2, 0)', 'g hits a — goes down!', 'a falls at (4, 5)']);
+      expect(beats[1].positions).toEqual({ b: { x: 2, y: 0 } }); // the fallen mover takes no more steps
+    });
+
+    it('says "disengages to" for a Disengage', () => {
+      const [beat] = buildTimeline(payload(tick(0, {
+        movements: [makeMove({ combatantId: 'a', path: [{ x: 5, y: 5 }, { x: 4, y: 5 }], disengaging: true })],
+      })));
+      expect(beat.feed).toContain('a disengages to (4, 5)');
     });
   });
 });

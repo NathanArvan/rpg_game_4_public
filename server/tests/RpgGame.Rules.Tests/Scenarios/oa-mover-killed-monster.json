@@ -1,0 +1,19 @@
+{
+  // SPRINT_3B6 X3: a monster killed by an opportunity attack mid-Charge stops there, and its Charge strike (same
+  // tick, Attack phase) never happens. The Charge was still used, so its cooldown starts.
+  "description": "Opportunity attacks: a goblin charging away from the Bruiser dies on its first step",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5] },
+    { "id": "Goblin",  "side": "enemy", "hp": 3, "maxHp": 10, "at": [5, 6], "abilities": ["charge"] },
+    { "id": "Archer",  "side": "party", "at": [5, 12] }
+  ],
+  "plans": { "Goblin": ["ability charge Archer"] },
+  "dice": [15, 6],
+  "expect": {
+    "positions": { "Goblin": [5, 7] },
+    "status": { "Goblin": "dead" },
+    "hp": { "Archer": 20 },
+    "cooldowns": { "Goblin": { "charge": 2 } },
+    "events": ["t1 Goblin uses charge on Archer", "t1 Goblin moves to 5,7 (charge)", "t1 s1 Bruiser opportunity Goblin: hit 6, Goblin dead", "t1 s1 Goblin falls"]
+  }
+}

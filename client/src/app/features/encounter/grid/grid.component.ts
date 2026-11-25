@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_AP_COSTS, MELEE_REACH, abilityCellError, abilityTakesCell, abilityTakesTargets, apCost, apSpent, canAfford,
   blockOf, canAffordEntry, canTargetWithAbility, chebyshev, chebyshevPath, describeQueue, entry, entryMoves, estimateMoveToTarget,
-  maxTargets, skipsRoundReason, walkQueue,
+  isMoveType, maxTargets, provokedBy, skipsRoundReason, Threat, walkQueue,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -86,6 +86,8 @@ export class GridComponent implements OnInit {
   pickedTargetIds: string[] = [];
   /** The token under the pointer, for the Charge path preview. */
   hoveredCombatantId: string | null = null;
+  /** The next move click queues a Disengage (3B.6): no opportunity attacks, 2 AP. Turns off once used. */
+  disengageArmed = false;
   private gridWidth = 20;
   private gridHeight = 20;
 
@@ -124,7 +126,10 @@ export class GridComponent implements OnInit {
     this.store.select(EncounterState.myPlannedActions).subscribe(plans => this.myPlans = plans);
     this.store.select(EncounterState.selectedCombatantId).subscribe(id => this.selectedCombatantId = id);
     // A new round means nobody is locked in yet.
-    this.store.select(EncounterState.roundNumber).subscribe(() => this.lockedIn = false);
+    this.store.select(EncounterState.roundNumber).subscribe(() => {
+      this.lockedIn = false;
+      this.disengageArmed = false;
+    });
     this.store.select(EncounterState.gmSelectedEnemyId).subscribe(id => this.gmSelectedEnemyId = id);
     this.store.select(EncounterState.enemyPlannedActions).subscribe(plans => this.enemyPlannedActions = plans);
     this.store.select(EncounterState.apCosts).subscribe(costs => this.apCosts = costs);
@@ -357,7 +362,8 @@ export class GridComponent implements OnInit {
   private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
     const start = this.positions[combatant.id];
     if (skipsRoundReason(combatant) || blockOf(combatant.blocks, 'move')) return false; // Stunned / Rooted (3B.4)
-    if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts, combatant.abilities)) return false;
+    const moveType = !this.isGm && this.disengageArmed ? 'disengage' : 'move';
+    if (!start || !canAfford(queue, moveType, combatant.maxAp, this.apCosts, combatant.abilities)) return false;
     const { position, cells } = this.walk(combatant, queue);
     const from = position!;
     const cellsLeft = combatant.movementRange - cells;
@@ -370,15 +376,60 @@ export class GridComponent implements OnInit {
     return this.enemyPlannedActions[combatantId] ?? [];
   }
 
+  // ----- Threat preview (3B.6) -----
+
+  /**
+   * The enemies a plain move to this highlighted cell would step out of the reach of (SPRINT_3B6 X2): each would
+   * get an opportunity attack. From planning positions only; nothing while Disengage is armed (it provokes none).
+   */
+  provokersAt(cell: Cell): Threat[] {
+    if (this.disengageArmed || !this.isInRange(cell)) return [];
+    const mover = this.isGm ? this.combatants.find(c => c.id === this.gmSelectedEnemyId) : this.selected;
+    if (!mover) return [];
+    const from = this.walk(mover, this.isGm ? this.enemyQueue(mover.id) : this.selectedPlan).position;
+    if (!from) return [];
+    const threats = this.combatants
+      .filter(c => c.combatantType !== mover.combatantType && c.status === 'standing' && c.opportunityAttacks
+        && !skipsRoundReason(c) && this.positions[c.id])
+      .map(c => ({ id: c.id, name: c.characterName, position: this.positions[c.id] }));
+    return provokedBy(chebyshevPath(from, cell), threats);
+  }
+
+  isThreatened(cell: Cell): boolean {
+    return this.provokersAt(cell).length > 0;
+  }
+
+  /** "Provokes an opportunity attack from Goblin", for the threatened cell's tooltip. */
+  threatTitle(cell: Cell): string | null {
+    const names = this.provokersAt(cell).map(t => t.name);
+    if (names.length === 0) return null;
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    const attacks = names.length === 1 ? 'an opportunity attack' : 'opportunity attacks';
+    return `Provokes ${attacks} from ${who} (if they stay put). Disengage avoids it.`;
+  }
+
+  /** Disengage is offered: the selected character can move and afford it (2 AP). */
+  get canAffordDisengage(): boolean {
+    const selected = this.selected;
+    return !!selected && !skipsRoundReason(selected) && !blockOf(selected.blocks, 'move')
+      && canAfford(this.selectedPlan, 'disengage', selected.maxAp, this.apCosts, selected.abilities);
+  }
+
+  toggleDisengage(): void {
+    if (this.lockedIn) return;
+    this.disengageArmed = !this.disengageArmed && this.canAffordDisengage;
+    if (this.disengageArmed && this.armedAbilityId) this.store.dispatch(new DisarmAbility());
+  }
+
   isEnemyGhostTarget(cell: Cell): boolean {
     return Object.values(this.enemyPlannedActions).some(queue => queue.some(a =>
-      (a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
+      (isMoveType(a.type) || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
   /** A cell one of your characters plans to move to (a move, or an ability that moves to a cell). */
   isGhostTarget(cell: Cell): boolean {
     return Object.values(this.myPlans).some(plan => plan.some(a =>
-      (a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
+      (isMoveType(a.type) || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y));
   }
 
   /** Queue step (1-based) of the selected character's move to this cell, for the marker on the grid. */
@@ -387,7 +438,7 @@ export class GridComponent implements OnInit {
     if (plan.length < 2) return null;
     for (let i = plan.length - 1; i >= 0; i--) {
       const a = plan[i];
-      if ((a.type === 'move' || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y) return i + 1;
+      if ((isMoveType(a.type) || a.type === 'ability') && a.targetCell?.x === cell.x && a.targetCell?.y === cell.y) return i + 1;
     }
     return null;
   }
@@ -395,7 +446,7 @@ export class GridComponent implements OnInit {
   /** The last queued action is a move to this cell (clicking it again undoes it). */
   private isLastMoveTarget(cell: Cell): boolean {
     const last = this.selectedPlan[this.selectedPlan.length - 1];
-    return last?.type === 'move' && last.targetCell?.x === cell.x && last.targetCell?.y === cell.y;
+    return !!last && isMoveType(last.type) && last.targetCell?.x === cell.x && last.targetCell?.y === cell.y;
   }
 
   isTargeted(combatant: Combatant): boolean {
@@ -553,11 +604,13 @@ export class GridComponent implements OnInit {
   }
 
   toggleAbility(abilityId: string): void {
+    this.disengageArmed = false;
     this.store.dispatch(this.armedAbilityId === abilityId ? new DisarmAbility() : new ArmAbility(abilityId));
   }
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    this.disengageArmed = false;
     if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
   }
 
@@ -713,7 +766,8 @@ export class GridComponent implements OnInit {
     } else if (!targetCombatant && this.isLastMoveTarget(cell)) {
       this.undoLast();
     } else if (this.isInRange(cell)) {
-      this.plan(myCombatant, entry('move', { targetCell: { x: cell.x, y: cell.y } }));
+      this.plan(myCombatant, entry(this.disengageArmed ? 'disengage' : 'move', { targetCell: { x: cell.x, y: cell.y } }));
+      this.disengageArmed = false;
     }
   }
 
@@ -777,6 +831,7 @@ export class GridComponent implements OnInit {
   onLockIn(): void {
     if (this.lockedIn || this.actingPlannedCount === 0) return;
     this.lockedIn = true;
+    this.disengageArmed = false;
     if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
     this.hub.lockIn(this.joinCode);
   }

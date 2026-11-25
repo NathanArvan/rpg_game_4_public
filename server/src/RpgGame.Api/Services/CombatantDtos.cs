@@ -24,7 +24,8 @@ internal static class CombatantDtos
         CombatProfileMapping.MovementRange(c.Profile),
         CombatProfileMapping.MaxAp(c.Profile),
         Abilities(c.Profile),
-        []);
+        [],
+        CombatProfileMapping.OpportunityAttacks(c.Profile));
 
     /// <param name="cooldowns">Abilities on cooldown at the start of the planning phase (3B.3); null = none.</param>
     /// <param name="conditions">Conditions at the start of the planning phase (3B.4); null = none.</param>
@@ -57,7 +58,8 @@ internal static class CombatantDtos
         conditions.Select(ActiveCondition).ToList(),
         CombatProfileMapping.MovementRange(c.Profile),
         CombatProfileMapping.MaxAp(c.Profile),
-        Blocks(rulesConditions));
+        Blocks(rulesConditions),
+        CombatProfileMapping.OpportunityAttacks(c.Profile));
     }
 
     /// <summary>What the conditions stop the combatant doing (3B.4 PR 3): "all" and/or "move", with the condition that does it.</summary>

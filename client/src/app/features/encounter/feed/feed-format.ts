@@ -43,8 +43,8 @@ const SAVE = String.raw`stabilizes|for \d+ \(HP: \d+ → \d+\)(?: — back on th
 // Ability names in the server's ability lines (3B.3): after "X's " and before " hits / misses / on ",
 // or after "uses " / "can't use " and before " on " / " —" / the end; and in movement lines made by
 // an ability: "moves to (9, 5) with Dash", "stays at (5, 6) (Charge)".
-// (Not the basic "X's attack on …" and "X's stabilize on …" lines.)
-const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) |: )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
+// (Not the basic "X's attack on …", "X's stabilize on …" and "X's opportunity attack on …" (3B.6) lines.)
+const ABILITY = String.raw`(?<='s )(?!attack |stabilize |opportunity attack )[\p{L}\p{N} ]+?(?= (?:hits|misses|heals|on) |: )|(?<=(?:uses|can't use) )[\p{L}\p{N} ]+?(?= on | —|$)|(?<=\) with )[\p{L}\p{N} ]+?(?= \(blocked\)|$)|(?<=\) \()[\p{L}\p{N} ]+?(?=\)$)`;
 
 // Condition names in the server's condition lines (3B.4): after "is ", "is still ", "is no longer ",
 // "isn't " or "resists ", a capitalised name, up to " until", " for N", ",", " —" or the end; and in periodic
