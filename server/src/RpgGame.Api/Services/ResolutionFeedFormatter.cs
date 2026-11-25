@@ -35,10 +35,17 @@ internal static class ResolutionFeedFormatter
     /// <summary>
     /// A reaction (3B.6): "Goblin's opportunity attack on Mira hits for 4 damage (HP: 12 → 8)", "… misses",
     /// "… — goes down!", "… — defeated!". A prepared reaction reads like an ability attack, named after its ability:
-    /// "Brakka's Brace hits Goblin for 6 damage (HP: 10 → 4)".
+    /// "Brakka's Brace hits Goblin for 6 damage (HP: 10 → 4)". An attack trigger (3B.6 PR 3) makes no attack of its own:
+    /// "Kestrel parries (+4 Dodge)", "Brakka intercepts Goblin's attack on Mira".
     /// </summary>
-    public static string Reaction(ReactionOutcome reaction, string reactorName, string triggerName, string? abilityName)
+    /// <param name="interceptedFromName">Intercept: the name of the ally the attack was meant for.</param>
+    public static string Reaction(
+        ReactionOutcome reaction, string reactorName, string triggerName, string? abilityName, string? interceptedFromName = null)
     {
+        if (reaction.InterceptedFromId is not null)
+            return $"{reactorName} intercepts {triggerName}'s attack on {interceptedFromName}";
+        if (reaction.ReactionDodge != 0)
+            return $"{reactorName} parries (+{reaction.ReactionDodge} Dodge)";
         if (reaction.Attack is not { } attack) return $"{reactorName}'s {abilityName} fires";
         // A prepared reaction reads like an ability attack: "Brakka's Brace hits Goblin for 6 damage (HP: 10 → 4)".
         if (reaction.Kind == ReactionKind.Prepared) return AbilityAttack(attack, reactorName, triggerName, abilityName ?? "reaction");

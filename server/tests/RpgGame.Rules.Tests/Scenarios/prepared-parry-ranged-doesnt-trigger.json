@@ -1,0 +1,15 @@
+{
+  // SPRINT_3B6 X13: Parry is melee only ("attackKind": "melee"). An arrow doesn't set it off: it keeps watching, and
+  // with nothing else coming it goes unused.
+  "description": "Parry: a ranged attack doesn't trigger it",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [5, 5], "abilities": ["parry"] },
+    { "id": "Archer",  "side": "enemy", "at": [12, 5] }
+  ],
+  "plans": { "Kestrel": ["ability parry"], "Archer": ["ranged Kestrel"] },
+  "dice": [11, 4],
+  "expect": {
+    "hp": { "Kestrel": 16 },
+    "events": ["t1 Archer ranged Kestrel: hit 4", "end Kestrel: parry unused"]
+  }
+}

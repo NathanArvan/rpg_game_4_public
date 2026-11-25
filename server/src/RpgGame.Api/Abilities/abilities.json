@@ -192,6 +192,22 @@
       "trigger": { "kind": "enemy_moves_within", "range": 6 },
       "target": { "kind": "trigger" },
       "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
+    },
+    {
+      "id": "parry", "name": "Parry", "activation": "prepared",
+      "description": "Ends your queue. The first time an enemy swings at you this round, you get +4 Dodge against every melee attack on you that tick.",
+      "ap": 1, "cooldown": 1, "tags": ["melee"],
+      "trigger": { "kind": "attacked", "attackKind": "melee" },
+      "target": { "kind": "self" },
+      "effects": [ { "kind": "modify_incoming", "dodge": 4 } ]
+    },
+    {
+      "id": "intercept", "name": "Intercept", "activation": "prepared",
+      "description": "Ends your queue. Until the end of the round, take the first single-target attack an enemy makes on an adjacent ally.",
+      "ap": 1, "cooldown": 2, "tags": ["melee"],
+      "trigger": { "kind": "ally_attacked", "range": 1 },
+      "target": { "kind": "self" },
+      "effects": [ { "kind": "redirect" } ]
     }
   ]
 }

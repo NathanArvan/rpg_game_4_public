@@ -181,7 +181,7 @@ Explicitly queued during planning. Cost AP. Occupy a slot in the action queue. M
 
 A prepared action does not resolve at its queue position. Instead, it places the combatant in a **watching** state for the remainder of the round. If the trigger condition is met during any subsequent tick, the reaction fires. If the trigger never fires, the AP is spent and nothing happens.
 
-> **As built (3B.6 PR 2, `SPRINT_3B6.md` X6–X12):** a prepared reaction is an **ability** with `"activation": "prepared"` and a `trigger` (`enemy_enters_reach`, `enemy_moves_within` + `range`; `attacked` and `ally_attacked` arrive in PR 3), targeting `"trigger"` (whoever set it off). It's queued as an ordinary `{ "type": "ability", "abilityId": "brace" }` with no target and must be the **last action in the queue**. It starts watching at the start of its own tick (same-tick readiness), its cooldown starts then whether or not it fires, it fires once, and it stops when it fires, the watcher falls or is Stunned (from the next tick), or the round ends (reported as unused; no AP refund). Movement triggers are checked at the same step hook as opportunity attacks and resolve in the same netted batch. Several watchers on the same event all fire. The schema below is the original sketch.
+> **As built (3B.6 PR 2, `SPRINT_3B6.md` X6–X12):** a prepared reaction is an **ability** with `"activation": "prepared"` and a `trigger` (`enemy_enters_reach`, `enemy_moves_within` + `range`; PR 3: `attacked` (+ `attackKind`) and `ally_attacked` (+ `range`)), targeting `"trigger"` (whoever set it off; attack triggers target `"self"`). It's queued as an ordinary `{ "type": "ability", "abilityId": "brace" }` with no target and must be the **last action in the queue**. It starts watching at the start of its own tick (same-tick readiness), its cooldown starts then whether or not it fires, it fires once, and it stops when it fires, the watcher falls or is Stunned (from the next tick), or the round ends (reported as unused; no AP refund). Movement triggers are checked at the same step hook as opportunity attacks and resolve in the same netted batch. Several watchers on the same event all fire. The schema below is the original sketch.
 
 **Schema:**
 
@@ -236,6 +236,9 @@ For each tick:
     Phase 2: Attacks
         Collect proactive attacks at this queue position
         → Check prepared reactions with attack triggers (parry, intercept, counterspell)
+          (as built, 3B.6 PR 3: every attack is collected with its reach check first; then Intercept
+           redirects the first single-target attack on an adjacent ally, then Parry adds +4 Dodge to
+           every melee attack on the parrier; then the attacks roll in plan order as before)
             → Interrupt-timing reactions resolve BEFORE attack computation
             → Simultaneous-timing reactions are added to the attack batch
         Snapshot HP → compute hits → compute damage → apply deltas → check defeats
@@ -295,7 +298,7 @@ Players must weigh: "Is spending 1 AP on safe movement worth it, or do I eat the
 
 ### Built in 3B.6
 
-Opportunity attacks and Disengage landed in 3B.6 PR 1: after each lockstep movement step the resolver finds the opportunity attacks that step provoked, rolls them, nets them as one batch and runs the 0-HP check (`RoundResolver.ResolveStepReactions`, `SPRINT_3B6.md` X3). PR 2 added prepared movement reactions (Brace: an enemy steps into reach; Overwatch: an enemy moves within 6) to the same hook and batch: movers in plan order, then reactors in combatant order, a reactor's opportunity attack before its prepared one. Attack triggers (Parry, Intercept) follow in PR 3, before the Attack phase rolls.
+Opportunity attacks and Disengage landed in 3B.6 PR 1: after each lockstep movement step the resolver finds the opportunity attacks that step provoked, rolls them, nets them as one batch and runs the 0-HP check (`RoundResolver.ResolveStepReactions`, `SPRINT_3B6.md` X3). PR 2 added prepared movement reactions (Brace: an enemy steps into reach; Overwatch: an enemy moves within 6) to the same hook and batch: movers in plan order, then reactors in combatant order, a reactor's opportunity attack before its prepared one. PR 3 added attack triggers, checked once per tick after the Movement phase and before any Attack-phase roll (`ResolveAttackTriggers`): **Intercept** takes the first single-target attack by an enemy on an ally within 1 (reach waived, the interceptor's own Dodge and conditions apply), then **Parry** adds +4 Dodge against every melee attack on the parrier that tick. A wasted attack (out of reach, target down) triggers nothing; multi-target and `auto` attacks aren't redirected.
 ---
 
 ## Decision 6: Path-Based Movement ✅

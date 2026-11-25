@@ -2,7 +2,7 @@
 
 > **Purpose:** Implementation guide for Slice 3B.6. Hand this to Claude Code alongside `CLAUDE.md`. The starting point is `TICK_RESOLUTION.md` Decisions 4 (reactive actions) and 5 (opportunity attacks and Disengage). The decisions below (X1–X16) make those concrete, and a few of them **change** D5 (see X2, X4). They are all settled; treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` and `SPRINT_3B4.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (A1 reserves `activation: "prepared"` for this slice, A9 split it out).
 >
-> **Status:** 🟡 In progress. PR 1 (opportunity attacks & Disengage) and PR 2 (prepared reactions: Brace, Overwatch) done; PR 3 to do. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
+> **Status:** ✅ Done. PR 1 (opportunity attacks & Disengage), PR 2 (prepared reactions: Brace, Overwatch) and PR 3 (attack triggers: Parry, Intercept) are done. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
 >
 > **Goal:** Movement has a cost near enemies. Stepping out of an enemy's reach gives them a free **opportunity attack** (a full weapon hit, rolled and applied on the spot), unless the mover pays for a **Disengage**. Combatants can also spend AP and the rest of their queue on a **prepared reaction**: they watch for a trigger for the rest of the round and act the moment it happens. 3B.6 ships movement triggers (**Brace**: strike whoever steps into reach; **Overwatch**: shoot the first enemy who moves nearby) and attack triggers (**Parry**: harder to hit for the attacks aimed at you; **Intercept**: take a hit meant for an adjacent ally). The enemy AI uses them a little. All of it can be tried in a new **Reactions** Quick Battle.
 
@@ -341,6 +341,18 @@ Reactions preset: the Bruiser gets Brace, the Scout Overwatch, the Brute Brace, 
 ---
 
 ## PR 3 — Attack triggers
+
+*Status: done. Differences from the plan below:*
+- *`ResolveAttackPhase` now collects every attack and heal of the tick first (with its reach check), runs `ResolveAttackTriggers` on that list, then rolls in the same order as before, so no existing dice order changed.*
+- *Watchers are checked in **combatant order** (as in PR 1 and 2), Intercept watchers first, then Parry watchers on the final targets.*
+- *Intercept takes only an attack by an **enemy** of the watcher (a party member hitting another isn't taken). When it takes an ability's attack, that ability's targets follow it, so a condition that needs the hit (Shield Bash's stun) lands on the interceptor, with the range waived like the attack's.*
+- *Parry's extra Dodge covers every **matching** attack on the parrier that tick (melee, per its `attackKind`), not ranged ones.*
+- *Attack-trigger reactions are reported in `TickOutcome.Reactions` with `Step` 0 and no attack; `ReactionOutcome` gained `InterceptedFromId` (Intercept) and `ReactionDodge` (Parry), used for the feed lines. The attack itself carries `AttackOutcome.InterceptedFromId` and `AttackRoll.ReactionDodge`. No hub contract changed (PR 1 had added the fields).*
+- *Both abilities target `"self"`. `AbilityCatalog`: an `attacked` reaction takes exactly one `modify_incoming` effect (`dodge` 1–10), an `ally_attacked` one exactly one `redirect` (`range` optional, default melee reach); movement triggers still take only `attack` effects (targeting `"trigger"`); `modify_incoming` / `redirect` are refused on active abilities; `attackKind` only on `attacked` (`melee` / `ranged`).*
+- *The effect's `Dodge` is stored in the ability snapshot: migration **`AddAttackReactions`** (model snapshot only).*
+- *Client: Parry gets a blue (buff) aura and "⚡ PARRY" on the attacks beat; Intercept "⚡ INTERCEPT" on the interceptor, who the attack's number lands on; the reaction's feed line comes before the attack lines. The round timeline shows "(+4 Parry)" after the dodge and "(intercepted)" after the target.*
+- *Reactions preset: with Parry, the Brute's 1 AP left after Power Strike now goes on Parry. The E2E test is in `quick-battle.spec.ts` (unseeded, the intercept line is deterministic): the Skirmisher steps to (10, 10), next to the Bruiser, and the Bruiser intercepts Goblin 1's swing at her (the Brute attacks the Bruiser himself, so his own Intercept can't take that).*
+- *Extra scenario: `prepared-intercept-condition-follows.json`.*
 
 ### Rules
 

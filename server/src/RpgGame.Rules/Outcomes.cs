@@ -96,13 +96,22 @@ public enum ReactionKind
 /// <param name="AbilityId">The prepared ability that fired, or null for an opportunity attack.</param>
 /// <param name="Step">The movement step it fired on, from 1 (the mover's step 1 is its first cell after the start).</param>
 /// <param name="Attack">The attack it made. Its HP before / after are the target's HP around that step's batch.</param>
+/// <remarks>Attack triggers (3B.6 PR 3) fire before the Attack phase rolls: <paramref name="Step"/> is 0 and
+/// <paramref name="Attack"/> null; <paramref name="TriggerId"/> is the attacker (for Parry, the first one in plan order).</remarks>
 public sealed record ReactionOutcome(
     string ReactorId,
     string TriggerId,
     ReactionKind Kind,
     string? AbilityId,
     int Step,
-    AttackOutcome? Attack);
+    AttackOutcome? Attack)
+{
+    /// <summary>Intercept: the ally the attack was meant for (the attack is in the tick's attacks, made on the reactor).</summary>
+    public string? InterceptedFromId { get; init; }
+
+    /// <summary>Parry: the Dodge it added against every matching attack on the reactor this tick.</summary>
+    public int ReactionDodge { get; init; }
+}
 
 /// <summary>Why a mover stopped short of the end of its path (3B.6, SPRINT_3B6 X14).</summary>
 public enum StopReason
@@ -252,6 +261,9 @@ public sealed record AttackRoll(int D20, int Accuracy, int TargetDodge)
 
     /// <summary>The part of <see cref="TargetDodge"/> that came from the target's conditions (3B.4).</summary>
     public int ConditionDodge { get; init; }
+
+    /// <summary>The part of <see cref="TargetDodge"/> that came from the target's prepared reaction, e.g. Parry (3B.6 PR 3).</summary>
+    public int ReactionDodge { get; init; }
 }
 
 /// <param name="TargetHpBefore">Target HP at the start of this tick's attack phase.</param>
@@ -264,6 +276,7 @@ public sealed record AttackRoll(int D20, int Accuracy, int TargetDodge)
 /// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved the caster far enough (Charge's <see cref="DamageSpec.BonusIfMoved"/>).</param>
 /// <param name="ConditionDamage">How much conditions changed <paramref name="Damage"/> (3B.4): the attacker's damage
 /// dealt plus the target's damage taken, signed (−6 resisted, +2 marked).</param>
+/// <param name="InterceptedFromId">The attack was meant for this combatant; an Intercept made it on <paramref name="TargetId"/> instead (3B.6 PR 3).</param>
 public sealed record AttackOutcome(
     string AttackerId,
     string TargetId,
@@ -280,7 +293,8 @@ public sealed record AttackOutcome(
     bool FinishingBlow = false,
     string? AbilityId = null,
     int MoveBonus = 0,
-    int ConditionDamage = 0)
+    int ConditionDamage = 0,
+    string? InterceptedFromId = null)
 {
     public bool Wasted => WastedReason != WastedReason.None;
 }

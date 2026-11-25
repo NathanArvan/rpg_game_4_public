@@ -6,15 +6,17 @@
   // right) Overwatch. The Archer walks toward the party in round 1 and takes up Overwatch with its last AP.
   // Used by the reactions E2E tests: keep the Bruiser next to the Brute, with free cells behind him (row 11), and keep
   // the Archer listed last (its rolls come after everyone else's) and out of reach in round 1.
+  // PR 3: attack triggers. The Skirmisher and the Brute have Parry (the Brute's 1 AP left after Power Strike pays for
+  // it), the Bruiser Intercept: if the Skirmisher steps to (10, 10), next to him, he takes Goblin 1's swing at her.
   "id": "reactions",
   "name": "Reactions",
-  "description": "Start in melee: step away and take a free hit, or Disengage for 2 AP. Brace and Overwatch to punish whoever moves.",
+  "description": "Start in melee: step away and take a free hit, or Disengage for 2 AP. Brace and Overwatch punish whoever moves; Parry and Intercept blunt the attacks.",
   "order": 8,
   "combatants": [
-    { "name": "Bruiser",       "side": "party", "profile": "bruiser",    "at": [9, 10],  "abilities": ["power_strike", "cleave", "brace"] },
-    { "name": "Skirmisher",    "side": "party", "profile": "skirmisher", "at": [11, 10] },
+    { "name": "Bruiser",       "side": "party", "profile": "bruiser",    "at": [9, 10],  "abilities": ["power_strike", "cleave", "brace", "intercept"] },
+    { "name": "Skirmisher",    "side": "party", "profile": "skirmisher", "at": [11, 10], "abilities": ["mend", "dash", "charge", "parry"] },
     { "name": "Scout",         "side": "party", "profile": "scout",      "at": [13, 11], "abilities": ["twin_shot", "dash", "overwatch"] },
-    { "name": "Brute",         "side": "enemy", "profile": "brute",      "at": [9, 9],   "abilities": ["power_strike", "charge", "brace"] },
+    { "name": "Brute",         "side": "enemy", "profile": "brute",      "at": [9, 9],   "abilities": ["power_strike", "charge", "brace", "parry"] },
     { "name": "Goblin 1",      "side": "enemy", "profile": "grunt",      "at": [11, 9] },
     { "name": "Goblin 2",      "side": "enemy", "profile": "grunt",      "at": [13, 10] },
     { "name": "Goblin Archer", "side": "enemy", "profile": "grunt",      "at": [16, 2],  "rangedAccuracy": 2, "abilities": ["overwatch"] }

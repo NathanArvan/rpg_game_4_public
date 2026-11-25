@@ -1,0 +1,16 @@
+{
+  // SPRINT_3B6 X13: multi-target and "auto" attacks aren't redirected in this slice. Cleave finds Mira after the move and
+  // hits her; Brakka's Intercept keeps watching and goes unused.
+  "description": "Intercept doesn't take a Cleave",
+  "combatants": [
+    { "id": "Brakka",  "side": "party", "at": [5, 5], "abilities": ["intercept"] },
+    { "id": "Mira",    "side": "party", "at": [6, 5] },
+    { "id": "Cleaver", "side": "enemy", "at": [7, 5], "abilities": ["cleave"] }
+  ],
+  "plans": { "Brakka": ["ability intercept"], "Cleaver": ["ability cleave"] },
+  "dice": [12, 6],
+  "expect": {
+    "hp": { "Brakka": 20, "Mira": 14 },
+    "events": ["t1 Cleaver cleave Mira: hit 6", "end Brakka: intercept unused"]
+  }
+}

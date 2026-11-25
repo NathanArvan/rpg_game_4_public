@@ -100,11 +100,11 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
-### 🟡 Slice 3B.6 — Prepared Reactions & Opportunity Attacks
+### ✅ Slice 3B.6 — Prepared Reactions & Opportunity Attacks
 
 *Split out of 3B.3 in November 2026 (`ABILITIES.md` A9). Runs after 3B.4.*
 
-*Status: in progress (`SPRINT_3B6.md`). PR 1 done: passive **opportunity attacks** (leaving an enemy's reach provokes a full weapon hit at that step; a mover it drops stops there), **Disengage** (2 AP, provokes none), the `opportunityAttacks` profile value, a threat preview on the move highlight, a playback cue, the AI Disengaging rather than walking out of reach, and the **Reactions** Quick Battle. PR 2 done: **prepared reactions** as abilities (`activation: "prepared"`, a `trigger`, `trigger` targeting) that end the queue and watch from their tick to the end of the round; **Brace** (strike an enemy that steps into reach) and **Overwatch** (shoot the first enemy that moves within 6), resolved at the movement step hook; no AP refund, the cooldown starts anyway, an unused one is reported; a 👁 badge and ⚡ cue in playback; the AI braces or takes up Overwatch with its leftover AP. Next: PR 3 (attack triggers: Parry, Intercept).*
+*Status: done (`SPRINT_3B6.md`, three PRs). PR 1: passive **opportunity attacks** (leaving an enemy's reach provokes a full weapon hit at that step; a mover it drops stops there), **Disengage** (2 AP, provokes none), the `opportunityAttacks` profile value, a threat preview on the move highlight, a playback cue, the AI Disengaging rather than walking out of reach, and the **Reactions** Quick Battle. PR 2: **prepared reactions** as abilities (`activation: "prepared"`, a `trigger`, `trigger` targeting) that end the queue and watch from their tick to the end of the round; **Brace** (strike an enemy that steps into reach) and **Overwatch** (shoot the first enemy that moves within 6), resolved at the movement step hook; no AP refund, the cooldown starts anyway, an unused one is reported; a 👁 badge and ⚡ cue in playback; the AI braces or takes up Overwatch with its leftover AP. PR 3: **attack triggers**, checked after the tick's movement and before the attacks roll: **Parry** (+4 Dodge against every melee attack on you that tick) and **Intercept** (take the first single-target attack on an adjacent ally, reach waived); the AI parries in melee and intercepts for a hurt ally.*
 
 Delivers: The reactive action framework from `TICK_RESOLUTION.md` Decisions 4–5. **Passive reactions:** opportunity attacks when an adjacent enemy moves away, and **Disengage** (a move that doesn't provoke them). **Prepared reactions:** an ability with `activation: "prepared"` takes a queue slot and AP and puts the combatant in a watching state for the rest of the round; it fires when its trigger is met (enemy enters/leaves melee range, enemy attacks me or an ally, enemy uses a tagged ability, ally HP drops below a threshold), with interrupt / simultaneous / response timing. Counterspell, overwatch, parry and intercept become possible. `EnemyAi` gets a minimal use (e.g. it doesn't walk out of melee range carelessly). Decisions to settle in its sprint doc: AP refund for unused prepared actions, duplicate triggers, same-tick readiness, whether Disengage avoids prepared movement reactions (current leans in `TICK_RESOLUTION.md` → Open Questions).
 
@@ -270,8 +270,8 @@ Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
 Done        3B.4 Conditions & Status Effects (3B.3 Abilities & Cooldowns done)
-Next        3B.6 Prepared Reactions & Opportunity Attacks
-Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
+Done        3B.6 Prepared Reactions & Opportunity Attacks
+Next        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
 Later       3D.1–3D.4 Adaptive Encounters (incl. doors), remaining Phase 4, Phase 5 hardening
@@ -316,6 +316,8 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 **3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts`, `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) and `AddMovementEffects` (PR 3: the move effect and `bonusIfMoved`) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
 **3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot (migration `AddConditionResist`, model snapshot only). PR 3 needs no migration (movement, AP and block modifiers were stored from PR 1).
+
+**3B.6** — No new tables (`SPRINT_3B6.md` X16). Watching lives inside one round of resolution. Migrations `AddOpportunityAttacks` (PR 1: the profile's `OpportunityAttacks`), `AddReactions` (PR 2: the ability snapshot's `Activation` and `Trigger`) and `AddAttackReactions` (PR 3: a `modify_incoming` effect's `Dodge`) only update the model snapshot.
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 

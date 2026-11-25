@@ -265,6 +265,30 @@ describe('buildLanes: movement abilities (3B.3)', () => {
       expect(lane.slots[2].detail).toContain('⚡ Brace (step 2): W → G: rolled 12 + 0 = 12 vs dodge 10, hit for 3');
     });
 
+    it('shows a Parry\'s +4 next to the dodge and its line on the parrier and the attacker (3B.6 PR 3)', () => {
+      const parryQueue = makeQueue({ combatantId: 'K', maxAp: 4, actions: [makeQueuedAction({ type: 'ability', apCost: 1, abilityId: 'parry' })] });
+      const goblinQueue = makeQueue({ combatantId: 'G', maxAp: 4, actions: [makeQueuedAction({ type: 'melee_attack', apCost: 2, targetCombatantId: 'K' })] });
+      const [k, g] = buildLanes(payload([parryQueue, goblinQueue], tick(0, {
+        watching: [makeWatching({ combatantId: 'K', abilityName: 'Parry' })],
+        reactions: [makeReaction({ reactorId: 'K', reactorName: 'K', triggerId: 'G', triggerName: 'G', kind: 'prepared', abilityId: 'parry',
+          abilityName: 'Parry', step: 0, attack: null, feedText: 'K parries (+4 Dodge)' })],
+        attacks: [attack('G', 'K', { hit: false, roll: makeRoll({ d20: 11, accuracy: 0, targetDodge: 14, reactionDodge: 4 }) })],
+      })));
+      expect(k.slots[0].reacted).toBeTrue();
+      expect(k.slots[0].detail).toContain('⚡ K parries (+4 Dodge).');
+      expect(g.slots[0].provoked).toBeFalse();
+      expect(g.slots[0].detail).toContain('vs dodge 14 (+4 Parry), miss.');
+      expect(g.slots[0].detail).toContain('K parries (+4 Dodge).');
+    });
+
+    it('names the interceptor as the target of an intercepted attack (3B.6 PR 3)', () => {
+      const goblinQueue = makeQueue({ combatantId: 'G', maxAp: 4, actions: [makeQueuedAction({ type: 'melee_attack', apCost: 2, targetCombatantId: 'M' })] });
+      const [g] = buildLanes(payload([goblinQueue], tick(0, {
+        attacks: [attack('G', 'B', { targetName: 'B', interceptedFromId: 'M' })],
+      })));
+      expect(g.slots[0].detail).toContain('G → B (intercepted): rolled 13 + 3 = 16 vs dodge 12, hit for 4');
+    });
+
     it('says an unused reaction goes unused on the last tick', () => {
       const [lane] = buildLanes(makePayload({
         queues: [braceQueue('W')],

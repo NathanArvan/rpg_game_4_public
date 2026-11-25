@@ -291,13 +291,14 @@ public class ResolutionService(
             RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
             a.TargetHpAfter, a.TargetDefeated, a.Wasted,
             feedText,
-            a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge, r.ConditionAccuracy, r.ConditionDodge) : null,
+            a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge, r.ConditionAccuracy, r.ConditionDodge, r.ReactionDodge) : null,
             RulesWireMapping.ToWire(a.WastedReason),
             RulesWireMapping.ToWire(a.TargetStatus),
             a.FinishingBlow,
             a.AbilityId,
             a.MoveBonus,
-            a.ConditionDamage);
+            a.ConditionDamage,
+            a.InterceptedFromId);
 
         var attacks = tick.Attacks.Select(a => ToAttack(a, ResolutionFeedFormatter.Attack(a, NameOf(a.AttackerId), NameOf(a.TargetId),
             a.AbilityId is null ? null : AbilityNameOf(a.AttackerId, a.AbilityId)))).ToList();
@@ -307,7 +308,8 @@ public class ResolutionService(
             var reactorName = NameOf(x.ReactorId);
             var triggerName = NameOf(x.TriggerId);
             var abilityName = x.AbilityId is null ? null : AbilityNameOf(x.ReactorId, x.AbilityId);
-            var feed = ResolutionFeedFormatter.Reaction(x, reactorName, triggerName, abilityName);
+            var feed = ResolutionFeedFormatter.Reaction(x, reactorName, triggerName, abilityName,
+                x.InterceptedFromId is null ? null : NameOf(x.InterceptedFromId));
             return new ReactionResult(x.ReactorId, reactorName, x.TriggerId, triggerName, RulesWireMapping.ToWire(x.Kind),
                 x.AbilityId, abilityName, x.Step, x.Attack is { } a ? ToAttack(a, feed) : null, feed);
         }).ToList();

@@ -15,7 +15,7 @@ import { CombatantStatus, toStatus } from '../../state/encounter/encounter.model
 /**
  * Grey: the attacker missed. Green: the attacker hit. Red: the combatant was hit. Teal: stabilized
  * (3B.5). Soft green: healed or back on their feet (3B.3). Blue / purple: got a beneficial / harmful
- * condition (3B.4). Orange lunge: struck out at a mover in a reaction (3B.6).
+ * condition (3B.4). Orange lunge: struck out at a mover in a reaction (3B.6). A parry shows as a blue (buff) shield (3B.6 PR 3).
  */
 export type AuraKind = 'miss' | 'hit' | 'hurt' | 'stabilize' | 'heal' | 'buff' | 'debuff' | 'lunge';
 
@@ -39,7 +39,7 @@ export interface FloatCue {
    * bleeding (3B.5); ability: the ability's name above its user (3B.3); heal: green +n, and UP for
    * someone back on their feet (3B.3); buff / debuff: a condition's name as it lands (3B.4);
    * periodic: orange end-of-round damage from a condition, with an icon for its tag (3B.4 PR 2);
-   * reaction: the reaction's label (OPPORTUNITY) above the reactor (3B.6).
+   * reaction: the reaction's label (OPPORTUNITY, ⚡ BRACE, ⚡ PARRY, ⚡ INTERCEPT) above the reactor (3B.6).
    */
   kind: 'damage' | 'miss' | 'wasted' | 'status' | 'ability' | 'heal' | 'buff' | 'debuff' | 'periodic' | 'reaction';
 }
@@ -380,9 +380,12 @@ export function buildTimeline(
       }
     }
 
+    // Attack triggers (3B.6 PR 3) fire after the movement, before the attacks roll: said first, cued on the attacks beat.
+    const attackTriggers = reactions.filter(r => r.step === 0);
+
     // Attacks and heals: all of this tick's land together (3B.3: heals are netted with the damage).
     const heals = tick.heals ?? [];
-    pendingFeed.push(...tick.attacks.map(a => a.feedText), ...heals.map(h => h.feedText));
+    pendingFeed.push(...attackTriggers.map(r => r.feedText), ...tick.attacks.map(a => a.feedText), ...heals.map(h => h.feedText));
     if (tick.attacks.length > 0 || heals.length > 0 || abilityFloats.length > 0) {
       const auras: AuraCue[] = [];
       const addAura = (combatantId: string, kind: AuraKind) => {
@@ -412,11 +415,21 @@ export function buildTimeline(
         floats.push({ combatantId: h.targetId, text: `+${h.amount}`, kind: 'heal' });
         hp[h.targetId] = h.targetNewHp;
       }
+      // Parry: a shield (blue) aura and its name on the parrier. Intercept: its name on the interceptor, who the attack's
+      // aura and number already land on. Either way the 👁 badge comes off (it fired).
+      const watching: Record<string, string | null> = {};
+      for (const r of attackTriggers) {
+        if (!r.attack && !tick.attacks.some(a => a.interceptedFromId && a.targetId === r.reactorId)) addAura(r.reactorId, 'buff');
+        floats.unshift({ combatantId: r.reactorId, text: `⚡ ${(r.abilityName ?? r.abilityId ?? '').toUpperCase()}`, kind: 'reaction' });
+        watching[r.reactorId] = null;
+      }
       const anyLanded = tick.attacks.some(a => !a.wasted) || heals.some(h => !h.wastedReason);
-      beats.push({
+      const beat: PlaybackBeat = {
         tick: t, phase: 'attacks', durationMs: anyLanded ? timing.attackMs : timing.wastedMs,
         auras, floats, hp, feed: takeFeed(),
-      });
+      };
+      if (attackTriggers.length > 0) beat.watching = watching;
+      beats.push(beat);
     }
 
     // Who fell this tick: Downed (bleeding out) or dead.

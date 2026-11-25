@@ -1,0 +1,17 @@
+{
+  // 3B.6 PR 3 (SPRINT_3B6 X13): Parry fires before the Attack phase rolls when the watcher is the target of a melee
+  // attack, and adds +4 to its Dodge against it. 11 would hit Dodge 10; it misses Dodge 14.
+  "description": "Parry: a goblin's swing that would have hit misses",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [5, 5], "abilities": ["parry"] },
+    { "id": "Goblin",  "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Kestrel": ["ability parry"], "Goblin": ["melee Kestrel"] },
+  "dice": [11],
+  "expect": {
+    "hp": { "Kestrel": 20 },
+    "hits": [],
+    "cooldowns": { "Kestrel": { "parry": 1 } },
+    "events": ["t1 Kestrel prepares parry", "t1 Kestrel parry Goblin: +4 dodge", "t1 Goblin melee Kestrel: miss"]
+  }
+}

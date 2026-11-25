@@ -99,6 +99,24 @@ public class AbilityCatalogTests : IDisposable
     }
 
     [Fact]
+    public void ShippedAttackReactions_MapToTheRulesEngine()
+    {
+        // 3B.6 PR 3: Parry (attacked, melee: +4 Dodge) and Intercept (ally attacked within 1: redirect) target themselves.
+        var catalog = AbilityCatalog.FromAppDirectory();
+        var parry = AbilityMapping.ToRules(catalog.Find("parry")!);
+        Assert.True(parry.IsPrepared);
+        Assert.Equal(new ReactionTrigger(TriggerKind.Attacked, AttackKind: AttackKind.Melee), parry.Trigger);
+        Assert.Equal(TargetKind.Self, parry.Targeting.Kind);
+        Assert.Equal(new ModifyIncomingEffect(4), Assert.Single(parry.Effects));
+        Assert.Equal((1, 1), (parry.ApCost, parry.Cooldown));
+
+        var intercept = AbilityMapping.ToRules(catalog.Find("intercept")!);
+        Assert.Equal(new ReactionTrigger(TriggerKind.AllyAttacked, 1), intercept.Trigger);
+        Assert.IsType<RedirectEffect>(Assert.Single(intercept.Effects));
+        Assert.Equal((1, 2), (intercept.ApCost, intercept.Cooldown));
+    }
+
+    [Fact]
     public void HealWithOnlyABonus_HasNoDie()
     {
         var a = Assert.Single(AbilityCatalog.Load(Write("abilities.json", """
@@ -152,7 +170,17 @@ public class AbilityCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "needs a 'trigger'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "trigger": { "kind": "enemy_enters_reach" }, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "only a prepared ability takes a 'trigger'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_sneezes" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "unknown trigger 'enemy_sneezes'")]
-    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "trigger 'attacked' isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "can only be \"modify_incoming\"")]
+    // Attack triggers (3B.6 PR 3).
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "modify_incoming", "dodge": 4 } ] }""", "targets \"self\"")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked" }, "target": { "kind": "self" }, "effects": [ { "kind": "modify_incoming", "dodge": 0 } ] }""", "'dodge' must be between 1 and 10")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked", "attackKind": "spell" }, "target": { "kind": "self" }, "effects": [ { "kind": "modify_incoming", "dodge": 4 } ] }""", "'attackKind' must be")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked", "range": 2 }, "target": { "kind": "self" }, "effects": [ { "kind": "modify_incoming", "dodge": 4 } ] }""", "takes no 'range'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "ally_attacked", "attackKind": "melee" }, "target": { "kind": "self" }, "effects": [ { "kind": "redirect" } ] }""", "only applies to \"attacked\"")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "ally_attacked" }, "target": { "kind": "self" }, "effects": [ { "kind": "modify_incoming", "dodge": 4 } ] }""", "can only be \"redirect\"")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "ally_attacked" }, "target": { "kind": "self" }, "effects": [ { "kind": "redirect" }, { "kind": "redirect" } ] }""", "takes one \"redirect\" effect")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_enters_reach" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "redirect" } ] }""", "can only be \"attack\"")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "self" }, "effects": [ { "kind": "modify_incoming", "dodge": 4 } ] }""", "only for prepared abilities")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_moves_within" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "needs a 'range'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_enters_reach", "range": 2 }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "takes no 'range'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "only for prepared abilities")]

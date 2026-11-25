@@ -1,0 +1,23 @@
+{
+  // 3B.6 PR 3 (SPRINT_3B6 X13): Intercept takes the first single-target attack in plan order on an adjacent ally and makes
+  // it on the watcher instead. It fires once, so G2's attack on Mira goes through.
+  "description": "Intercept: Brakka takes the first hit meant for Mira",
+  "combatants": [
+    { "id": "Brakka", "side": "party", "at": [5, 5], "abilities": ["intercept"] },
+    { "id": "Mira",   "side": "party", "at": [6, 5] },
+    { "id": "G1",     "side": "enemy", "at": [7, 5] },
+    { "id": "G2",     "side": "enemy", "at": [7, 6] }
+  ],
+  "plans": { "Brakka": ["ability intercept"], "G1": ["melee Mira"], "G2": ["melee Mira"] },
+  "dice": [12, 5, 12, 3],
+  "expect": {
+    "hp": { "Brakka": 15, "Mira": 17 },
+    "cooldowns": { "Brakka": { "intercept": 2 } },
+    "events": [
+      "t1 Brakka prepares intercept",
+      "t1 Brakka intercept G1: takes the attack on Mira",
+      "t1 G1 melee Brakka (meant for Mira): hit 5",
+      "t1 G2 melee Mira: hit 3"
+    ]
+  }
+}

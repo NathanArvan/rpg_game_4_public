@@ -68,7 +68,7 @@ public class AbilityTargetValues
 
 public class AbilityEffectValues
 {
-    /// <summary>"attack", "heal" or "move" (3B.3), "apply_condition" (3B.4).</summary>
+    /// <summary>"attack", "heal" or "move" (3B.3), "apply_condition" (3B.4), "modify_incoming" or "redirect" (prepared reactions, 3B.6).</summary>
     public string Kind { get; set; } = "";
     /// <summary>Attack: "melee", "ranged" or "none" (always hits).</summary>
     public string? Roll { get; set; }
@@ -90,12 +90,14 @@ public class AbilityEffectValues
     public int Duration { get; set; }
     /// <summary>Apply condition: only targets the same ability's attack hit get it.</summary>
     public bool RequiresHit { get; set; }
+    /// <summary>Modify incoming (3B.6 PR 3, Parry): Dodge added against the attacks that set the reaction off.</summary>
+    public int Dodge { get; set; }
 
     public AbilityEffectValues Copy() => new()
     {
         Kind = Kind, Roll = Roll, AccuracyBonus = AccuracyBonus, Damage = Damage?.Copy(), Amount = Amount?.Copy(),
         CanRevive = CanRevive, To = To, MaxCells = MaxCells, UsesMovementBudget = UsesMovementBudget,
-        Condition = Condition?.Copy(), Duration = Duration, RequiresHit = RequiresHit,
+        Condition = Condition?.Copy(), Duration = Duration, RequiresHit = RequiresHit, Dodge = Dodge,
     };
 }
 

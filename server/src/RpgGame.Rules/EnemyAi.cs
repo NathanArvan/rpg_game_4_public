@@ -16,7 +16,8 @@ namespace RpgGame.Rules;
 /// and a Rooted one doesn't walk or charge: it attacks if it's in reach, else defends. A walk that would leave a
 /// standing enemy's reach (an opportunity attack, 3B.6) becomes a Disengage if the AP allows, else it attacks the
 /// enemy next to it instead; a Charge that would provoke isn't used. A ready prepared reaction (3B.6 PR 2) ends the
-/// queue instead of a lone Defend or leftover AP when its trigger could happen this round (<see cref="Finish"/>).
+/// queue instead of a lone Defend or leftover AP when its trigger could happen this round (<see cref="Finish"/>):
+/// Brace, Overwatch, and (PR 3) Parry when an enemy is in reach, Intercept for a hurt ally with an enemy next to it.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -209,25 +210,37 @@ public static class EnemyAi
     /// A ready, affordable prepared reaction worth watching with from <paramref name="at"/> (SPRINT_3B6 X15): Brace
     /// (<see cref="TriggerKind.EnemyEntersReach"/>) if a standing enemy outside its reach could walk into it this round
     /// (within that enemy's movement + reach); Overwatch (<see cref="TriggerKind.EnemyMovesWithin"/>) if a standing enemy
-    /// that can move could end a step within its range. Judged from where everyone stands now; loadout order.
+    /// that can move could end a step within its range; Parry (<see cref="TriggerKind.Attacked"/>, 3B.6 PR 3) if a standing
+    /// enemy is in melee reach of <paramref name="at"/>; Intercept (<see cref="TriggerKind.AllyAttacked"/>) if an ally within
+    /// its range of <paramref name="at"/> is below half HP and has a standing enemy next to it. Judged from where everyone
+    /// stands now; loadout order.
     /// </summary>
     private static AbilityDefinition? ChooseReaction(
         EncounterState state, CombatantState self, GridPosition at, int apLeft, RulesConfig config)
     {
         int reach = config.MeleeReach;
-        var enemies = state.Combatants
-            .Where(c => IsLivingEnemy(self, c))
+        var living = state.Combatants.Where(c => IsLivingEnemy(self, c)).ToList();
+        var enemies = living
             .Select(c => (Distance: at.ChebyshevDistanceTo(c.Position!.Value),
                           Move: ConditionMath.IsBlocked(c.Conditions, BlockKind.Move) ? 0 : ConditionMath.EffectiveMovementRange(c.Profile, c.Conditions)))
             .Where(e => e.Move > 0)
             .ToList();
+        bool EnemyInReach() => living.Any(c => at.ChebyshevDistanceTo(c.Position!.Value) <= reach);
+        bool HurtAllyUnderAttack(int range) => state.Combatants.Any(ally =>
+            !ally.IsDefeated && ally.Position is { } allyAt && ally.Team.Length > 0
+            && Relations.Between(self, ally) == Relation.Ally
+            && at.ChebyshevDistanceTo(allyAt) <= range
+            && ally.Hp * 2 < ally.MaxHp
+            && living.Any(c => c.Position!.Value.ChebyshevDistanceTo(allyAt) <= reach));
         return self.Profile.Abilities.FirstOrDefault(a =>
             a is { IsPrepared: true, Trigger: { } trigger } && a.ApCost <= apLeft && self.CooldownLeft(a.Id) == 0
             && trigger.Kind switch
             {
                 TriggerKind.EnemyEntersReach => enemies.Any(e => e.Distance > reach && e.Distance <= e.Move + reach),
                 TriggerKind.EnemyMovesWithin => enemies.Any(e => e.Distance <= (trigger.Range ?? reach) + e.Move),
-                _ => false, // attack triggers: 3B.6 PR 3
+                TriggerKind.Attacked => EnemyInReach(),
+                TriggerKind.AllyAttacked => HurtAllyUnderAttack(trigger.Range ?? reach),
+                _ => false,
             });
     }
 

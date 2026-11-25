@@ -573,6 +573,73 @@ public class RoundResolverTests
         Assert.Equal(P(2, 0), Final(o, "A").Position);
     }
 
+    // ----- Attack triggers (3B.6 PR 3) -----
+
+    private static readonly AbilityDefinition Parry = new("parry", "Parry", 1, 1, ["melee"],
+        new Targeting(TargetKind.Self, TargetFilter.Ally, 0), [new ModifyIncomingEffect(4)], Activation: AbilityActivation.Prepared)
+    {
+        Trigger = new ReactionTrigger(TriggerKind.Attacked, AttackKind: AttackKind.Melee),
+    };
+
+    private static readonly AbilityDefinition Intercept = new("intercept", "Intercept", 1, 2, ["melee"],
+        new Targeting(TargetKind.Self, TargetFilter.Ally, 0), [new RedirectEffect()], Activation: AbilityActivation.Prepared)
+    {
+        Trigger = new ReactionTrigger(TriggerKind.AllyAttacked, Range: 1),
+    };
+
+    private static CombatantState WithAbility(CombatantState c, string team, params AbilityDefinition[] abilities) =>
+        c with { Team = team, Profile = c.Profile with { Abilities = abilities } };
+
+    [Fact]
+    public void Parry_ShowsItsDodgeInTheRoll_AndIsReportedAtStepZeroWithNoAttack()
+    {
+        var o = Resolve(State(WithAbility(C("K", 5, 5), "party", Parry), WithAbility(C("G", 6, 5), "enemy")),
+            new Plans().Add("K", PlannedAction.Ability("parry")).Add("G", PlannedAction.Melee("K")),
+            new ScriptedDice(11));
+
+        var tick = o.Ticks[0];
+        var reaction = Assert.Single(tick.Reactions);
+        Assert.Equal(("K", "G", ReactionKind.Prepared, "parry", 0), (reaction.ReactorId, reaction.TriggerId, reaction.Kind, reaction.AbilityId, reaction.Step));
+        Assert.Null(reaction.Attack);
+        Assert.Equal(4, reaction.ReactionDodge);
+        var attack = Assert.Single(tick.Attacks);
+        Assert.False(attack.Hit);
+        Assert.Equal(new AttackRoll(11, 0, 14) { ReactionDodge = 4 }, attack.Roll);
+        Assert.Empty(o.UnusedReactions);
+    }
+
+    [Fact]
+    public void Intercept_MakesTheAttackOnTheWatcher_AndKeepsTheOriginalTarget()
+    {
+        var o = Resolve(State(
+                WithAbility(C("B", 5, 5), "party", Intercept), WithAbility(C("M", 6, 5), "party"), WithAbility(C("G", 7, 5), "enemy")),
+            new Plans().Add("B", PlannedAction.Ability("intercept")).Add("G", PlannedAction.Melee("M")),
+            new ScriptedDice(12, 5));
+
+        var tick = o.Ticks[0];
+        var reaction = Assert.Single(tick.Reactions);
+        Assert.Equal(("B", "G", "M"), (reaction.ReactorId, reaction.TriggerId, reaction.InterceptedFromId));
+        var attack = Assert.Single(tick.Attacks);
+        Assert.Equal(("B", "M", true, 5), (attack.TargetId, attack.InterceptedFromId, attack.Hit, attack.Damage));
+        Assert.Equal((20, 15), (attack.TargetHpBefore, attack.TargetHpAfter));
+        Assert.Equal(15, Final(o, "B").Hp);
+        Assert.Equal(20, Final(o, "M").Hp);
+    }
+
+    [Fact]
+    public void Intercept_IgnoresAnAttackFromAnAlly()
+    {
+        // Only an enemy's attack is taken: a party member hitting another (no reason, but basic attacks allow it) isn't.
+        var o = Resolve(State(
+                WithAbility(C("B", 5, 5), "party", Intercept), WithAbility(C("M", 6, 5), "party"), WithAbility(C("X", 7, 5), "party")),
+            new Plans().Add("B", PlannedAction.Ability("intercept")).Add("X", PlannedAction.Melee("M")),
+            new ScriptedDice(12, 5));
+
+        Assert.Empty(o.Ticks[0].Reactions);
+        Assert.Equal("M", Assert.Single(o.Ticks[0].Attacks).TargetId);
+        Assert.Single(o.UnusedReactions);
+    }
+
     // ----- Opportunity attacks (3B.6) -----
 
     [Fact]

@@ -26,11 +26,23 @@ public sealed class AbilityCatalog
     /// <summary>Target kinds the resolver supports so far; "cell" arrives in 4.1.</summary>
     private static readonly HashSet<string> SupportedTargetKinds = ["self", "combatant", "combatants", "auto", "trigger"];
 
+    /// <summary>Prepared-reaction triggers (3B.6): movement triggers (PR 2) and attack triggers (PR 3).</summary>
+    private static readonly HashSet<string> SupportedTriggers = ["enemy_enters_reach", "enemy_moves_within", "attacked", "ally_attacked"];
+
     /// <summary>
-    /// Prepared-reaction triggers acted on so far (3B.6 PR 2: movement triggers); "attacked" and "ally_attacked" arrive
-    /// with their effects in PR 3.
+    /// The one effect each prepared trigger resolves (3B.6): movement triggers attack whoever set them off; "attacked"
+    /// raises Dodge ("modify_incoming", Parry); "ally_attacked" takes the attack ("redirect", Intercept).
     /// </summary>
-    private static readonly HashSet<string> SupportedTriggers = ["enemy_enters_reach", "enemy_moves_within"];
+    private static readonly Dictionary<string, string> TriggerEffect = new()
+    {
+        ["enemy_enters_reach"] = "attack",
+        ["enemy_moves_within"] = "attack",
+        ["attacked"] = "modify_incoming",
+        ["ally_attacked"] = "redirect",
+    };
+
+    /// <summary>Most Dodge a "modify_incoming" effect may add.</summary>
+    public const int MaxReactionDodge = 10;
 
     /// <summary>Most targets a "combatants" ability may pick.</summary>
     public const int MaxTargetCount = 6;
@@ -141,8 +153,16 @@ public sealed class AbilityCatalog
         if (filter == "enemy" && effects.Any(e => e.Kind == "heal")) Fail("a heal can't target enemies (use an \"ally\" or \"any\" filter)");
         if (self && filter != "ally") Fail("a \"self\" ability doesn't take a target 'filter'");
         if (self && effects.Any(e => e.Kind == "attack")) Fail("a \"self\" ability can't attack (it would hit its caster)");
-        if (prepared && effects.FirstOrDefault(e => e.Kind != "attack") is { } other)
-            Fail($"a prepared ability's effects can only be \"attack\" so far (not \"{other.Kind}\")");
+        if (prepared && trigger is not null && TriggerEffect.GetValueOrDefault(trigger.Kind) is { } wanted)
+        {
+            if (effects.FirstOrDefault(e => e.Kind != wanted) is { } other)
+                Fail($"a \"{trigger.Kind}\" reaction's effects can only be \"{wanted}\" (not \"{other.Kind}\")");
+            if (wanted != "attack" && effects.Count != 1) Fail($"a \"{trigger.Kind}\" reaction takes one \"{wanted}\" effect");
+            if (wanted != "attack" && !self) Fail($"a \"{trigger.Kind}\" reaction targets \"self\"");
+            if (wanted == "attack" && !onTrigger) Fail($"a \"{trigger.Kind}\" reaction targets \"trigger\" (whoever set it off)");
+        }
+        if (!prepared && effects.FirstOrDefault(e => e.Kind is "modify_incoming" or "redirect") is { } reactionOnly)
+            Fail($"a \"{reactionOnly.Kind}\" effect is only for prepared abilities");
         var moves = effects.Where(e => e.Kind == "move").ToList();
         if (moves.Count > 1) Fail("an ability can move its caster only once (one \"move\" effect)");
         if (moves.FirstOrDefault() is { } move)
@@ -195,17 +215,20 @@ public sealed class AbilityCatalog
         }
         if (trigger is null) { fail("a prepared ability needs a 'trigger'"); return null; }
         var kind = trigger.Kind?.Trim().ToLowerInvariant() ?? "";
-        if (kind is "attacked" or "ally_attacked")
-            fail($"trigger '{kind}' isn't supported yet");
         if (!SupportedTriggers.Contains(kind))
-            fail($"unknown trigger '{trigger.Kind}' (use \"enemy_enters_reach\" or \"enemy_moves_within\")");
+            fail($"unknown trigger '{trigger.Kind}' (use \"enemy_enters_reach\", \"enemy_moves_within\", \"attacked\" or \"ally_attacked\")");
         if (kind == "enemy_moves_within" && trigger.Range is not (>= 1 and <= MaxRange))
             fail($"trigger \"enemy_moves_within\" needs a 'range' between 1 and {MaxRange}");
-        if (kind == "enemy_enters_reach" && trigger.Range is not null)
-            fail("trigger \"enemy_enters_reach\" takes no 'range' (it's the melee reach)");
-        if (trigger.AttackKind is not null)
+        if (kind == "ally_attacked" && trigger.Range is not (null or (>= 1 and <= MaxRange)))
+            fail($"trigger \"ally_attacked\" 'range' must be between 1 and {MaxRange} (leave it out for melee reach)");
+        if (kind is "enemy_enters_reach" or "attacked" && trigger.Range is not null)
+            fail($"trigger \"{kind}\" takes no 'range'");
+        var attackKind = trigger.AttackKind?.Trim().ToLowerInvariant();
+        if (attackKind is not null && kind != "attacked")
             fail("trigger 'attackKind' only applies to \"attacked\"");
-        return new AbilityTriggerValues { Kind = kind, Range = trigger.Range };
+        if (attackKind is not (null or "melee" or "ranged"))
+            fail("trigger 'attackKind' must be \"melee\" or \"ranged\" (leave it out for any attack)");
+        return new AbilityTriggerValues { Kind = kind, Range = trigger.Range, AttackKind = attackKind };
     }
 
     private static AbilityEffectValues ValidateEffect(
@@ -278,8 +301,13 @@ public sealed class AbilityCatalog
                     // A condition on an ability that attacks lands only on a hit, unless it says otherwise.
                     RequiresHit = e.RequiresHit ?? abilityAttacks,
                 };
+            case "modify_incoming":
+                if (e.Dodge is not (>= 1 and <= MaxReactionDodge)) fail($"{which}: 'dodge' must be between 1 and {MaxReactionDodge}");
+                return new AbilityEffectValues { Kind = "modify_incoming", Dodge = e.Dodge!.Value };
+            case "redirect":
+                return new AbilityEffectValues { Kind = "redirect" };
             default:
-                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\", \"move\", \"apply_condition\")");
+                fail($"{which}: unknown effect kind '{e.Kind}' (supported: \"attack\", \"heal\", \"move\", \"apply_condition\", \"modify_incoming\", \"redirect\")");
                 return null!;
         }
     }
@@ -364,6 +392,7 @@ public sealed class AbilityCatalog
         public string? Condition { get; set; }
         public int? Duration { get; set; }
         public bool? RequiresHit { get; set; }
+        public int? Dodge { get; set; }
     }
 
     private sealed class MovedBonusDto
@@ -439,6 +468,8 @@ internal static class AbilityMapping
             ConditionMapping.ToRules(e.Condition ?? throw new InvalidDataException("An apply_condition effect has no condition.")),
             e.Duration,
             e.RequiresHit),
+        "modify_incoming" => new ModifyIncomingEffect(e.Dodge),
+        "redirect" => new RedirectEffect(),
         _ => throw new InvalidDataException($"Unknown ability effect kind '{e.Kind}'."),
     };
 

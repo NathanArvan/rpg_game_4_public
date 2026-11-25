@@ -1,0 +1,20 @@
+{
+  // SPRINT_3B6 X13: the reach check runs first, so an attack that was never going to happen (out of reach) doesn't spend
+  // Parry. It's still watching in tick 3, when the goblin has walked up and swings for real.
+  "description": "Parry isn't spent on an out-of-reach attack",
+  "combatants": [
+    { "id": "Kestrel", "side": "party", "at": [5, 5], "abilities": ["parry"] },
+    { "id": "Goblin",  "side": "enemy", "maxAp": 5, "at": [8, 5] }
+  ],
+  "plans": { "Kestrel": ["ability parry"], "Goblin": ["melee Kestrel", "move 6,5", "melee Kestrel"] },
+  "dice": [11],
+  "expect": {
+    "hp": { "Kestrel": 20 },
+    "wasted": [{ "tick": 1, "attacker": "Goblin" }],
+    "events": [
+      "t1 Goblin melee Kestrel: wasted out_of_melee_reach",
+      "t3 Kestrel parry Goblin: +4 dodge",
+      "t3 Goblin melee Kestrel: miss"
+    ]
+  }
+}

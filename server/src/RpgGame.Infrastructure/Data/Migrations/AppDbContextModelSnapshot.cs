@@ -662,6 +662,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                                             b3.Property<bool>("CanRevive");
 
+                                            b3.Property<int>("Dodge");
+
                                             b3.Property<int>("Duration");
 
                                             b3.Property<string>("Kind")
