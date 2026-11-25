@@ -79,6 +79,14 @@ public class ResolutionService(
 
         // Write GameEvents to DB BEFORE Redis mutations
         var events = BuildGameEvents(encounterId, tickResults);
+        events.AddRange(outcome.UnusedReactions.Select(u => new GameEvent
+        {
+            Id = Guid.NewGuid(),
+            EncounterId = encounterId,
+            OccurredAt = DateTimeOffset.UtcNow,
+            EventType = "reaction_unused",
+            Payload = JsonSerializer.Serialize(new { u.CombatantId, u.AbilityId }, _jsonOptions),
+        }));
         events.AddRange(outcome.PeriodicEffects.Select(p => new GameEvent
         {
             Id = Guid.NewGuid(),
@@ -177,6 +185,13 @@ public class ResolutionService(
                 ResolutionFeedFormatter.Periodic(p, name, conditionName, last));
         }).ToList();
 
+        var unused = outcome.UnusedReactions.Select(u =>
+        {
+            var name = records.TryGetValue(u.CombatantId, out var r) ? r.State.Name : "Unknown";
+            var abilityName = (r?.State.Profile.FindAbility(u.AbilityId)?.Name) ?? u.AbilityId;
+            return new UnusedReactionDto(u.CombatantId, name, u.AbilityId, abilityName, ResolutionFeedFormatter.UnusedReaction(name, abilityName));
+        }).ToList();
+
         var expired = outcome.ExpiredConditions.Select(x =>
         {
             var name = records.TryGetValue(x.CombatantId, out var r) ? r.State.Name : "Unknown";
@@ -186,7 +201,7 @@ public class ResolutionService(
         }).ToList();
 
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired, periodic, []);
+            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired, periodic, unused);
     }
 
     // ----- Inbound mapping -----
@@ -346,7 +361,14 @@ public class ResolutionService(
                 ResolutionFeedFormatter.Blocked(b.Block, name, conditionName));
         }).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions, blocked, reactions, []);
+        var watching = tick.Watching.Select(w =>
+        {
+            var name = NameOf(w.CombatantId);
+            var abilityName = AbilityNameOf(w.CombatantId, w.AbilityId);
+            return new WatchingResult(w.CombatantId, name, w.AbilityId, abilityName, ResolutionFeedFormatter.Watching(name, abilityName));
+        }).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions, blocked, reactions, watching);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -390,6 +412,17 @@ public class ResolutionService(
                     OccurredAt = now,
                     EventType = "movement",
                     Payload = JsonSerializer.Serialize(new { movement.CombatantId, movement.FinalPosition, movement.WasBlocked }, _jsonOptions),
+                });
+            }
+            foreach (var watch in tick.Watching ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = "reaction_prepared",
+                    Payload = JsonSerializer.Serialize(new { watch.CombatantId, watch.AbilityId }, _jsonOptions),
                 });
             }
             foreach (var reaction in tick.Reactions ?? [])

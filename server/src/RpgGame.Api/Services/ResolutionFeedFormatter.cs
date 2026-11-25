@@ -34,12 +34,15 @@ internal static class ResolutionFeedFormatter
 
     /// <summary>
     /// A reaction (3B.6): "Goblin's opportunity attack on Mira hits for 4 damage (HP: 12 → 8)", "… misses",
-    /// "… — goes down!", "… — defeated!". A prepared reaction is named after its ability (PR 2).
+    /// "… — goes down!", "… — defeated!". A prepared reaction reads like an ability attack, named after its ability:
+    /// "Brakka's Brace hits Goblin for 6 damage (HP: 10 → 4)".
     /// </summary>
     public static string Reaction(ReactionOutcome reaction, string reactorName, string triggerName, string? abilityName)
     {
-        var who = $"{reactorName}'s {(reaction.Kind == ReactionKind.Opportunity ? "opportunity attack" : abilityName)} on {triggerName}";
         if (reaction.Attack is not { } attack) return $"{reactorName}'s {abilityName} fires";
+        // A prepared reaction reads like an ability attack: "Brakka's Brace hits Goblin for 6 damage (HP: 10 → 4)".
+        if (reaction.Kind == ReactionKind.Prepared) return AbilityAttack(attack, reactorName, triggerName, abilityName ?? "reaction");
+        var who = $"{reactorName}'s opportunity attack on {triggerName}";
         if (attack.Wasted) return $"{who} fails — {WastedReasonText(attack.WastedReason)}";
         if (!attack.Hit) return $"{who} misses";
         var damage = $"{attack.Damage} damage{ConditionSuffix(attack)}";
@@ -47,6 +50,12 @@ internal static class ResolutionFeedFormatter
         if (attack.TargetDefeated) return $"{who} hits for {damage} — defeated!";
         return $"{who} hits for {damage} (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
     }
+
+    /// <summary>A prepared reaction starts watching (3B.6): "Brakka prepares Brace".</summary>
+    public static string Watching(string combatantName, string abilityName) => $"{combatantName} prepares {abilityName}";
+
+    /// <summary>End of round, a prepared reaction that never fired (3B.6): "Brakka's Brace goes unused".</summary>
+    public static string UnusedReaction(string combatantName, string abilityName) => $"{combatantName}'s {abilityName} goes unused";
 
     /// <summary>
     /// An attack made by an ability (3B.3), named after it: "Brakka's Power Strike hits Goblin for 9 damage".

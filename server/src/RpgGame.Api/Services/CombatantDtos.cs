@@ -89,7 +89,19 @@ internal static class CombatantDtos
             ? new AbilityMoveDto(move.To ?? "cell", move.MaxCells, move.UsesMovementBudget)
             : null,
         a.Effects.Where(e => e.Kind == "apply_condition" && e.Condition is not null)
-            .Select(e => new AbilityConditionDto(Condition(e.Condition!), e.Duration, e.RequiresHit)).ToList());
+            .Select(e => new AbilityConditionDto(Condition(e.Condition!), e.Duration, e.RequiresHit)).ToList(),
+        a.Activation,
+        a.Trigger is { } t ? new AbilityTriggerDto(t.Kind, t.Range, t.AttackKind, TriggerDescription(t)) : null);
+
+    /// <summary>A prepared ability's trigger in words, for tooltips (3B.6): "Reacts when an enemy steps into reach".</summary>
+    public static string TriggerDescription(AbilityTriggerValues t) => t.Kind switch
+    {
+        "enemy_enters_reach" => "Reacts when an enemy steps into reach",
+        "enemy_moves_within" => $"Reacts when an enemy moves within {t.Range} {(t.Range == 1 ? "cell" : "cells")}",
+        "attacked" => t.AttackKind is { } kind ? $"Reacts when you're the target of a {kind} attack" : "Reacts when you're attacked",
+        "ally_attacked" => $"Reacts when an ally within {t.Range ?? 1} {(t.Range is null or 1 ? "cell" : "cells")} is attacked",
+        _ => "Reacts to a trigger",
+    };
 
     public static ActiveConditionDto ActiveCondition(ActiveConditionValues a) =>
         new(Condition(a.Condition), a.RoundsLeft, a.SourceId);

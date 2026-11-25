@@ -6,10 +6,14 @@
         type="button"
         [attr.data-ability]="b.ability.id"
         [class.armed]="b.armed"
+        [class.prepared]="b.prepared"
         [class.unavailable]="!!b.unavailable"
         [disabled]="disabled || (!!b.unavailable && !b.armed)"
         [title]="b.tooltip"
         (click)="onClick(b)">
+        @if (b.prepared) {
+          <span class="watch" aria-label="Prepared reaction">👁</span>
+        }
         <span class="name">{{ b.ability.name }}</span>
         <span class="cost">{{ b.ability.apCost }} AP</span>
         @if (b.cooldownLeft > 0) {

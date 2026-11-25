@@ -1,0 +1,12 @@
+{
+  // Integration tests (3B.6 PR 2): a hero with Brace three cells from a manual goblin, so the GM can walk the goblin
+  // into the hero's reach.
+  "id": "it-brace",
+  "name": "IT: Brace",
+  "description": "Integration tests: Hero with Brace, a manual Goblin three cells away.",
+  "order": 6,
+  "combatants": [
+    { "name": "Hero",   "side": "party", "profile": "skirmisher", "hp": 20, "at": [9, 9], "abilities": ["brace"] },
+    { "name": "Goblin", "side": "enemy", "profile": "grunt", "hp": 10, "dodge": 10, "ai": false, "at": [9, 12] }
+  ]
+}

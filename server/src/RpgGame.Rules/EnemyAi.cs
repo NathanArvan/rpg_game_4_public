@@ -15,7 +15,8 @@ namespace RpgGame.Rules;
 /// whose conditions stop it acting (Stunned, or 0 AP) isn't planned (the Api locks it in with an empty plan),
 /// and a Rooted one doesn't walk or charge: it attacks if it's in reach, else defends. A walk that would leave a
 /// standing enemy's reach (an opportunity attack, 3B.6) becomes a Disengage if the AP allows, else it attacks the
-/// enemy next to it instead; a Charge that would provoke isn't used.
+/// enemy next to it instead; a Charge that would provoke isn't used. A ready prepared reaction (3B.6 PR 2) ends the
+/// queue instead of a lone Defend or leftover AP when its trigger could happen this round (<see cref="Finish"/>).
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -109,7 +110,7 @@ public static class EnemyAi
 
             if (target is null)
             {
-                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
+                plans[id] = Finish(queue, state, self, from, config);
                 blockers.Add(from);
                 continue;
             }
@@ -118,14 +119,14 @@ public static class EnemyAi
             if (from.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
             {
                 AddAttacks(queue, state, self, from, target, apLeft, config);
-                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
+                plans[id] = Finish(queue, state, self, from, config);
                 blockers.Add(from);
                 continue;
             }
 
             if (rooted)
             {
-                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()]; // can't close the distance
+                plans[id] = Finish(queue, state, self, from, config); // can't close the distance
                 blockers.Add(from);
                 continue;
             }
@@ -141,7 +142,7 @@ public static class EnemyAi
                 blockers.Add(end);
                 queue.Add(PlannedAction.Ability(charge.Ability.Id, target.Id));
                 AddAttacks(queue, state, self, end, target, apLeft - charge.Ability.ApCost, config);
-                plans[id] = queue;
+                plans[id] = Finish(queue, state, self, end, config);
                 continue;
             }
 
@@ -150,7 +151,7 @@ public static class EnemyAi
                 : null;
             if (path is null)
             {
-                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()]; // boxed in (or out of AP)
+                plans[id] = Finish(queue, state, self, from, config); // boxed in (or out of AP)
                 blockers.Add(from);
                 continue;
             }
@@ -165,7 +166,7 @@ public static class EnemyAi
                 else if (AdjacentEnemy(state, self, from, config) is { } adjacent)
                 {
                     AddAttacks(queue, state, self, from, adjacent, apLeft, config);
-                    plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
+                    plans[id] = Finish(queue, state, self, from, config);
                     blockers.Add(from);
                     continue;
                 }
@@ -182,10 +183,52 @@ public static class EnemyAi
             if (destination.ChebyshevDistanceTo(targetPos) <= config.MeleeReach)
                 AddAttacks(queue, state, self, destination, target,
                     apLeft - (disengage ? config.DisengageApCost : config.MoveApCost), config);
-            plans[id] = queue;
+            plans[id] = Finish(queue, state, self, destination, config);
         }
 
         return plans;
+    }
+
+    /// <summary>
+    /// The end of a queue (3B.6, SPRINT_3B6 X15): a ready prepared reaction the AP left pays for, whose trigger could
+    /// plausibly happen this round from where the queue leaves the AI (<see cref="ChooseReaction"/>), goes last. Otherwise
+    /// an empty queue defends.
+    /// </summary>
+    private static List<PlannedAction> Finish(
+        List<PlannedAction> queue, EncounterState state, CombatantState self, GridPosition end, RulesConfig config)
+    {
+        int apLeft = self.Profile.MaxAp - PlanValidator.ApCost(queue, self.Profile, config);
+        if (ChooseReaction(state, self, end, apLeft, config) is { } reaction)
+            queue.Add(PlannedAction.Ability(reaction.Id));
+        else if (queue.Count == 0)
+            queue.Add(PlannedAction.Defend());
+        return queue;
+    }
+
+    /// <summary>
+    /// A ready, affordable prepared reaction worth watching with from <paramref name="at"/> (SPRINT_3B6 X15): Brace
+    /// (<see cref="TriggerKind.EnemyEntersReach"/>) if a standing enemy outside its reach could walk into it this round
+    /// (within that enemy's movement + reach); Overwatch (<see cref="TriggerKind.EnemyMovesWithin"/>) if a standing enemy
+    /// that can move could end a step within its range. Judged from where everyone stands now; loadout order.
+    /// </summary>
+    private static AbilityDefinition? ChooseReaction(
+        EncounterState state, CombatantState self, GridPosition at, int apLeft, RulesConfig config)
+    {
+        int reach = config.MeleeReach;
+        var enemies = state.Combatants
+            .Where(c => IsLivingEnemy(self, c))
+            .Select(c => (Distance: at.ChebyshevDistanceTo(c.Position!.Value),
+                          Move: ConditionMath.IsBlocked(c.Conditions, BlockKind.Move) ? 0 : ConditionMath.EffectiveMovementRange(c.Profile, c.Conditions)))
+            .Where(e => e.Move > 0)
+            .ToList();
+        return self.Profile.Abilities.FirstOrDefault(a =>
+            a is { IsPrepared: true, Trigger: { } trigger } && a.ApCost <= apLeft && self.CooldownLeft(a.Id) == 0
+            && trigger.Kind switch
+            {
+                TriggerKind.EnemyEntersReach => enemies.Any(e => e.Distance > reach && e.Distance <= e.Move + reach),
+                TriggerKind.EnemyMovesWithin => enemies.Any(e => e.Distance <= (trigger.Range ?? reach) + e.Move),
+                _ => false, // attack triggers: 3B.6 PR 3
+            });
     }
 
     /// <summary>

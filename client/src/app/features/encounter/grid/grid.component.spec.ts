@@ -9,7 +9,7 @@ import { PlanningCombatantDto, AbilityDto } from '../../../contracts/hub-contrac
 import { MapInitialized } from '../../../state/map/map.actions';
 import { ResolutionPlaybackService } from '../../../core/services/resolution-playback.service';
 import { PLAYBACK_TIMING } from '../../../core/services/playback-timeline';
-import { makeAbility, makeActiveCondition, makeAttack, makeCondition, makeMove, makePayload, makePlanningCombatant, makeTick } from '../../../testing/builders';
+import { makeAbility, makeActiveCondition, makeAttack, makeCondition, makeMove, makePayload, makePlanningCombatant, makePreparedAbility, makeTick } from '../../../testing/builders';
 
 describe('GridComponent', () => {
   let fixture: ComponentFixture<GridComponent>;
@@ -505,6 +505,43 @@ describe('GridComponent', () => {
       expect(grid.canAffordDisengage).toBeFalse();
       grid.toggleDisengage();
       expect(grid.disengageArmed).toBeFalse();
+    });
+  });
+
+  describe('prepared reactions (3B.6 PR 2)', () => {
+    const brace = makePreparedAbility();
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('bruiser', 'Bruiser', 'player', false, 4, 4, [powerStrike, brace]),
+        row('goblin', 'Goblin', 'monster'),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 5, y: 5 }, goblin: { x: 9, y: 5 } }));
+    });
+
+    it('queues a prepared reaction on its button, with no target, and then refuses anything after it', () => {
+      grid.onCellClick({ x: 6, y: 5 });                          // a move: 1 AP
+      grid.toggleAbility('brace');
+      expect(grid.armedAbilityId).toBeNull();
+      expect(grid.selectedPlan).toEqual([
+        jasmine.objectContaining({ type: 'move' }),
+        jasmine.objectContaining({ type: 'ability', abilityId: 'brace', targetCombatantId: null }),
+      ]);
+      expect(grid.selectedWatching).toBe(brace);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="watching-hint"]').textContent)
+        .toContain('👁 Watching (Brace): nothing can follow a prepared reaction');
+
+      expect(grid.isInRange({ x: 6, y: 6 })).toBeFalse();       // no move highlight any more
+      grid.onCellClick({ x: 6, y: 6 });
+      grid.onCellClick({ x: 9, y: 5 });
+      grid.planDefend();
+      expect(grid.canAffordDefend).toBeFalse();
+      expect(grid.canAffordDisengage).toBeFalse();
+      expect(grid.selectedPlan.length).toBe(2);
+
+      grid.undoLast();                                            // undo removes it, and planning goes on
+      expect(grid.selectedWatching).toBeUndefined();
+      expect(grid.isInRange({ x: 6, y: 6 })).toBeTrue();
     });
   });
 });

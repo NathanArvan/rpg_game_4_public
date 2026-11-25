@@ -1,0 +1,24 @@
+{
+  // 3B.6 PR 2 (SPRINT_3B6 X12): Brace strikes an enemy the moment its step ends inside the watcher's reach, before that
+  // enemy's Attack phase. The Grunt's Charge runs (7,5) → (6,5); Brace hits at step 2 (d20, then d8 + 2) and drops it,
+  // so the Charge's strike never happens.
+  "description": "Brace: a goblin charging into reach is cut down before it can swing",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Grunt",   "side": "enemy", "hp": 5, "maxHp": 20, "at": [8, 5], "abilities": ["charge"] }
+  ],
+  "plans": { "Bruiser": ["ability brace"], "Grunt": ["ability charge Bruiser"] },
+  "dice": [12, 4],                       // Brace: hit, 4 + 2 = 6
+  "expect": {
+    "positions": { "Grunt": [6, 5] },
+    "hp": { "Bruiser": 20, "Grunt": 0 },
+    "status": { "Grunt": "dead" },
+    "cooldowns": { "Bruiser": { "brace": 1 }, "Grunt": { "charge": 2 } },
+    "events": [
+      "t1 Bruiser prepares brace",
+      "t1 Grunt moves to 6,5 (charge)",
+      "t1 s2 Bruiser brace Grunt: hit 6, Grunt dead",
+      "t1 s2 Grunt falls"
+    ]
+  }
+}

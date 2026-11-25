@@ -16,7 +16,8 @@ public sealed record PlanCheck(string? Error, int ApSpent, int MoveCellsUsed)
 /// queued moves would leave the combatant, ignoring everyone else (who may block it at resolution).
 /// Ability entries (3B.3) must name a loadout ability that isn't on cooldown, appear at most once
 /// if the ability has a cooldown, and carry the target shape its targeting kind needs.
-/// Disengage (3B.6) counts as a move for the budget, the route and Rooted.
+/// Disengage (3B.6) counts as a move for the budget, the route and Rooted. A prepared reaction (3B.6, SPRINT_3B6 X7)
+/// takes no target and must be the last action of the queue.
 /// Conditions (3B.4 PR 3, SPRINT_3B4 C6, C8) change the AP and movement budgets, reject any plan while
 /// they block every action (Stunned), and reject moves and abilities that move while they block moves (Rooted).
 /// </summary>
@@ -58,8 +59,13 @@ public static class PlanValidator
         int ap = 0, cells = 0;
         var position = start;
         var abilitiesQueued = new HashSet<string>();
+        bool preparedQueued = false;
         foreach (var action in queue)
         {
+            if (preparedQueued)
+                return new PlanCheck(PreparedNotLast, ap, cells);
+            preparedQueued = action.Type == ActionType.Ability && profile.FindAbility(action.AbilityId) is { IsPrepared: true };
+
             if (action.Type == ActionType.Ability
                 && CheckAbility(action, profile, cooldowns, abilitiesQueued) is { } abilityError)
                 return new PlanCheck(abilityError, ap, cells);
@@ -98,6 +104,9 @@ public static class PlanValidator
 
         return new PlanCheck(null, ap, cells);
     }
+
+    /// <summary>The X7 rule's message (SPRINT_3B6): nothing can follow a prepared reaction.</summary>
+    public const string PreparedNotLast = "A prepared reaction must be the last action in the queue.";
 
     /// <summary>
     /// An ability's move effect (ABILITIES.md A7). A move to a cell must stay on the grid and within
@@ -153,7 +162,7 @@ public static class PlanValidator
         var ability = profile.FindAbility(action.AbilityId);
         if (ability is null)
             return $"This combatant doesn't have the ability '{action.AbilityId}'.";
-        if (ability.Activation != AbilityActivation.Active)
+        if (ability.Activation == AbilityActivation.Passive || (ability.IsPrepared && ability.Trigger is null))
             return $"{ability.Name} can't be queued.";
 
         int left = cooldowns?.GetValueOrDefault(ability.Id) ?? 0;
@@ -169,7 +178,7 @@ public static class PlanValidator
         return ability.Targeting.Kind switch
         {
             TargetKind.Combatant when !hasOne || listed > 0 => $"{ability.Name} needs one target.",
-            TargetKind.Self or TargetKind.Auto when hasOne || listed > 0 => $"{ability.Name} doesn't take a target.",
+            TargetKind.Self or TargetKind.Auto or TargetKind.Trigger when hasOne || listed > 0 => $"{ability.Name} doesn't take a target.",
             TargetKind.Combatants when hasOne || listed == 0
                 => $"{ability.Name} needs between 1 and {ability.Targeting.Count ?? 1} targets.",
             TargetKind.Combatants when listed > (ability.Targeting.Count ?? 1)

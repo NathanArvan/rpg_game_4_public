@@ -27,7 +27,16 @@ public sealed record RoundOutcome(
     /// <see cref="DefeatedThisRound"/>.
     /// </summary>
     public IReadOnlyList<string> RevivedThisRound { get; init; } = [];
+
+    /// <summary>
+    /// Prepared reactions still watching when the round ended (3B.6, SPRINT_3B6 X10), in combatant order: they never
+    /// fired. No AP is refunded and the cooldown has already started.
+    /// </summary>
+    public IReadOnlyList<PreparedReaction> UnusedReactions { get; init; } = [];
 }
+
+/// <summary>A combatant's prepared reaction (3B.6): who is watching, with which ability.</summary>
+public sealed record PreparedReaction(string CombatantId, string AbilityId);
 
 /// <summary>
 /// End of round for one combatant who was already Downed when the round started (3B.5): its
@@ -64,6 +73,12 @@ public sealed record TickOutcome(
     /// then reactor (combatant) order. Each resolved on the spot, at the step that provoked it.
     /// </summary>
     public IReadOnlyList<ReactionOutcome> Reactions { get; init; } = [];
+
+    /// <summary>
+    /// Prepared reactions that started watching at the start of this tick (3B.6, SPRINT_3B6 X8), in plan order. The
+    /// ability is used (its cooldown starts) whether or not it ever fires.
+    /// </summary>
+    public IReadOnlyList<PreparedReaction> Watching { get; init; } = [];
 }
 
 /// <summary>What kind of reaction fired (3B.6).</summary>
@@ -71,7 +86,7 @@ public enum ReactionKind
 {
     /// <summary>A passive opportunity attack: an enemy stepped out of the reactor's reach.</summary>
     Opportunity,
-    /// <summary>A prepared reaction (an ability with <see cref="AbilityActivation.Prepared"/>, PR 2).</summary>
+    /// <summary>A prepared reaction: an ability with <see cref="AbilityActivation.Prepared"/> whose trigger was met.</summary>
     Prepared,
 }
 

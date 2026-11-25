@@ -176,6 +176,22 @@
       "ap": 3, "cooldown": 4, "tags": ["debuff"],
       "target": { "kind": "combatant", "filter": "enemy", "range": 6 },
       "effects": [ { "kind": "apply_condition", "condition": "stunned", "duration": 1 } ]
+    },
+    {
+      "id": "brace", "name": "Brace", "activation": "prepared",
+      "description": "Ends your queue. Until the end of the round, strike the first enemy that steps into your reach (weapon die + 2), before it can attack.",
+      "ap": 2, "cooldown": 1, "tags": ["melee"],
+      "trigger": { "kind": "enemy_enters_reach" },
+      "target": { "kind": "trigger" },
+      "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "weapon", "bonus": 2 } } ]
+    },
+    {
+      "id": "overwatch", "name": "Overwatch", "activation": "prepared",
+      "description": "Ends your queue. Until the end of the round, shoot the first enemy that moves within 6 cells of you.",
+      "ap": 2, "cooldown": 1, "tags": ["ranged"],
+      "trigger": { "kind": "enemy_moves_within", "range": 6 },
+      "target": { "kind": "trigger" },
+      "effects": [ { "kind": "attack", "roll": "ranged", "damage": { "die": "weapon" } } ]
     }
   ]
 }

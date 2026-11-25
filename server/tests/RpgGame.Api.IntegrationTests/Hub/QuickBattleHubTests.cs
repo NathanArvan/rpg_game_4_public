@@ -131,6 +131,39 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Brace_strikes_the_goblin_as_it_steps_into_reach_and_nothing_can_follow_it()
+    {
+        // 3B.6 PR 2. it-brace: Hero (9,9) with Brace; the manual Goblin (9,12) walks to (9,10), stepping into reach at
+        // step 2. Brace: d20 20 hits; d6 3 + 2 = 5.
+        var (battle, ids) = await StartAsync("it-brace");
+        var (hero, goblin) = (ids["Hero"], ids["Goblin"]);
+        var brace = new PlannedActionEntry("ability", null, null, "brace");
+
+        // Anything after a prepared reaction is refused (SPRINT_3B6 X7).
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(brace, Defend()), hero);
+        var rejected = await _client.NextAsync<ActionRejectedPayload>(Events.ActionRejected);
+        Assert.Equal("A prepared reaction must be the last action in the queue.", rejected.Reason);
+
+        api.Dice.Script(20, 3);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(brace), hero);
+        await _client.InvokeAsync(Methods.PlanEnemyAction, battle.JoinCode, goblin, Queue(Move(9, 10)));
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+        await _client.InvokeAsync(Methods.LockInEnemies, battle.JoinCode);
+
+        var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
+        Assert.Equal(0, api.Dice.Remaining);
+        var watching = Assert.Single(round1.Ticks[0].Watching!);
+        Assert.Equal((hero, "brace", "Hero prepares Brace"), (watching.CombatantId, watching.AbilityId, watching.FeedText));
+        var reaction = Assert.Single(round1.Ticks[0].Reactions!);
+        Assert.Equal((hero, goblin, "prepared", "brace", 2), (reaction.ReactorId, reaction.TriggerId, reaction.Kind, reaction.AbilityId, reaction.Step));
+        Assert.Equal("Hero's Brace hits Goblin for 5 damage (HP: 10 → 5)", reaction.FeedText);
+        Assert.Empty(round1.UnusedReactions!);
+        Assert.Equal(1, round1.UpdatedCombatants.Single(c => c.Id == hero).Cooldowns!["brace"]);
+
+        ContractShape.AssertEventsMatch(_client.Events);
+    }
+
+    [Fact]
     public async Task Mark_puts_conditions_on_the_goblin_that_change_the_next_hit_and_carry_into_the_next_round()
     {
         var (battle, ids) = await StartAsync("it-mark");

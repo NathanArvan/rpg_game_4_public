@@ -49,6 +49,7 @@
           {{ token.combatant.characterName[0] }}
           <span class="bleed-badge" *ngIf="shownStatus(token.combatant).status === 'downed'">{{ shownStatus(token.combatant).bleedoutRoundsLeft }}</span>
           <span class="pick-badge" *ngIf="pickNumber(token.combatant) as n">{{ n }}</span>
+          <span class="watch-badge" *ngIf="shownWatching(token.combatant) as watching" [title]="'Watching: ' + watching">👁</span>
           <app-condition-chips
             *ngIf="shownConditions(token.combatant).length > 0"
             class="token-conditions"
@@ -129,6 +130,10 @@
       🎯 {{ hint }}
       <button *ngIf="armedConfirmLabel as label" class="armed-confirm" type="button"
               [disabled]="!canConfirmArmed" (click)="confirmArmed()">{{ label }}</button>
+    </div>
+    <div class="watching-hint" *ngIf="selectedWatching as watching" data-testid="watching-hint"
+         [title]="watching.trigger?.description ?? ''">
+      👁 Watching ({{ watching.name }}): nothing can follow a prepared reaction. Undo removes it.
     </div>
     <div class="armed-hint" *ngIf="disengageArmed" data-testid="disengage-hint">
       🏃 Disengage: click a highlighted cell. That move provokes no opportunity attacks (2 AP). Esc or click the button again to cancel.

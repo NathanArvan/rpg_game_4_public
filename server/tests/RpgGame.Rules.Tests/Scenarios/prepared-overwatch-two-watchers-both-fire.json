@@ -1,0 +1,15 @@
+{
+  // SPRINT_3B6 X10: several watchers on the same event all fire, in combatant order, as one netted batch.
+  "description": "Two Overwatchers both shoot the same runner at the same step",
+  "combatants": [
+    { "id": "A",      "side": "party", "at": [0, 5], "abilities": ["overwatch"] },
+    { "id": "B",      "side": "party", "at": [0, 6], "abilities": ["overwatch"] },
+    { "id": "Runner", "side": "enemy", "at": [9, 5] }
+  ],
+  "plans": { "A": ["ability overwatch"], "B": ["ability overwatch"], "Runner": ["move 5,5"] },
+  "dice": [12, 3, 15, 4],
+  "expect": {
+    "hp": { "Runner": 13 },
+    "events": ["t1 s3 A overwatch Runner: hit 3", "t1 s3 B overwatch Runner: hit 4"]
+  }
+}

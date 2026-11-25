@@ -17,6 +17,9 @@
 
   &:hover:not(:disabled) { background: #4a148c; }
 
+  &.prepared { background: #1565c0; }
+  &.prepared:hover:not(:disabled) { background: #0d47a1; }
+
   &.armed {
     background: #4a148c;
     box-shadow: 0 0 0 2px #ffeb3b;

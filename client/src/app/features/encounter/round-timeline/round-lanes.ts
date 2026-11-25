@@ -14,7 +14,7 @@ export type SlotKind = 'move' | 'disengage' | 'melee_attack' | 'ranged_attack' |
 
 /** What happened. 'none' = nothing to report (idle, lost). */
 export type SlotOutcome =
-  'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'healed' | 'stopped' | 'none';
+  'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'healed' | 'stopped' | 'watching' | 'none';
 
 export interface LaneSlot {
   tick: number;
@@ -29,6 +29,13 @@ export interface LaneSlot {
   detail: string;
   /** This combatant's move drew a reaction this tick (an opportunity attack, 3B.6): shown as ⚔ on the cell. */
   provoked: boolean;
+  /**
+   * A prepared reaction is watching in this tick (3B.6): 'start' on the tick it was queued for (👁), 'on' for the later
+   * ticks it keeps watching (a faint bar to the end of the round, or until it fires).
+   */
+  watching: 'start' | 'on' | null;
+  /** The combatant's prepared reaction fired this tick (3B.6): shown as ⚡ on the cell. */
+  reacted: boolean;
 }
 
 export interface Lane {
@@ -82,8 +89,12 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
   const nameOf = (id: string | null) => (id && names.get(id)) || 'someone';
   // Ability names (3B.3), from the activations the server reported.
   const abilityNames = new Map<string, string>();
-  for (const tick of payload.ticks)
+  for (const c of payload.updatedCombatants ?? [])
+    for (const a of c.abilities ?? []) abilityNames.set(a.id, a.name);
+  for (const tick of payload.ticks) {
     for (const u of tick.abilityUses ?? []) abilityNames.set(u.abilityId, u.abilityName);
+    for (const w of tick.watching ?? []) abilityNames.set(w.abilityId, w.abilityName);
+  }
 
   // The tick each combatant fell in (went down or died): its later actions never happen. Reactions (3B.6) can drop
   // someone mid-move, before the tick's attacks.
@@ -103,7 +114,8 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
   return queues.map(q => {
     const name = q.combatantName;
     const downAt = defeatedIn.get(q.combatantId);
-    const slots: LaneSlot[] = payload.ticks.map((tick, i) => withReactions(tick.reactions ?? [], q.combatantId, buildSlot(tick, i)));
+    const slots: LaneSlot[] = withWatching(payload, q.combatantId,
+      payload.ticks.map((tick, i) => withReactions(tick.reactions ?? [], q.combatantId, buildSlot(tick, i))));
     function buildSlot(tick: ResolutionPayload['ticks'][number], i: number): LaneSlot {
       const action = q.actions[i];
       const isDown = downAt !== undefined && i > downAt;
@@ -155,6 +167,10 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       }
 
       if (kind === 'ability') {
+        // A prepared reaction (3B.6) starts watching instead of resolving; withWatching adds whether it fired.
+        const watch = (tick.watching ?? []).find(w => w.combatantId === q.combatantId);
+        if (watch) return { ...slot(i, kind, action.apCost, 'watching', label,
+          `${name} prepares ${watch.abilityName}: watching until it fires or the round ends.`), icon: '👁' };
         const use = (tick.abilityUses ?? []).find(u => u.combatantId === q.combatantId);
         if (!use) return lost();
         if (use.wastedReason === 'no_targets') return slot(i, kind, action.apCost, 'wasted', label,
@@ -224,7 +240,35 @@ function lowerFirst(text: string): string {
 }
 
 function slot(tick: number, kind: SlotKind, apCost: number, outcome: SlotOutcome, label: string, detail: string): LaneSlot {
-  return { tick, kind, apCost, icon: ICONS[kind], outcome, label, detail, provoked: false };
+  return { tick, kind, apCost, icon: ICONS[kind], outcome, label, detail, provoked: false, watching: null, reacted: false };
+}
+
+/**
+ * Follows the combatant's prepared reaction (3B.6) from the tick it started watching: every tick until it fires (⚡,
+ * with the reaction's roll in the detail) or the round ends (and it goes unused) is marked as watching.
+ */
+function withWatching(payload: ResolutionPayload, combatantId: string, slots: LaneSlot[]): LaneSlot[] {
+  const start = payload.ticks.findIndex(t => (t.watching ?? []).some(w => w.combatantId === combatantId));
+  if (start < 0) return slots;
+  const watch = payload.ticks[start].watching!.find(w => w.combatantId === combatantId)!;
+  const unused = (payload.unusedReactions ?? []).some(u => u.combatantId === combatantId);
+  let end = slots.length - 1;
+  return slots.map((s, i) => {
+    if (i < start || i > end || s.kind === 'lost') return s;
+    const fired = (payload.ticks[i].reactions ?? []).filter(r => r.reactorId === combatantId && r.kind === 'prepared');
+    const next: LaneSlot = { ...s, watching: i === start ? 'start' : 'on' };
+    if (fired.length > 0) {
+      end = i;
+      next.reacted = true;
+      next.detail = `${s.detail} ⚡ ` + fired.map(r => r.attack
+        ? `${watch.abilityName} (step ${r.step}): ${attackDetail(r.reactorName, r.attack)}`
+        : `${watch.abilityName} fires (step ${r.step}).`).join(' ');
+    } else if (i > start && s.kind === 'idle') {
+      next.detail = `${s.detail.replace(/ \(queue used up\)\.$/, '.')} 👁 Still watching with ${watch.abilityName}.`;
+    }
+    if (i === slots.length - 1 && unused) next.detail = `${next.detail} ${watch.abilityName} goes unused.`;
+    return next;
+  });
 }
 
 /** Marks a slot whose combatant drew reactions this tick (3B.6) and adds their lines, with the rolls, to its detail. */

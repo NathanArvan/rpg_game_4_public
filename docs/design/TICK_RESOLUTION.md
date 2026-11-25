@@ -181,6 +181,8 @@ Explicitly queued during planning. Cost AP. Occupy a slot in the action queue. M
 
 A prepared action does not resolve at its queue position. Instead, it places the combatant in a **watching** state for the remainder of the round. If the trigger condition is met during any subsequent tick, the reaction fires. If the trigger never fires, the AP is spent and nothing happens.
 
+> **As built (3B.6 PR 2, `SPRINT_3B6.md` X6–X12):** a prepared reaction is an **ability** with `"activation": "prepared"` and a `trigger` (`enemy_enters_reach`, `enemy_moves_within` + `range`; `attacked` and `ally_attacked` arrive in PR 3), targeting `"trigger"` (whoever set it off). It's queued as an ordinary `{ "type": "ability", "abilityId": "brace" }` with no target and must be the **last action in the queue**. It starts watching at the start of its own tick (same-tick readiness), its cooldown starts then whether or not it fires, it fires once, and it stops when it fires, the watcher falls or is Stunned (from the next tick), or the round ends (reported as unused; no AP refund). Movement triggers are checked at the same step hook as opportunity attacks and resolve in the same netted batch. Several watchers on the same event all fire. The schema below is the original sketch.
+
 **Schema:**
 
 ```json
@@ -293,7 +295,7 @@ Players must weigh: "Is spending 1 AP on safe movement worth it, or do I eat the
 
 ### Built in 3B.6
 
-Opportunity attacks and Disengage landed in 3B.6 PR 1: after each lockstep movement step the resolver finds the opportunity attacks that step provoked, rolls them, nets them as one batch and runs the 0-HP check (`RoundResolver.ResolveStepReactions`, `SPRINT_3B6.md` X3). Prepared reactions follow in PRs 2–3.
+Opportunity attacks and Disengage landed in 3B.6 PR 1: after each lockstep movement step the resolver finds the opportunity attacks that step provoked, rolls them, nets them as one batch and runs the 0-HP check (`RoundResolver.ResolveStepReactions`, `SPRINT_3B6.md` X3). PR 2 added prepared movement reactions (Brace: an enemy steps into reach; Overwatch: an enemy moves within 6) to the same hook and batch: movers in plan order, then reactors in combatant order, a reactor's opportunity attack before its prepared one. Attack triggers (Parry, Intercept) follow in PR 3, before the Attack phase rolls.
 ---
 
 ## Decision 6: Path-Based Movement ✅
@@ -397,6 +399,8 @@ When AP lands in 3B.2, the constraint is lifted. Queue length becomes dynamic, d
 ```
 
 ### PlannedAction Schema (3B.6+ with Prepared Reactions)
+
+> **As built (3B.6 PR 2):** no `"prepared"` action type. A prepared reaction is an ability entry, `{ "type": "ability", "abilityId": "overwatch" }` with no target, and must be the last entry of the queue. Its trigger and effects live on the ability (`abilities.json`). The sketch below is kept for history.
 
 ```json
 {
@@ -534,13 +538,18 @@ These decisions are explicitly **not locked** and will be resolved through playt
 
 | Question | Slice | Options | Current Lean |
 |---|---|---|---|
-| Should unused prepared actions refund AP? | 3B.6 | Full refund / partial / none | No refund. Preparation is a gamble. |
-| Can a prepared action trigger in the same tick it's queued? | 3B.6 | Yes (instant readiness) / No (ready next tick) | Yes — you're declaring readiness, not performing a setup ritual. |
-| If multiple prepared reactions trigger on the same event, do all fire? | 3B.6 | All fire (wasted duplicates) / only first | All fire. Wasted counterspell is the cost of imperfect coordination. |
 | Should opportunity attacks be passive-free or cost a stance? | 3B+ | Free passive / stance slot (no AP but limits other stances) | Free passive. Stances are a good concept but add complexity — defer. |
 | Can players choose their movement path? | 3B+ | Server-computed shortest / player-drawn path | Server-computed for 3A. Player-drawn is a UI enhancement. |
 | Should ranged attacks in melee range have a penalty? | 3B+ | Penalty (disadvantage on hit roll) / no penalty | Penalty. Makes positioning matter for ranged characters. |
-| Does Disengage prevent prepared movement reactions? | 3B.6 | Yes (full safety) / No (only prevents passives) | No. Disengage avoids free reactions, not committed ones. |
+
+### Resolved in 3B.6
+
+| Question | Decision |
+|---|---|
+| Should unused prepared actions refund AP? | **No refund** (`SPRINT_3B6.md` X10). The unused reaction is reported at the end of the round, and its cooldown has started. |
+| Can a prepared action trigger in the same tick it's queued? | **Yes**: it watches from the start of its own tick, before that tick's movement (X8). |
+| If multiple prepared reactions trigger on the same event, do all fire? | **All fire** (X10), except where the event changes (a redirected attack, PR 3). |
+| Does Disengage prevent prepared movement reactions? | **No** (X4). Disengage avoids passive opportunity attacks only. |
 
 ---
 

@@ -81,6 +81,24 @@ public class AbilityCatalogTests : IDisposable
     }
 
     [Fact]
+    public void ShippedPreparedReactions_MapToTheRulesEngine()
+    {
+        // 3B.6 PR 2: Brace and Overwatch are prepared, target whoever triggered them, and carry their trigger.
+        var catalog = AbilityCatalog.FromAppDirectory();
+        var brace = AbilityMapping.ToRules(catalog.Find("brace")!);
+        Assert.True(brace.IsPrepared);
+        Assert.Equal(new ReactionTrigger(TriggerKind.EnemyEntersReach), brace.Trigger);
+        Assert.Equal(new Targeting(TargetKind.Trigger, TargetFilter.Enemy, 0), brace.Targeting);
+        Assert.Equal(new AttackEffect(AttackKind.Melee, new DamageSpec(Bonus: 2)), Assert.Single(brace.Effects));
+
+        var overwatch = AbilityMapping.ToRules(catalog.Find("overwatch")!);
+        Assert.Equal(new ReactionTrigger(TriggerKind.EnemyMovesWithin, 6), overwatch.Trigger);
+        Assert.Equal(new AttackEffect(AttackKind.Ranged, DamageSpec.Weapon), Assert.Single(overwatch.Effects));
+
+        Assert.Null(AbilityMapping.ToRules(catalog.Find("power_strike")!).Trigger);
+    }
+
+    [Fact]
     public void HealWithOnlyABonus_HasNoDie()
     {
         var a = Assert.Single(AbilityCatalog.Load(Write("abilities.json", """
@@ -129,7 +147,17 @@ public class AbilityCatalogTests : IDisposable
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee", "damage": { "die": "2d6" } } ] }""", "'die'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee", "damage": { "multiplier": 0 } } ] }""", "'multiplier'")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "charges": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'charges'")]
-    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "'activation'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "passive", "target": { "kind": "self" }, "effects": [ { "kind": "move", "to": "cell", "maxCells": 1 } ] }""", "'activation'")]
+    // Prepared reactions (3B.6 PR 2).
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "needs a 'trigger'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "trigger": { "kind": "enemy_enters_reach" }, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "only a prepared ability takes a 'trigger'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_sneezes" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "unknown trigger 'enemy_sneezes'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "attacked" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "trigger 'attacked' isn't supported yet")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_moves_within" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "needs a 'range'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_enters_reach", "range": 2 }, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "takes no 'range'")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "trigger" }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "only for prepared abilities")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_enters_reach" }, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ] }""", "targets \"trigger\"")]
+    [InlineData("""{ "id": "x", "name": "X", "ap": 1, "activation": "prepared", "trigger": { "kind": "enemy_enters_reach" }, "target": { "kind": "trigger" }, "effects": [ { "kind": "move", "to": "target", "maxCells": 1 } ] }""", "can only be \"attack\"")]
     [InlineData("""{ "id": "x", "name": "X", "ap": 1, "target": { "kind": "combatant", "filter": "enemy", "range": 1 }, "effects": [ { "kind": "attack", "roll": "melee" } ], "resonanceScaling": { "lava": {} } }""", "'lava'")]
     public void BrokenAbility_FailsWithTheFileAndAbility(string ability, string expected)
     {

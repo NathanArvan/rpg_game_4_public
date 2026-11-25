@@ -11,6 +11,7 @@
     "Conditions (3B.4 PR 3): optional conditions ([{ name, movement, ap, blocks: ['all' | 'move'] }]) active at the start of",
     "planning. The server sums them into the budgets; the client receives the effective maxAp / movementRange and blocks",
     "from the server (the client harness works them out the same way before calling validatePlan).",
+    "Library abilities may carry 'activation': 'prepared' (3B.6 PR 2: a prepared reaction, targeting kind 'trigger').",
     "The abilities are test versions (only what validation reads); they don't follow the shipped abilities.json."
   ],
   "grid": { "width": 20, "height": 20 },
@@ -28,7 +29,9 @@
     "leap": { "name": "Leap", "apCost": 1, "cooldown": 0, "targeting": { "kind": "self", "count": null },
       "move": { "to": "cell", "maxCells": 4, "usesMovementBudget": true } },
     "charge": { "name": "Charge", "apCost": 3, "cooldown": 2, "targeting": { "kind": "combatant", "count": null },
-      "move": { "to": "target", "maxCells": 6, "usesMovementBudget": true } }
+      "move": { "to": "target", "maxCells": 6, "usesMovementBudget": true } },
+    "brace": { "name": "Brace", "apCost": 2, "cooldown": 1, "targeting": { "kind": "trigger", "count": null }, "move": null, "activation": "prepared" },
+    "parry": { "name": "Parry", "apCost": 1, "cooldown": 1, "targeting": { "kind": "trigger", "count": null }, "move": null, "activation": "prepared" }
   },
   "cases": [
     { "name": "an empty queue is legal", "queue": [], "expect": { "ap": 0, "cells": 0 } },
@@ -166,6 +169,19 @@
     { "name": "a Rooted combatant can't Disengage", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "queue": ["disengage 1,0"],
       "expect": { "error": "This combatant is Rooted and can't move." } },
     { "name": "a Rooted combatant can still attack", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "queue": ["melee g", "melee g"],
-      "expect": { "ap": 4, "cells": 0 } }
+      "expect": { "ap": 4, "cells": 0 } },
+
+    { "name": "a prepared reaction last in the queue is legal", "abilities": ["brace"], "queue": ["move 2,0", "ability brace"], "expect": { "ap": 3, "cells": 2 } },
+    { "name": "a prepared reaction alone is legal", "abilities": ["brace"], "queue": ["ability brace"], "expect": { "ap": 2, "cells": 0 } },
+    { "name": "nothing can follow a prepared reaction", "abilities": ["brace"], "queue": ["ability brace", "defend"],
+      "expect": { "error": "A prepared reaction must be the last action in the queue." } },
+    { "name": "a second prepared reaction can't follow the first", "abilities": ["brace", "parry"], "queue": ["ability parry", "ability brace"],
+      "expect": { "error": "A prepared reaction must be the last action in the queue." } },
+    { "name": "a prepared reaction takes no target", "abilities": ["brace"], "queue": ["ability brace g"],
+      "expect": { "error": "Brace doesn't take a target." } },
+    { "name": "a prepared reaction on cooldown is refused", "abilities": ["brace"], "cooldowns": { "brace": 1 }, "queue": ["ability brace"],
+      "expect": { "error": "Brace is on cooldown for 1 more round." } },
+    { "name": "a prepared reaction still has to fit the AP", "abilities": ["brace"], "queue": ["melee g", "defend", "ability brace"],
+      "expect": { "error": "Not enough AP: this plan costs 5 AP but only 4 AP are available." } }
   ]
 }

@@ -1,19 +1,22 @@
 {
   // 3B.6 PR 1: opportunity attacks and Disengage. The party starts in melee: the Bruiser next to the Brute, the
   // Skirmisher next to Goblin 1 and the Scout next to Goblin 2 (and no one next to two enemies). Stepping out of
-  // an enemy's reach draws a free hit at that moment; Disengage (2 AP) steps away safely. Grows in PRs 2-3
-  // (prepared reactions).
-  // Used by the reactions E2E test: keep the Bruiser next to the Brute, with free cells behind him (row 11).
+  // an enemy's reach draws a free hit at that moment; Disengage (2 AP) steps away safely.
+  // PR 2: prepared reactions. The Bruiser and the Brute have Brace, the Scout and the Goblin Archer (far off, top
+  // right) Overwatch. The Archer walks toward the party in round 1 and takes up Overwatch with its last AP.
+  // Used by the reactions E2E tests: keep the Bruiser next to the Brute, with free cells behind him (row 11), and keep
+  // the Archer listed last (its rolls come after everyone else's) and out of reach in round 1.
   "id": "reactions",
   "name": "Reactions",
-  "description": "Start in melee: step away and take a free hit, or Disengage for 2 AP. Opportunity attacks against goblins and a brute.",
+  "description": "Start in melee: step away and take a free hit, or Disengage for 2 AP. Brace and Overwatch to punish whoever moves.",
   "order": 8,
   "combatants": [
-    { "name": "Bruiser",    "side": "party", "profile": "bruiser",    "at": [9, 10] },
-    { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [11, 10] },
-    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [13, 11] },
-    { "name": "Brute",      "side": "enemy", "profile": "brute",      "at": [9, 9] },
-    { "name": "Goblin 1",   "side": "enemy", "profile": "grunt",      "at": [11, 9] },
-    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [13, 10] }
+    { "name": "Bruiser",       "side": "party", "profile": "bruiser",    "at": [9, 10],  "abilities": ["power_strike", "cleave", "brace"] },
+    { "name": "Skirmisher",    "side": "party", "profile": "skirmisher", "at": [11, 10] },
+    { "name": "Scout",         "side": "party", "profile": "scout",      "at": [13, 11], "abilities": ["twin_shot", "dash", "overwatch"] },
+    { "name": "Brute",         "side": "enemy", "profile": "brute",      "at": [9, 9],   "abilities": ["power_strike", "charge", "brace"] },
+    { "name": "Goblin 1",      "side": "enemy", "profile": "grunt",      "at": [11, 9] },
+    { "name": "Goblin 2",      "side": "enemy", "profile": "grunt",      "at": [13, 10] },
+    { "name": "Goblin Archer", "side": "enemy", "profile": "grunt",      "at": [16, 2],  "rangedAccuracy": 2, "abilities": ["overwatch"] }
   ]
 }

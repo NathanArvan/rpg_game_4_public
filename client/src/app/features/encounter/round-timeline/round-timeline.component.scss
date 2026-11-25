@@ -89,6 +89,27 @@ table {
   &.outcome-stabilized { border-color: #26a69a; background: #e0f2f1; }
   &.outcome-healed { border-color: #66bb6a; background: #f1f8e9; }
   &.outcome-stopped { border-color: #9e9e9e; background: #eeeeee; color: #757575; text-decoration: line-through; }
+  &.outcome-watching { border-color: #1e88e5; background: #e3f2fd; }
+
+  // 3B.6: a prepared reaction keeps watching after its own tick: a faint bar to the end of the round (or until it fires).
+  &.watch-on::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 45%;
+    height: 3px;
+    background: rgba(30, 136, 229, 0.3);
+  }
+}
+
+/* 3B.6: this combatant's prepared reaction fired in this tick. */
+.reacted {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  font-size: 0.6em;
+  color: #1565c0;
 }
 
 .details {

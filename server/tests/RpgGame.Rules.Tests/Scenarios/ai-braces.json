@@ -1,0 +1,15 @@
+{
+  // SPRINT_3B6 X15: an AI that can't reach its target this round walks toward it and ends its queue with a ready Brace
+  // when the enemy could walk into its reach (within that enemy's movement + reach), instead of leaving AP unused.
+  "description": "AI: a Brute that can't close the distance walks and braces",
+  "combatants": [
+    { "id": "Hero",  "side": "party", "at": [5, 5] },
+    { "id": "Brute", "side": "enemy", "move": 3, "at": [10, 5], "abilities": ["brace"] }
+  ],
+  "plans": { "Brute": ["ai"] },
+  "dice": [],
+  "expect": {
+    "plans": { "Brute": ["move 7,5", "ability brace"] },
+    "events": ["t2 Brute prepares brace", "end Brute: brace unused"]
+  }
+}

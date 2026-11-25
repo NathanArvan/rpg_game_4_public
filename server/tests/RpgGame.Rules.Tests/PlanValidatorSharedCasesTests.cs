@@ -76,12 +76,18 @@ public partial class PlanValidatorTests
             "combatants" => TargetKind.Combatants,
             "self" => TargetKind.Self,
             "auto" => TargetKind.Auto,
+            "trigger" => TargetKind.Trigger,
             var k => throw new InvalidDataException($"ability {id}: unknown targeting kind '{k}'"),
         };
         List<AbilityEffect> effects = a.Move is { } m
             ? [new MoveEffect(m.To == "cell" ? MoveTo.Cell : MoveTo.Target, m.MaxCells, m.UsesMovementBudget)]
             : [new AttackEffect(AttackKind.Melee, DamageSpec.Weapon)];
-        return new AbilityDefinition(id, a.Name, a.ApCost, a.Cooldown, [], new Targeting(kind, TargetFilter.Any, 1, a.Targeting.Count), effects);
+        bool prepared = a.Activation == "prepared";
+        return new AbilityDefinition(id, a.Name, a.ApCost, a.Cooldown, [], new Targeting(kind, TargetFilter.Any, 1, a.Targeting.Count), effects,
+            Activation: prepared ? AbilityActivation.Prepared : AbilityActivation.Active)
+        {
+            Trigger = prepared ? new ReactionTrigger(TriggerKind.EnemyEntersReach) : null,
+        };
     }
 
     /// <summary>The table's compact queue syntax (see its "about").</summary>
@@ -123,7 +129,7 @@ public partial class PlanValidatorTests
     private sealed record CaseFile(GridSize Grid, Defaults Defaults, Dictionary<string, AbilityDto> Abilities, List<Case> Cases);
     private sealed record GridSize(int Width, int Height);
     private sealed record Defaults(int MaxAp, int MovementRange, int[] Start);
-    private sealed record AbilityDto(string Name, int ApCost, int Cooldown, TargetingDto Targeting, MoveDto? Move);
+    private sealed record AbilityDto(string Name, int ApCost, int Cooldown, TargetingDto Targeting, MoveDto? Move, string? Activation = null);
     private sealed record TargetingDto(string Kind, int? Count);
     private sealed record MoveDto(string To, int MaxCells, bool UsesMovementBudget);
     private sealed record ConditionCase(string Name, int Movement, int Ap, List<string>? Blocks);

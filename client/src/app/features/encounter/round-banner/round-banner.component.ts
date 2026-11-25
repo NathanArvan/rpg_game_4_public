@@ -17,6 +17,7 @@ const PHASE_LABELS: Record<PlaybackPhase, string> = {
   periodic: 'End of round',
   bleedout: 'End of round',
   expiries: 'End of round',
+  unused: 'End of round',
   idle: '',
 };
 

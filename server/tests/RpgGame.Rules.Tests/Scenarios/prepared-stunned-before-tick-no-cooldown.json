@@ -1,0 +1,17 @@
+{
+  // SPRINT_3B6 X8 (and SPRINT_3B4 C8): Hex stuns the Bruiser in tick 1's Effects phase, so in tick 2 its Brace is blocked:
+  // it never starts watching and its cooldown doesn't start.
+  "description": "A Brace blocked by a stun before its tick never starts, and has no cooldown",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [5, 5], "abilities": ["brace"] },
+    { "id": "Hexer",   "side": "enemy", "at": [9, 5], "abilities": ["hex"] },
+    { "id": "Grunt",   "side": "enemy", "at": [8, 7] }
+  ],
+  "plans": { "Bruiser": ["defend", "ability brace"], "Hexer": ["ability hex Bruiser"], "Grunt": ["defend", "move 6,6"] },
+  "dice": [],
+  "expect": {
+    "hp": { "Grunt": 20 },
+    "cooldowns": { "Bruiser": {}, "Hexer": { "hex": 4 }, "Grunt": {} },
+    "events": ["t1 Hexer hex Bruiser: stunned applied (1)", "t2 Bruiser stunned: ability brace blocked"]
+  }
+}

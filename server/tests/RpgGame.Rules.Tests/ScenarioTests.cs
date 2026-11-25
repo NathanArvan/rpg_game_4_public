@@ -332,7 +332,15 @@ public partial class ScenarioTests
                 e.RequiresHit ?? (a.Effects ?? []).Any(x => x.Kind == "attack")),
             _ => throw new InvalidDataException($"{where}: unknown effect kind '{e.Kind}'"),
         }).ToList();
-        return new AbilityDefinition(a.Id, a.Name ?? a.Id, a.Ap ?? 2, a.Cooldown ?? 0, a.Tags ?? [], targeting, effects);
+        var activation = Enum.Parse<AbilityActivation>(a.Activation ?? "active", ignoreCase: true);
+        var trigger = a.Trigger is null ? null : new ReactionTrigger(
+            Enum.Parse<TriggerKind>(a.Trigger.Kind.Replace("_", ""), ignoreCase: true),
+            a.Trigger.Range,
+            a.Trigger.AttackKind is null ? null : Enum.Parse<AttackKind>(a.Trigger.AttackKind, ignoreCase: true));
+        if ((activation == AbilityActivation.Prepared) != (trigger is not null))
+            throw new InvalidDataException($"{where}: a \"prepared\" ability needs a 'trigger', and only a prepared one takes one");
+        return new AbilityDefinition(a.Id, a.Name ?? a.Id, a.Ap ?? 2, a.Cooldown ?? 0, a.Tags ?? [], targeting, effects,
+            Activation: activation) { Trigger = trigger };
     }
 
     /// <summary>An inline condition definition, in the same shape as the server's conditions.json (3B.4).</summary>
@@ -505,6 +513,8 @@ public partial class ScenarioTests
                 var targets = u.TargetIds.Count > 0 ? $" on {string.Join(",", u.TargetIds)}" : "";
                 log.Add($"{at} {u.CombatantId} uses {u.AbilityId}{targets}{(u.Wasted ? $" ({Snake(u.WastedReason)})" : "")}");
             }
+            foreach (var w in t.Watching)
+                log.Add($"{at} {w.CombatantId} prepares {w.AbilityId}");
             foreach (var c in t.Conditions.Where(c => c.AbilityId is null))
                 log.Add(ConditionLine(at, c));
             foreach (var m in t.Movements)
@@ -557,6 +567,8 @@ public partial class ScenarioTests
             log.Add(b.Died ? $"end {b.CombatantId} bleeds out" : $"end {b.CombatantId} bleeds, {b.RoundsLeft} left");
         foreach (var x in o.ExpiredConditions)
             log.Add($"end {x.CombatantId}: {x.ConditionId} expires");
+        foreach (var u in o.UnusedReactions)
+            log.Add($"end {u.CombatantId}: {u.AbilityId} unused");
         return log;
     }
 
@@ -685,6 +697,17 @@ public partial class ScenarioTests
         public List<string>? Tags { get; set; }
         public TargetDto? Target { get; set; }
         public List<EffectDto>? Effects { get; set; }
+        /// <summary>"active" (default) or "prepared" (3B.6).</summary>
+        public string? Activation { get; set; }
+        /// <summary>A prepared ability's trigger (3B.6).</summary>
+        public TriggerDto? Trigger { get; set; }
+    }
+
+    private sealed class TriggerDto
+    {
+        public string Kind { get; set; } = "";
+        public int? Range { get; set; }
+        public string? AttackKind { get; set; }
     }
 
     private sealed class TargetDto

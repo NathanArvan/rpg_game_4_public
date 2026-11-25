@@ -334,8 +334,10 @@ export interface ReactionResult {
 
 export interface WatchingResult {
   combatantId: string;
+  combatantName: string;
   abilityId: string;
   abilityName: string;
+  feedText: string;
 }
 
 export interface BlockedActionResult {

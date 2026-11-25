@@ -24,7 +24,13 @@ public sealed class AbilityCatalog
     public const int MaxApCost = 10, MaxCooldown = 10, MaxRange = 30;
 
     /// <summary>Target kinds the resolver supports so far; "cell" arrives in 4.1.</summary>
-    private static readonly HashSet<string> SupportedTargetKinds = ["self", "combatant", "combatants", "auto"];
+    private static readonly HashSet<string> SupportedTargetKinds = ["self", "combatant", "combatants", "auto", "trigger"];
+
+    /// <summary>
+    /// Prepared-reaction triggers acted on so far (3B.6 PR 2: movement triggers); "attacked" and "ally_attacked" arrive
+    /// with their effects in PR 3.
+    /// </summary>
+    private static readonly HashSet<string> SupportedTriggers = ["enemy_enters_reach", "enemy_moves_within"];
 
     /// <summary>Most targets a "combatants" ability may pick.</summary>
     public const int MaxTargetCount = 6;
@@ -103,18 +109,26 @@ public sealed class AbilityCatalog
         if (a.Ap is not (>= 1 and <= MaxApCost)) Fail($"'ap' must be between 1 and {MaxApCost}");
         if (a.Cooldown is < 0 or > MaxCooldown) Fail($"'cooldown' must be between 0 and {MaxCooldown}");
         if (a.Charges is not null) Fail("'charges' isn't supported yet");
-        if (a.Activation is not (null or "active")) Fail("only \"active\" abilities are supported yet ('activation')");
+        var activation = a.Activation?.Trim().ToLowerInvariant() ?? "active";
+        if (activation is not ("active" or "prepared")) Fail("'activation' must be \"active\" or \"prepared\"");
+        bool prepared = activation == "prepared";
+        var trigger = ValidateTrigger(a.Trigger, prepared, Fail);
 
         var target = a.Target ?? throw new InvalidDataException($"Abilities {file}: {who}: 'target' is required");
         var kind = target.Kind?.Trim().ToLowerInvariant() ?? "";
         if (!SupportedTargetKinds.Contains(kind))
-            Fail($"target kind '{target.Kind}' isn't supported yet (use \"self\", \"combatant\", \"combatants\" or \"auto\")");
+            Fail($"target kind '{target.Kind}' isn't supported yet (use \"self\", \"combatant\", \"combatants\", \"auto\" or \"trigger\")");
         bool self = kind == "self";
-        // A "self" ability needs no filter or range: it only ever affects its caster.
-        var filter = target.Filter?.Trim().ToLowerInvariant() ?? (self ? "ally" : "");
+        bool onTrigger = kind == "trigger";
+        if (onTrigger && !prepared) Fail("target kind \"trigger\" is only for prepared abilities");
+        if (prepared && !(onTrigger || self)) Fail("a prepared ability targets \"trigger\" (whoever set it off) or \"self\"");
+        // A "self" ability needs no filter or range: it only ever affects its caster. A "trigger" one hits whoever set it
+        // off, an enemy for every trigger built so far.
+        var filter = target.Filter?.Trim().ToLowerInvariant() ?? (self ? "ally" : onTrigger ? "enemy" : "");
         if (filter is not ("enemy" or "ally" or "any" or "downed_ally"))
             Fail("target 'filter' must be \"enemy\", \"ally\", \"any\" or \"downed_ally\"");
-        if (!self && target.Range is not (>= 1 and <= MaxRange)) Fail($"target 'range' must be between 1 and {MaxRange}");
+        if (onTrigger && target.Range is not null) Fail("a \"trigger\" target takes no 'range' (the trigger decides who)");
+        if (!self && !onTrigger && target.Range is not (>= 1 and <= MaxRange)) Fail($"target 'range' must be between 1 and {MaxRange}");
         if (target.Count is not null && kind is not ("combatants" or "auto")) Fail("target 'count' only applies to \"combatants\" and \"auto\"");
         if (kind == "combatants" && target.Count is not (>= 1 and <= MaxTargetCount))
             Fail($"a \"combatants\" ability needs a target 'count' between 1 and {MaxTargetCount}");
@@ -127,6 +141,8 @@ public sealed class AbilityCatalog
         if (filter == "enemy" && effects.Any(e => e.Kind == "heal")) Fail("a heal can't target enemies (use an \"ally\" or \"any\" filter)");
         if (self && filter != "ally") Fail("a \"self\" ability doesn't take a target 'filter'");
         if (self && effects.Any(e => e.Kind == "attack")) Fail("a \"self\" ability can't attack (it would hit its caster)");
+        if (prepared && effects.FirstOrDefault(e => e.Kind != "attack") is { } other)
+            Fail($"a prepared ability's effects can only be \"attack\" so far (not \"{other.Kind}\")");
         var moves = effects.Where(e => e.Kind == "move").ToList();
         if (moves.Count > 1) Fail("an ability can move its caster only once (one \"move\" effect)");
         if (moves.FirstOrDefault() is { } move)
@@ -157,11 +173,39 @@ public sealed class AbilityCatalog
             Tags = (a.Tags ?? []).Select(t => t.Trim().ToLowerInvariant()).ToList(),
             Target = new AbilityTargetValues
             {
-                Kind = kind, Filter = filter, Range = self ? 0 : target.Range!.Value, Count = target.Count,
+                Kind = kind, Filter = filter, Range = self || onTrigger ? 0 : target.Range!.Value, Count = target.Count,
                 IncludeSelf = target.IncludeSelf ?? false,
             },
             Effects = effects,
+            Activation = activation,
+            Trigger = trigger,
         };
+    }
+
+    /// <summary>
+    /// A prepared ability's trigger (3B.6, SPRINT_3B6 X6): required on a prepared ability and refused on an active one; a
+    /// known kind; a 'range' for "enemy_moves_within" (and nowhere else yet).
+    /// </summary>
+    private static AbilityTriggerValues? ValidateTrigger(TriggerDto? trigger, bool prepared, Func<string, string> fail)
+    {
+        if (!prepared)
+        {
+            if (trigger is not null) fail("only a prepared ability takes a 'trigger' (set \"activation\": \"prepared\")");
+            return null;
+        }
+        if (trigger is null) { fail("a prepared ability needs a 'trigger'"); return null; }
+        var kind = trigger.Kind?.Trim().ToLowerInvariant() ?? "";
+        if (kind is "attacked" or "ally_attacked")
+            fail($"trigger '{kind}' isn't supported yet");
+        if (!SupportedTriggers.Contains(kind))
+            fail($"unknown trigger '{trigger.Kind}' (use \"enemy_enters_reach\" or \"enemy_moves_within\")");
+        if (kind == "enemy_moves_within" && trigger.Range is not (>= 1 and <= MaxRange))
+            fail($"trigger \"enemy_moves_within\" needs a 'range' between 1 and {MaxRange}");
+        if (kind == "enemy_enters_reach" && trigger.Range is not null)
+            fail("trigger \"enemy_enters_reach\" takes no 'range' (it's the melee reach)");
+        if (trigger.AttackKind is not null)
+            fail("trigger 'attackKind' only applies to \"attacked\"");
+        return new AbilityTriggerValues { Kind = kind, Range = trigger.Range };
     }
 
     private static AbilityEffectValues ValidateEffect(
@@ -282,10 +326,18 @@ public sealed class AbilityCatalog
         public int? Cooldown { get; set; }
         public int? Charges { get; set; }
         public string? Activation { get; set; }
+        public TriggerDto? Trigger { get; set; }
         public List<string>? Tags { get; set; }
         public TargetDto? Target { get; set; }
         public List<EffectDto>? Effects { get; set; }
         public Dictionary<string, ResonanceScalingDto>? ResonanceScaling { get; set; }
+    }
+
+    private sealed class TriggerDto
+    {
+        public string? Kind { get; set; }
+        public int? Range { get; set; }
+        public string? AttackKind { get; set; }
     }
 
     private sealed class TargetDto
@@ -352,7 +404,21 @@ internal static class AbilityMapping
         a.Cooldown,
         a.Tags,
         new Targeting(ParseKind(a.Target.Kind), ParseFilter(a.Target.Filter), a.Target.Range, a.Target.Count, a.Target.IncludeSelf),
-        a.Effects.Select(ToRules).ToList());
+        a.Effects.Select(ToRules).ToList(),
+        Activation: a.Activation == "prepared" ? AbilityActivation.Prepared : AbilityActivation.Active)
+    {
+        Trigger = a.Trigger is { } t ? new ReactionTrigger(ParseTrigger(t.Kind), t.Range,
+            t.AttackKind switch { "melee" => AttackKind.Melee, "ranged" => AttackKind.Ranged, _ => null }) : null,
+    };
+
+    private static TriggerKind ParseTrigger(string kind) => kind switch
+    {
+        "enemy_enters_reach" => TriggerKind.EnemyEntersReach,
+        "enemy_moves_within" => TriggerKind.EnemyMovesWithin,
+        "attacked" => TriggerKind.Attacked,
+        "ally_attacked" => TriggerKind.AllyAttacked,
+        _ => throw new InvalidDataException($"Unknown trigger kind '{kind}'."),
+    };
 
     private static AbilityEffect ToRules(AbilityEffectValues e) => e.Kind switch
     {
@@ -383,6 +449,7 @@ internal static class AbilityMapping
         "combatants" => TargetKind.Combatants,
         "auto" => TargetKind.Auto,
         "cell" => TargetKind.Cell,
+        "trigger" => TargetKind.Trigger,
         _ => throw new InvalidDataException($"Unknown target kind '{kind}'."),
     };
 

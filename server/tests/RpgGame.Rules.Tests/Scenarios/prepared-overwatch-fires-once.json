@@ -1,0 +1,17 @@
+{
+  // SPRINT_3B6 X9, X12: Overwatch shoots the first enemy whose step ends within 6 cells, then stops watching. G1 reaches
+  // (6,5) at step 3 and is shot; G2 reaches (6,7) at the same step but the reaction is spent. G1's next step is free too.
+  "description": "Overwatch fires once, at the first enemy that moves within range",
+  "combatants": [
+    { "id": "Scout", "side": "party", "at": [0, 5], "abilities": ["overwatch"] },
+    { "id": "G1",    "side": "enemy", "at": [9, 5] },
+    { "id": "G2",    "side": "enemy", "at": [9, 7] }
+  ],
+  "plans": { "Scout": ["ability overwatch"], "G1": ["move 5,5"], "G2": ["move 5,7"] },
+  "dice": [12, 3],
+  "expect": {
+    "hp": { "G1": 17, "G2": 20 },
+    "positions": { "G1": [5, 5], "G2": [5, 7] },
+    "events": ["t1 Scout prepares overwatch", "t1 s3 Scout overwatch G1: hit 3"]
+  }
+}

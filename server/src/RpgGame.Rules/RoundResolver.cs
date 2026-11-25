@@ -52,8 +52,15 @@ public static class RoundResolver
                 Conditions = round.TickConditions.ToList(),
                 Blocked = round.TickBlocked.ToList(),
                 Reactions = round.TickReactions.ToList(),
+                Watching = round.TickWatching.ToList(),
             });
         }
+
+        // Prepared reactions still watching never fired (SPRINT_3B6 X10): reported, no refund.
+        var unused = state.Combatants
+            .Where(c => round.Watching.ContainsKey(c.Id))
+            .Select(c => new PreparedReaction(c.Id, round.Watching[c.Id].Id))
+            .ToList();
 
         // End of round (SPRINT_3B4 C11): periodic effects (and anyone they drop) → bleedout → cooldowns →
         // conditions count down and expire.
@@ -83,6 +90,7 @@ public static class RoundResolver
             RevivedThisRound = revived,
             ExpiredConditions = expired,
             PeriodicEffects = periodic,
+            UnusedReactions = unused,
         };
     }
 
@@ -98,6 +106,11 @@ public static class RoundResolver
     {
         round.TickStunned.Clear();
         round.TickBlocked.Clear();
+        // A watcher a condition now stops from acting (Stunned in an earlier tick's Effects phase) stops watching
+        // from this tick on (SPRINT_3B6 X8).
+        foreach (var watcherId in round.Watching.Keys.ToList())
+            if (ConditionMath.IsBlocked(round.Conditions[watcherId], BlockKind.All))
+                round.Watching.Remove(watcherId);
         foreach (var (combatantId, queue) in round.Plans)
         {
             if (!round.CanAct(combatantId) || ActionAt(queue, tick) is not { } action) continue;
@@ -124,6 +137,7 @@ public static class RoundResolver
         round.TickConditions.Clear();
         round.TickTargets.Clear();
         round.TickHits.Clear();
+        round.TickWatching.Clear();
         var uses = round.TickUses;
         foreach (var (casterId, queue) in round.Plans)
         {
@@ -136,7 +150,8 @@ public static class RoundResolver
             var targets = TargetIdsOf(action);
             var abilityId = action.AbilityId ?? "";
 
-            if (ability is null || ability.Activation != AbilityActivation.Active)
+            bool prepared = ability is { IsPrepared: true, Trigger: not null };
+            if (ability is null || (ability.Activation != AbilityActivation.Active && !prepared))
             {
                 uses.Add(new AbilityUse(casterId, abilityId, targets, WastedReason.NotInLoadout));
                 continue;
@@ -151,6 +166,14 @@ public static class RoundResolver
             }
 
             used.Add(ability.Id);
+            if (prepared)
+            {
+                // A prepared reaction (SPRINT_3B6 X8): it starts watching now, before this tick's movement, and its
+                // cooldown starts whether or not it fires. Its effects resolve only when its trigger is met.
+                round.Watching[casterId] = ability;
+                round.TickWatching.Add(new PreparedReaction(casterId, ability.Id));
+                continue;
+            }
             round.TickAbilities[casterId] = new ActiveAbility(ability, action, uses.Count);
             uses.Add(new AbilityUse(casterId, abilityId, targets, StartedCooldown: ability.Cooldown > 0));
         }
@@ -380,45 +403,66 @@ public static class RoundResolver
     // ----- Reactions at a movement step (3B.6) -----
 
     /// <summary>
-    /// Passive opportunity attacks provoked by one lockstep step (SPRINT_3B6 X2, X3, X5): a mover that isn't
-    /// disengaging and steps from a cell within an enemy's melee reach to one outside it gives that enemy a free
-    /// melee weapon hit, if the enemy is standing, not stopped from acting (Stunned), makes opportunity attacks,
-    /// isn't moving this tick itself and hasn't already reacted this tick. Movers in plan order, then reactors in
-    /// combatant order; each rolls d20 then damage. The step's reactions are one netted batch, then the 0-HP check:
-    /// a mover dropped here stops on the cell it reached.
+    /// Everything one lockstep step provoked (SPRINT_3B6 X1–X3, X12), resolved as one batch:
+    /// <list type="bullet">
+    /// <item>Passive opportunity attacks (X2, X5): a mover that isn't disengaging and steps from a cell within an enemy's
+    /// melee reach to one outside it gives that enemy a free melee weapon hit, if the enemy is standing, not stopped from
+    /// acting (Stunned), makes opportunity attacks, isn't moving this tick itself and hasn't already reacted this tick.</item>
+    /// <item>Prepared movement triggers (X12): a watcher whose trigger the step meets (an enemy entering its reach, or
+    /// moving within its range; disengaging doesn't help) resolves its ability's attacks on the mover and stops watching.</item>
+    /// </list>
+    /// Movers in plan order, then reactors in combatant order (a reactor's opportunity attack before its prepared one);
+    /// each attack rolls d20 then damage. The step's reactions are one netted batch, then the 0-HP check: a mover
+    /// dropped here stops on the cell it reached.
     /// </summary>
     private static void ResolveStepReactions(
         RoundContext round, int step, List<(Mover Mover, GridPosition From, GridPosition To)> stepped, HashSet<string> moving)
     {
         if (stepped.Count == 0) return;
         int reach = round.Config.MeleeReach;
-        var pending = new List<PendingAttack>();
+        var fired = new List<(string ReactorId, string TriggerId, ReactionKind Kind, AbilityDefinition? Ability, PendingAttack? Attack)>();
         var hpDeltas = new Dictionary<string, int>();
         foreach (var (mover, from, to) in stepped)
         {
-            if (mover.Disengaging) continue;
             var moverState = round.Combatants[mover.CombatantId];
             foreach (var reactor in round.State.Combatants)
             {
                 if (reactor.Id == mover.CombatantId
-                    || !reactor.Profile.OpportunityAttacks
                     || round.IsOut(reactor.Id)
-                    || moving.Contains(reactor.Id)
-                    || round.PassiveUsedThisTick.Contains(reactor.Id)
-                    || ConditionMath.IsBlocked(round.Conditions[reactor.Id], BlockKind.All)
                     || Relations.Between(reactor, moverState) != Relation.Enemy
-                    || !round.Positions.TryGetValue(reactor.Id, out var at)
-                    || at.ChebyshevDistanceTo(from) > reach
-                    || at.ChebyshevDistanceTo(to) <= reach)
+                    || !round.Positions.TryGetValue(reactor.Id, out var at))
                     continue;
 
-                round.PassiveUsedThisTick.Add(reactor.Id);
-                pending.Add(RollAttack(round, hpDeltas, reactor.Id, mover.CombatantId, ActionType.MeleeAttack,
-                    AttackKind.Melee, DamageSpec.Weapon, accuracyBonus: 0, WastedReason.None, ability: null,
-                    tags: OpportunityTags));
+                if (!mover.Disengaging
+                    && reactor.Profile.OpportunityAttacks
+                    && !moving.Contains(reactor.Id)
+                    && !round.PassiveUsedThisTick.Contains(reactor.Id)
+                    && !ConditionMath.IsBlocked(round.Conditions[reactor.Id], BlockKind.All)
+                    && at.ChebyshevDistanceTo(from) <= reach
+                    && at.ChebyshevDistanceTo(to) > reach)
+                {
+                    round.PassiveUsedThisTick.Add(reactor.Id);
+                    fired.Add((reactor.Id, mover.CombatantId, ReactionKind.Opportunity, null,
+                        RollAttack(round, hpDeltas, reactor.Id, mover.CombatantId, ActionType.MeleeAttack,
+                            AttackKind.Melee, DamageSpec.Weapon, accuracyBonus: 0, WastedReason.None, ability: null,
+                            tags: OpportunityTags)));
+                }
+
+                if (round.Watching.TryGetValue(reactor.Id, out var watch)
+                    && MovementTriggerMet(watch.Trigger!, at, from, to, reach))
+                {
+                    round.Watching.Remove(reactor.Id); // fires once (X9)
+                    var attacks = watch.Effects.OfType<AttackEffect>().ToList();
+                    if (attacks.Count == 0)
+                        fired.Add((reactor.Id, mover.CombatantId, ReactionKind.Prepared, watch, null));
+                    foreach (var attack in attacks)
+                        fired.Add((reactor.Id, mover.CombatantId, ReactionKind.Prepared, watch,
+                            RollAttack(round, hpDeltas, reactor.Id, mover.CombatantId, AttackActionType(attack.Roll),
+                                attack.Roll, attack.Damage, attack.AccuracyBonus, WastedReason.None, watch)));
+                }
             }
         }
-        if (pending.Count == 0) return;
+        if (fired.Count == 0) return;
 
         var hpBefore = new Dictionary<string, int>(round.Hp);
         foreach (var (targetId, delta) in hpDeltas)
@@ -430,10 +474,30 @@ public static class RoundResolver
             if (fell.Contains(mover.CombatantId))
                 mover.Stopped = mover.Fell = true;
 
-        foreach (var a in pending)
-            round.TickReactions.Add(new ReactionOutcome(a.AttackerId, a.TargetId, ReactionKind.Opportunity, AbilityId: null, step,
-                ToOutcome(round, a, hpBefore, fell)));
+        foreach (var f in fired)
+            round.TickReactions.Add(new ReactionOutcome(f.ReactorId, f.TriggerId, f.Kind, f.Ability?.Id, step,
+                f.Attack is null ? null : ToOutcome(round, f.Attack, hpBefore, fell)));
     }
+
+    /// <summary>
+    /// Whether a movement step from <paramref name="from"/> to <paramref name="to"/> meets a prepared movement trigger of a
+    /// watcher standing at <paramref name="at"/> (SPRINT_3B6 X12). Attack triggers never fire here.
+    /// </summary>
+    private static bool MovementTriggerMet(ReactionTrigger trigger, GridPosition at, GridPosition from, GridPosition to, int reach) =>
+        trigger.Kind switch
+        {
+            TriggerKind.EnemyEntersReach => at.ChebyshevDistanceTo(from) > reach && at.ChebyshevDistanceTo(to) <= reach,
+            TriggerKind.EnemyMovesWithin => at.ChebyshevDistanceTo(to) <= (trigger.Range ?? reach),
+            _ => false,
+        };
+
+    /// <summary>The action type an attack effect is reported as.</summary>
+    private static ActionType AttackActionType(AttackKind roll) => roll switch
+    {
+        AttackKind.Melee => ActionType.MeleeAttack,
+        AttackKind.Ranged => ActionType.RangedAttack,
+        _ => ActionType.Ability,
+    };
 
     /// <summary>Source tags of an opportunity attack, for damage-taken modifiers (SPRINT_3B6 X5).</summary>
     private static readonly string[] OpportunityTags = ["melee", "opportunity"];
@@ -571,12 +635,7 @@ public static class RoundResolver
                         switch (effect)
                         {
                             case AttackEffect attack:
-                                var type = attack.Roll switch
-                                {
-                                    AttackKind.Melee => ActionType.MeleeAttack,
-                                    AttackKind.Ranged => ActionType.RangedAttack,
-                                    _ => ActionType.Ability,
-                                };
+                                var type = AttackActionType(attack.Roll);
                                 // An ability that moves checks its range when the move starts; its melee
                                 // attack then needs melee reach from where the move ended (Charge).
                                 int reach = ability.Move is not null && attack.Roll == AttackKind.Melee
@@ -1197,6 +1256,15 @@ public static class RoundResolver
         /// <summary>Reactions in the current tick, in resolution order (3B.6).</summary>
         public List<ReactionOutcome> TickReactions { get; } = [];
 
+        /// <summary>
+        /// Prepared reactions watching right now (SPRINT_3B6 X8, X16): watcher → its prepared ability. One entered at the
+        /// start of its tick and leaves when it fires, the watcher falls or is Stunned, or the round ends.
+        /// </summary>
+        public Dictionary<string, AbilityDefinition> Watching { get; } = [];
+
+        /// <summary>Prepared reactions that started watching in the current tick, in plan order.</summary>
+        public List<PreparedReaction> TickWatching { get; } = [];
+
         /// <summary>Combatants who have made their one passive reaction this tick (SPRINT_3B6 X5).</summary>
         public HashSet<string> PassiveUsedThisTick { get; } = [];
 
@@ -1272,6 +1340,7 @@ public static class RoundResolver
             {
                 DefeatedThisRound.Add(id);
                 Acting.Remove(id);
+                Watching.Remove(id); // a watcher who falls stops watching (SPRINT_3B6 X8)
                 Conditions[id] = []; // falling clears every condition (SPRINT_3B4 C10)
             }
             Status[id] = status;
