@@ -149,6 +149,7 @@ public partial class ScenarioTests
                 CanBeDowned: c.Downs ?? false)
             {
                 ConditionResist = c.ConditionResist ?? 0,
+                OpportunityAttacks = c.OpportunityAttacks ?? true,
                 Abilities = (c.Abilities ?? []).Select(id => abilities.TryGetValue(id, out var a) ? a
                     : throw new InvalidDataException($"{file}: combatant {c.Id} lists ability '{id}', which is neither in 'abilities' nor in Scenarios/library/abilities.json")).ToList(),
             };
@@ -243,6 +244,7 @@ public partial class ScenarioTests
     private static string Describe(PlannedAction a) => a.Type switch
     {
         ActionType.Move => $"\"move {a.TargetCell!.Value.X},{a.TargetCell.Value.Y}\"",
+        ActionType.Disengage => $"\"disengage {a.TargetCell!.Value.X},{a.TargetCell.Value.Y}\"",
         ActionType.MeleeAttack => $"\"melee {a.TargetCombatantId}\"",
         ActionType.RangedAttack => $"\"ranged {a.TargetCombatantId}\"",
         ActionType.Stabilize => $"\"stabilize {a.TargetCombatantId}\"",
@@ -250,7 +252,7 @@ public partial class ScenarioTests
         _ => "\"defend\"",
     };
 
-    [GeneratedRegex(@"^\s*move\s+(-?\d+)\s*,\s*(-?\d+)\s*$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^\s*(move|disengage)\s+(-?\d+)\s*,\s*(-?\d+)\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex MoveRegex();
 
     [GeneratedRegex(@"^\s*(melee|ranged)\s+(\S+)\s*$", RegexOptions.IgnoreCase)]
@@ -270,7 +272,9 @@ public partial class ScenarioTests
     internal static PlannedAction ParseAction(string text, string where)
     {
         if (MoveRegex().Match(text) is { Success: true } m)
-            return PlannedAction.Move(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+            return m.Groups[1].Value.Equals("move", StringComparison.OrdinalIgnoreCase)
+                ? PlannedAction.Move(int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value))
+                : PlannedAction.Disengage(int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
         if (AttackRegex().Match(text) is { Success: true } a)
             return a.Groups[1].Value.Equals("melee", StringComparison.OrdinalIgnoreCase)
                 ? PlannedAction.Melee(a.Groups[2].Value)
@@ -289,7 +293,7 @@ public partial class ScenarioTests
         if (text.Trim().Equals("defend", StringComparison.OrdinalIgnoreCase))
             return PlannedAction.Defend();
         throw new FormatException(
-            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET[,TARGET…] | X,Y]\" or \"defend\".");
+            $"{where}: can't parse action \"{text}\". Use \"move X,Y\", \"disengage X,Y\", \"melee ID\", \"ranged ID\", \"stabilize ID\", \"ability ABILITY [TARGET[,TARGET…] | X,Y]\" or \"defend\".");
     }
 
     /// <summary>An inline ability definition, in the same shape as the server's abilities.json (3B.3).</summary>
@@ -314,7 +318,8 @@ public partial class ScenarioTests
             "move" => new MoveEffect(
                 Enum.Parse<MoveTo>(e.To ?? "cell", ignoreCase: true),
                 e.MaxCells ?? 1,
-                e.UsesMovementBudget ?? true),
+                e.UsesMovementBudget ?? true,
+                Disengage: e.Disengage ?? false),
             "heal" => new HealEffect(
                 e.Amount?.Die is null ? null : DamageDie.Parse(e.Amount.Die),
                 e.Amount?.Bonus ?? 0,
@@ -505,21 +510,25 @@ public partial class ScenarioTests
             foreach (var m in t.Movements)
             {
                 var end = $"{m.FinalPosition.X},{m.FinalPosition.Y}";
-                var by = m.AbilityId is null ? "" : $" ({m.AbilityId})";
+                var by = (m.AbilityId is null ? "" : $" ({m.AbilityId})") + (m.Disengaging ? " (disengage)" : "");
                 log.Add(m.WasBlocked ? $"{at} {m.CombatantId} moves to {end}{by} (blocked by {m.BlockedById})"
                     : m.Path.Count <= 1 ? $"{at} {m.CombatantId} stays at {end}{by}"
                     : $"{at} {m.CombatantId} moves to {end}{by}");
             }
+            foreach (var r in t.Reactions)
+            {
+                var what = r.Kind == ReactionKind.Opportunity ? "opportunity" : r.AbilityId;
+                var a = r.Attack;
+                var result = a is null ? "fires" : AttackResult(a);
+                var fell = a is { TargetDefeated: true } ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
+                log.Add($"{at} s{r.Step} {r.ReactorId} {what} {r.TriggerId}: {result}{fell}");
+            }
+            foreach (var m in t.Movements.Where(m => m.StopReason == StopReason.Fell))
+                log.Add($"{at} s{m.Path.Count - 1} {m.CombatantId} falls");
             foreach (var a in t.Attacks)
             {
                 var what = a.AbilityId ?? (a.AttackType == ActionType.RangedAttack ? "ranged" : "melee");
-                var result = a.Wasted ? $"wasted {Snake(a.WastedReason)}"
-                    : !a.Hit ? "miss"
-                    : a.FinishingBlow ? "finishing blow"
-                    : a.MoveBonus > 0 ? $"hit {a.Damage} (+{a.MoveBonus} moved)"
-                    : $"hit {a.Damage}";
-                if (a.Hit && a.ConditionDamage != 0)
-                    result += $" ({a.ConditionDamage:+#;-#} conditions)";
+                var result = AttackResult(a);
                 var fell = a.TargetDefeated ? $", {a.TargetId} {a.TargetStatus.ToString().ToLowerInvariant()}" : "";
                 log.Add($"{at} {a.AttackerId} {what} {a.TargetId}: {result}{fell}");
             }
@@ -549,6 +558,18 @@ public partial class ScenarioTests
         foreach (var x in o.ExpiredConditions)
             log.Add($"end {x.CombatantId}: {x.ConditionId} expires");
         return log;
+    }
+
+    private static string AttackResult(AttackOutcome a)
+    {
+        var result = a.Wasted ? $"wasted {Snake(a.WastedReason)}"
+            : !a.Hit ? "miss"
+            : a.FinishingBlow ? "finishing blow"
+            : a.MoveBonus > 0 ? $"hit {a.Damage} (+{a.MoveBonus} moved)"
+            : $"hit {a.Damage}";
+        if (a.Hit && a.ConditionDamage != 0)
+            result += $" ({a.ConditionDamage:+#;-#} conditions)";
+        return result;
     }
 
     /// <summary>"t1 Kestrel mark Goblin: marked applied (1)": rounds left in brackets; Defend's Guarded reads "defend".</summary>
@@ -689,6 +710,8 @@ public partial class ScenarioTests
         public string? To { get; set; }
         public int? MaxCells { get; set; }
         public bool? UsesMovementBudget { get; set; }
+        /// <summary>Move: provokes no opportunity attacks (3B.6).</summary>
+        public bool? Disengage { get; set; }
         /// <summary>apply_condition: the condition id, its duration and whether it needs a hit (3B.4).</summary>
         public string? Condition { get; set; }
         public int? Duration { get; set; }
@@ -739,6 +762,8 @@ public partial class ScenarioTests
         public List<ActiveConditionDto>? Conditions { get; set; }
         /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
         public int? ConditionResist { get; set; }
+        /// <summary>Makes passive opportunity attacks (3B.6; default true).</summary>
+        public bool? OpportunityAttacks { get; set; }
     }
 
     private sealed class ConfigDto

@@ -131,6 +131,17 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
+    public async Task Start_ReactionsPreset_StartsWithEveryoneMakingOpportunityAttacks()
+    {
+        // 3B.6 PR 1: nobody in the Reactions battle has the override, so stored values stay null (= yes).
+        await Service().StartAsync("user-1", "reactions");
+
+        var combatants = await _db.EncounterCombatants.ToListAsync();
+        Assert.Equal(6, combatants.Count);
+        Assert.All(combatants, c => Assert.Null(c.Profile!.OpportunityAttacks));
+    }
+
+    [Fact]
     public async Task Start_SeedsMapHpAndAnActiveEncounterWithTheTimerOff()
     {
         var r = await Service().StartAsync("user-1", "skirmish");

@@ -42,6 +42,8 @@ export interface Combatant {
   cooldowns: Record<string, number>;
   /** Conditions on the combatant (3B.4), in the order they were applied. */
   conditions: ActiveConditionDto[];
+  /** Strikes enemies that step out of its reach (3B.6): the move preview's threats. */
+  opportunityAttacks: boolean;
 }
 
 /** Movement range for a combatant whose server DTO doesn't carry one (the 3A default). */

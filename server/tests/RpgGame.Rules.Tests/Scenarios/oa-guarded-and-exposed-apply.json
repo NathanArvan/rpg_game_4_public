@@ -1,0 +1,17 @@
+{
+  // SPRINT_3B6 X5: an opportunity attack is a normal melee hit check, so conditions count. The Hero defended in
+  // tick 1 (Guarded, +3 Dodge), so a 12 misses in tick 2. The Rogue is Exposed (-3 Dodge), so a 7 hits.
+  "description": "Opportunity attacks: Guarded and Exposed change the hit check",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] },
+    { "id": "Rogue",  "side": "party", "at": [5, 9], "conditions": [{ "id": "exposed" }] },
+    { "id": "Grunt",  "side": "enemy", "at": [6, 9] }
+  ],
+  "plans": { "Hero": ["defend", "move 2,5"], "Rogue": ["move 2,9"] },
+  "dice": [7, 2, 12],                  // t1: the Rogue is hit on a 7 (Dodge 7); t2: the Hero is missed on a 12 (Dodge 13)
+  "expect": {
+    "hp": { "Hero": 20, "Rogue": 18 },
+    "events": ["t1 s1 Grunt opportunity Rogue: hit 2", "t2 s1 Goblin opportunity Hero: miss"]
+  }
+}

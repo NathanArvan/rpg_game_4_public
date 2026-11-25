@@ -1,0 +1,11 @@
+{
+  // SPRINT_3B6 X2: only leaving reach provokes. Stepping into reach is free (Brace is the prepared reaction for that).
+  "description": "Opportunity attacks: walking up to a goblin provokes nothing",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [1, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Hero": ["move 5,5"] },
+  "dice": [],
+  "expect": { "positions": { "Hero": [5, 5] }, "hp": { "Hero": 20 } }
+}

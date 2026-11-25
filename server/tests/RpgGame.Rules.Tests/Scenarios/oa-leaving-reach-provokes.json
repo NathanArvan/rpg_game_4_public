@@ -1,0 +1,16 @@
+{
+  // 3B.6 (SPRINT_3B6 X2, X3): stepping from a cell in an enemy's reach to one outside it provokes a free melee
+  // weapon hit, rolled at that step (d20, then the damage die). The mover keeps walking.
+  "description": "Opportunity attacks: leaving a goblin's reach draws a hit at the step it happens",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5], "damage": "d6" }
+  ],
+  "plans": { "Hero": ["move 2,5"] },
+  "dice": [12, 4],                       // step 1: hit for 4
+  "expect": {
+    "positions": { "Hero": [2, 5] },
+    "hp": { "Hero": 16 },
+    "events": ["t1 Hero moves to 2,5", "t1 s1 Goblin opportunity Hero: hit 4"]
+  }
+}

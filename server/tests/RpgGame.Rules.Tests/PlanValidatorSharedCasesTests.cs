@@ -96,6 +96,7 @@ public partial class PlanValidatorTests
         switch (parts[0])
         {
             case "move": return new PlannedAction(ActionType.Move, parts.Length > 1 ? Cell(parts[1]) : null);
+            case "disengage": return new PlannedAction(ActionType.Disengage, parts.Length > 1 ? Cell(parts[1]) : null);
             case "melee": return PlannedAction.Melee(parts[1]);
             case "ranged": return PlannedAction.Ranged(parts[1]);
             case "stabilize": return PlannedAction.Stabilize(parts[1]);

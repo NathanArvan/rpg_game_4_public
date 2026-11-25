@@ -8,13 +8,13 @@
   ],
   "rounds": [
     {
-      "plans": { "Bruiser": ["ability hamstring Goblin"], "Goblin": ["move 1,0", "move 1,6"] },
+      "plans": { "Bruiser": ["ability hamstring Goblin"], "Goblin": ["move 1,0", "disengage 1,6"] },
       "dice": [15, 3],
       "expect": {
         "hp": { "Goblin": 17 },
         "positions": { "Goblin": [1, 6] },
         "conditions": { "Goblin": { "slowed": 0 } },
-        "events": ["t1 Bruiser hamstring Goblin: hit 3", "t1 Bruiser hamstring Goblin: slowed applied (1)", "t2 Goblin moves to 1,6"]
+        "events": ["t1 Bruiser hamstring Goblin: hit 3", "t1 Bruiser hamstring Goblin: slowed applied (1)", "t2 Goblin moves to 1,6 (disengage)"]
       }
     },
     {

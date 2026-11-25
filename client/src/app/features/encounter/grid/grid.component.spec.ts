@@ -464,4 +464,47 @@ describe('GridComponent', () => {
       expect(grid.moveCellsLeft).toBe(0);
     });
   });
+
+  describe('opportunity attacks and Disengage (3B.6)', () => {
+    beforeEach(() => {
+      store.dispatch(new PlanningPhaseStarted(1, 0, [
+        row('bruiser', 'Bruiser', 'player', false, 4, 4),
+        row('goblin', 'Goblin', 'monster'),
+        makePlanningCombatant({ id: 'dummy', characterName: 'Dummy', combatantType: 'monster', opportunityAttacks: false }),
+      ]));
+      store.dispatch(new MapInitialized('enc', 20, 20, { bruiser: { x: 5, y: 5 }, goblin: { x: 6, y: 5 }, dummy: { x: 5, y: 9 } }));
+    });
+
+    it("hatches move cells whose path leaves an enemy's reach, naming who would strike", () => {
+      expect(grid.isThreatened({ x: 3, y: 5 })).toBeTrue();     // steps away from the Goblin
+      expect(grid.threatTitle({ x: 3, y: 5 })).toContain('Provokes an opportunity attack from Goblin');
+      expect(grid.isThreatened({ x: 5, y: 6 })).toBeFalse();    // still next to the Goblin
+      expect(grid.isThreatened({ x: 6, y: 6 })).toBeFalse();
+      expect(grid.isThreatened({ x: 4, y: 8 })).toBeTrue();     // only the Goblin: the dummy makes no opportunity attacks
+      expect(grid.threatTitle({ x: 4, y: 8 })).not.toContain('Dummy');
+      expect(grid.isThreatened({ x: 15, y: 15 })).toBeFalse();  // not a move cell at all
+    });
+
+    it('queues the next move as a 2-AP Disengage while the toggle is on, which clears the threat preview', () => {
+      grid.toggleDisengage();
+      expect(grid.disengageArmed).toBeTrue();
+      expect(grid.isThreatened({ x: 3, y: 5 })).toBeFalse();
+      grid.onCellClick({ x: 3, y: 5 });
+
+      expect(grid.selectedPlan).toEqual([jasmine.objectContaining({ type: 'disengage', targetCell: { x: 3, y: 5 } })]);
+      expect(grid.apUsed).toBe(2);
+      expect(grid.disengageArmed).toBeFalse();                   // one move only
+      expect(grid.plannedActionSummary).toBe('Disengage to (3, 5)');
+      grid.onCellClick({ x: 3, y: 4 });                          // the next move is a plain one again
+      expect(grid.selectedPlan[1].type).toBe('move');
+    });
+
+    it("doesn't offer Disengage without 2 AP to spare", () => {
+      grid.onCellClick({ x: 6, y: 5 });                          // melee the Goblin: 2 AP
+      grid.planDefend();                                         // 3 AP
+      expect(grid.canAffordDisengage).toBeFalse();
+      grid.toggleDisengage();
+      expect(grid.disengageArmed).toBeFalse();
+    });
+  });
 });

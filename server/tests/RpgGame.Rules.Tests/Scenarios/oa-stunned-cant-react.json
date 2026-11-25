@@ -1,0 +1,11 @@
+{
+  // SPRINT_3B6 X5: Stunned blocks reactions too.
+  "description": "Opportunity attacks: a Stunned goblin can't strike a hero walking away",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5], "conditions": [{ "id": "stunned" }] }
+  ],
+  "plans": { "Hero": ["move 3,5"] },
+  "dice": [],
+  "expect": { "positions": { "Hero": [3, 5] }, "hp": { "Hero": 20 } }
+}

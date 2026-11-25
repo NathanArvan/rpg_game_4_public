@@ -58,6 +58,46 @@ public sealed record TickOutcome(
     /// Stunned combatant's queued action, or a Rooted combatant's plain move. In plan order.
     /// </summary>
     public IReadOnlyList<BlockedAction> Blocked { get; init; } = [];
+
+    /// <summary>
+    /// Reactions this tick (3B.6, SPRINT_3B6 X3), in resolution order: by movement step, then mover plan order,
+    /// then reactor (combatant) order. Each resolved on the spot, at the step that provoked it.
+    /// </summary>
+    public IReadOnlyList<ReactionOutcome> Reactions { get; init; } = [];
+}
+
+/// <summary>What kind of reaction fired (3B.6).</summary>
+public enum ReactionKind
+{
+    /// <summary>A passive opportunity attack: an enemy stepped out of the reactor's reach.</summary>
+    Opportunity,
+    /// <summary>A prepared reaction (an ability with <see cref="AbilityActivation.Prepared"/>, PR 2).</summary>
+    Prepared,
+}
+
+/// <summary>
+/// One reaction (3B.6, SPRINT_3B6 X1–X3): <paramref name="ReactorId"/> reacted to <paramref name="TriggerId"/>.
+/// </summary>
+/// <param name="AbilityId">The prepared ability that fired, or null for an opportunity attack.</param>
+/// <param name="Step">The movement step it fired on, from 1 (the mover's step 1 is its first cell after the start).</param>
+/// <param name="Attack">The attack it made. Its HP before / after are the target's HP around that step's batch.</param>
+public sealed record ReactionOutcome(
+    string ReactorId,
+    string TriggerId,
+    ReactionKind Kind,
+    string? AbilityId,
+    int Step,
+    AttackOutcome? Attack);
+
+/// <summary>Why a mover stopped short of the end of its path (3B.6, SPRINT_3B6 X14).</summary>
+public enum StopReason
+{
+    /// <summary>It didn't stop short (or only ran out of budget or grid).</summary>
+    None,
+    /// <summary>Someone was in the way (<see cref="MovementOutcome.BlockedById"/>).</summary>
+    Blocked,
+    /// <summary>A reaction dropped it mid-path: it stays on the cell it fell on.</summary>
+    Fell,
 }
 
 /// <summary>
@@ -145,13 +185,17 @@ public sealed record AbilityUse(
 /// <param name="Path">Cells actually traversed, starting with the origin cell. A single cell means the combatant stayed put.</param>
 /// <param name="BlockedById">Who stopped this mover.</param>
 /// <param name="AbilityId">The ability that made this move (Dash, Charge), or null for a plain move (3B.3).</param>
+/// <param name="StopReason">Why it stopped short: blocked, or dropped by a reaction (3B.6).</param>
+/// <param name="Disengaging">A Disengage (or an ability move that disengages): it provoked no opportunity attacks.</param>
 public sealed record MovementOutcome(
     string CombatantId,
     IReadOnlyList<GridPosition> Path,
     GridPosition FinalPosition,
     bool WasBlocked,
     string? BlockedById,
-    string? AbilityId = null);
+    string? AbilityId = null,
+    StopReason StopReason = StopReason.None,
+    bool Disengaging = false);
 
 public enum WastedReason
 {

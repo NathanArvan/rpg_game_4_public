@@ -2,7 +2,7 @@ import { AbilityDto, PlannedActionEntry } from '../../contracts/hub-contracts.ge
 import {
   DEFAULT_AP_COSTS, abilityUnavailableReason, apSpent, canAfford, canAffordEntry, canTargetWithAbility, describeQueue, entry,
   abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
-  abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue, blockOf, entryMoves, skipsRoundReason,
+  abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue, blockOf, entryMoves, skipsRoundReason, provokedBy, isMoveType,
 } from './plan-queue';
 import { makeAbility } from '../../testing/builders';
 
@@ -191,5 +191,31 @@ describe('conditions at planning (3B.4 PR 3)', () => {
   it('marks an ability that moves as unavailable while Rooted', () => {
     expect(abilityUnavailableReason(dash, [], 4, DEFAULT_AP_COSTS, [dash], {}, [rooted])).toBe("Rooted: can't move");
     expect(abilityUnavailableReason(powerStrike, [], 4, DEFAULT_AP_COSTS, [powerStrike], {}, [rooted])).toBeNull();
+  });
+
+  describe('Disengage and the threat preview (3B.6)', () => {
+    const disengage = (x: number, y: number): PlannedActionEntry => entry('disengage', { targetCell: { x, y } });
+
+    it('treats a Disengage as a move that costs 2 AP', () => {
+      expect(isMoveType('disengage')).toBeTrue();
+      expect(entryMoves(disengage(1, 0), [])).toBeTrue();
+      expect(apSpent([disengage(1, 0), move(2, 0)], DEFAULT_AP_COSTS)).toBe(3);
+      expect(moveCellsUsed({ x: 0, y: 0 }, [move(3, 0), disengage(3, 3)])).toBe(6);
+      expect(projectedPosition({ x: 0, y: 0 }, [disengage(2, 1)])).toEqual({ x: 2, y: 1 });
+      expect(describeQueue([disengage(5, 6)], () => undefined)).toBe('Disengage to (5, 6)');
+    });
+
+    it('finds the enemies whose reach a path steps out of, once each', () => {
+      const goblin = { id: 'g', name: 'Goblin', position: { x: 6, y: 5 } };
+      const brute = { id: 'b', name: 'Brute', position: { x: 4, y: 7 } };
+      const far = { id: 'f', name: 'Far', position: { x: 15, y: 15 } };
+      // (5,5) → (4,5) → (3,5): leaves the Goblin on step 1; the Brute (4,7) is never in reach.
+      expect(provokedBy([{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }], [goblin, brute, far])).toEqual([goblin]);
+      // Walking up to the Goblin (entering reach) and circling it provoke nothing.
+      expect(provokedBy([{ x: 3, y: 5 }, { x: 4, y: 5 }, { x: 5, y: 5 }], [goblin])).toEqual([]);
+      expect(provokedBy([{ x: 5, y: 5 }, { x: 5, y: 6 }, { x: 6, y: 6 }], [goblin])).toEqual([]);
+      // Passing by: in and out of reach.
+      expect(provokedBy([{ x: 4, y: 3 }, { x: 5, y: 4 }, { x: 6, y: 3 }, { x: 7, y: 2 }], [goblin])).toEqual([goblin]);
+    });
   });
 });

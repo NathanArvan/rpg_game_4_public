@@ -110,6 +110,7 @@ public sealed class BattlePresetCatalog
             profile.BaseDamage = c.Damage?.Trim() ?? profile.BaseDamage;
             profile.MaxAp = c.Ap ?? profile.MaxAp;
             profile.ConditionResist = c.ConditionResist ?? profile.ConditionResist;
+            if (c.OpportunityAttacks is { } oa) profile.OpportunityAttacks = oa ? null : false; // 3B.6
             profile.CanBeDowned = c.Downs; // null: by side (party goes down, enemies die) (3B.5)
             if (c.Abilities is not null) // replaces the profile's loadout (3B.3)
                 profile.Abilities = profiles.Abilities.Resolve(c.Abilities.Select(id => id.Trim()),
@@ -157,6 +158,8 @@ public sealed class BattlePresetCatalog
         public int? Ap { get; set; }
         /// <summary>Percent chance (0–100) to resist a harmful condition from an enemy (3B.4 PR 2).</summary>
         public int? ConditionResist { get; set; }
+        /// <summary>Makes passive opportunity attacks (3B.6); unset: the profile's (default yes).</summary>
+        public bool? OpportunityAttacks { get; set; }
         /// <summary>Goes Downed at 0 HP (true) or dies (false); unset: by side (3B.5).</summary>
         public bool? Downs { get; set; }
         /// <summary>Ability ids replacing the profile's loadout (3B.3).</summary>

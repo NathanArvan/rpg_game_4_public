@@ -265,4 +265,62 @@ public class EnemyAiTests
         var plans = Plan(C("hero", 0, 0), C("g1", 10, 0) with { Conditions = [slowed] });
         Assert.Equal(Q(PlannedAction.Move(6, 0)), plans["g1"]);
     }
+
+    // ----- Opportunity attacks (3B.6, SPRINT_3B6 X15) -----
+
+    /// <summary>
+    /// The goblin goes after the hero, but a team-less bystander "x" (an enemy of everyone that the AI never targets)
+    /// stands next to it, so the walk would step out of x's reach. With nearest-enemy targeting this is the only way
+    /// an AI walk can leave a standing enemy's reach: anyone next to a cell of the walk is at least as near as the target.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<PlannedAction>> PlanWithBystander(CombatantState bystander, int ap = 4, RulesConfig? config = null)
+    {
+        var state = new EncounterState(20, 20, [C("hero", 5, 9), C("g1", 5, 5, ap: ap), bystander]);
+        var teams = new Dictionary<string, string> { ["hero"] = "party", ["g1"] = "enemy" };
+        return EnemyAi.PlanRound(state, teams, ["g1"], config);
+    }
+
+    [Fact]
+    public void WalkOutOfAnEnemysReach_Disengages_AndStillAttacksWithTheApLeft()
+    {
+        var plans = PlanWithBystander(C("x", 5, 4));
+        Assert.Equal(Q(PlannedAction.Disengage(5, 8), PlannedAction.Melee("hero")), plans["g1"]);
+    }
+
+    [Fact]
+    public void WalkOutOfAnEnemysReach_WithoutApForDisengage_FightsTheAdjacentEnemyInstead()
+    {
+        var plans = PlanWithBystander(C("x", 5, 4), ap: 2, config: RulesConfig.Default with { DisengageApCost = 3 });
+        Assert.Equal(Q(PlannedAction.Melee("x")), plans["g1"]);
+    }
+
+    [Fact]
+    public void WalkPastAnEnemyThatMakesNoOpportunityAttacks_IsAPlainMove()
+    {
+        var dummy = C("x", 5, 4) with { Profile = CombatProfile.Default with { OpportunityAttacks = false } };
+        var plans = PlanWithBystander(dummy);
+        Assert.Equal(Q(PlannedAction.Move(5, 8), PlannedAction.Melee("hero")), plans["g1"]);
+    }
+
+    [Fact]
+    public void ChargeThatWouldProvoke_IsNotUsed_TheWalkDisengagesInstead()
+    {
+        var charge = new AbilityDefinition("charge", "Charge", 3, 2, ["melee"],
+            new Targeting(TargetKind.Combatant, TargetFilter.Enemy, 6),
+            [new MoveEffect(MoveTo.Target, 6), new AttackEffect(AttackKind.Melee, DamageSpec.Weapon)]);
+        var g1 = C("g1", 5, 5) with { Profile = CombatProfile.Default with { Abilities = [charge] } };
+        var state = new EncounterState(20, 20, [C("hero", 5, 9), g1, C("x", 5, 4)]);
+        var plans = EnemyAi.PlanRound(state, new Dictionary<string, string> { ["hero"] = "party", ["g1"] = "enemy" }, ["g1"]);
+        Assert.Equal(Q(PlannedAction.Disengage(5, 8), PlannedAction.Melee("hero")), plans["g1"]);
+    }
+
+    [Fact]
+    public void ResolvedDisengage_DrawsNoOpportunityAttack()
+    {
+        var state = new EncounterState(20, 20, [C("hero", 5, 9), C("g1", 5, 5), C("x", 5, 4)]);
+        var plans = PlanWithBystander(C("x", 5, 4));
+        var outcome = RoundResolver.Resolve(state, plans, new ScriptedDice(15, 3));
+        Assert.Empty(outcome.Ticks.SelectMany(t => t.Reactions));
+        Assert.Equal(17, outcome.Next.Combatants.Single(c => c.Id == "hero").Hp);
+    }
 }

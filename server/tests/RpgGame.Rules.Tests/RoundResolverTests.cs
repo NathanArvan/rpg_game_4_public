@@ -357,7 +357,7 @@ public class RoundResolverTests
     public void MeleeReach_CheckedAfterMovement()
     {
         var away = Resolve(State(C("A", 0, 0), C("B", 1, 0)),
-            new Plans().Add("A", PlannedAction.Melee("B")).Add("B", PlannedAction.Move(3, 0)),
+            new Plans().Add("A", PlannedAction.Melee("B")).Add("B", PlannedAction.Disengage(3, 0)), // no opportunity attack (3B.6)
             new ScriptedDice());
         Assert.Equal(WastedReason.OutOfMeleeReach, Assert.Single(away.Ticks[0].Attacks).WastedReason);
 
@@ -550,9 +550,10 @@ public class RoundResolverTests
     [Fact]
     public void BlockedSteps_DoNotUseUpTheMovementBudget()
     {
-        // A's first move is blocked by W after 1 step, so 3 of A's 4 cells are left for the second move.
+        // A's first move is blocked by W after 1 step, so 3 of A's 4 cells are left for the second move
+        // (a Disengage, so stepping out of W's reach provokes nothing, 3B.6).
         var o = Resolve(State(C("A", 0, 0, move: 4), C("W", 2, 0)),
-            new Plans().Add("A", PlannedAction.Move(3, 0), PlannedAction.Move(1, 3)),
+            new Plans().Add("A", PlannedAction.Move(3, 0), PlannedAction.Disengage(1, 3)),
             new ScriptedDice());
 
         Assert.True(o.Ticks[0].Movements[0].WasBlocked);
@@ -570,6 +571,60 @@ public class RoundResolverTests
         var second = o.Ticks[1].Movements[0];
         Assert.Equal([P(2, 0)], second.Path);
         Assert.Equal(P(2, 0), Final(o, "A").Position);
+    }
+
+    // ----- Opportunity attacks (3B.6) -----
+
+    [Fact]
+    public void OpportunityAttack_IsReportedAtItsStep_AndTheAttackPhaseStartsFromTheHpItLeft()
+    {
+        // H steps out of G's reach on step 1 (hit for 4); Archer's ranged attack in the same tick's Attack phase
+        // then starts from 16, so the two feed lines don't count the 4 twice (SPRINT_3B6 X3).
+        var o = Resolve(State(C("H", 5, 5), C("G", 6, 5), C("Archer", 15, 15)),
+            new Plans().Add("H", PlannedAction.Move(2, 5)).Add("Archer", PlannedAction.Ranged("H")),
+            new ScriptedDice(12, 4, 11, 3));
+
+        var tick = o.Ticks[0];
+        var reaction = Assert.Single(tick.Reactions);
+        Assert.Equal(("G", "H", ReactionKind.Opportunity, 1), (reaction.ReactorId, reaction.TriggerId, reaction.Kind, reaction.Step));
+        Assert.Null(reaction.AbilityId);
+        var oa = reaction.Attack!;
+        Assert.Equal(ActionType.MeleeAttack, oa.AttackType);
+        Assert.Equal((true, 4, 20, 16), (oa.Hit, oa.Damage, oa.TargetHpBefore, oa.TargetHpAfter));
+        Assert.Equal(new AttackRoll(12, 0, 10), oa.Roll);
+
+        var shot = Assert.Single(tick.Attacks);
+        Assert.Equal((16, 13), (shot.TargetHpBefore, shot.TargetHpAfter));
+        Assert.Equal(StopReason.None, tick.Movements[0].StopReason);
+        Assert.Equal(13, Final(o, "H").Hp);
+    }
+
+    [Fact]
+    public void MoverDroppedMidPath_StopsThere_WithStopReasonFell_AndIsNotReportedBlocked()
+    {
+        var o = Resolve(State(C("H", 5, 5, hp: 2), C("G", 6, 5)),
+            new Plans().Add("H", PlannedAction.Move(1, 5)),
+            new ScriptedDice(12, 5));
+
+        var move = Assert.Single(o.Ticks[0].Movements);
+        Assert.Equal(StopReason.Fell, move.StopReason);
+        Assert.False(move.WasBlocked);
+        Assert.Null(move.BlockedById);
+        Assert.Equal([P(5, 5), P(4, 5)], move.Path);
+        Assert.Equal(P(4, 5), Final(o, "H").Position);
+        Assert.Equal(["H"], o.DefeatedThisRound);
+    }
+
+    [Fact]
+    public void OpportunityAttack_UsesTheOpportunityTag_ForDamageTakenModifiers()
+    {
+        // A condition that halves damage from "opportunity" sources only.
+        var wary = new ActiveCondition(new ConditionDefinition("wary", "Wary", false, [],
+            new Modifiers(DamageTaken: new DamageTakenModifier(-50, 0, ["opportunity"]))), 0);
+        var o = Resolve(State(C("H", 5, 5) with { Conditions = [wary] }, C("G", 6, 5)),
+            new Plans().Add("H", PlannedAction.Move(3, 5)),
+            new ScriptedDice(12, 8));
+        Assert.Equal(16, Final(o, "H").Hp);
     }
 
     // ----- Purity -----

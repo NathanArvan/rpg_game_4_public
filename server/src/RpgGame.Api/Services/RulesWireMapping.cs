@@ -14,6 +14,7 @@ internal static class RulesWireMapping
         "defend" => ActionType.Defend,
         "stabilize" => ActionType.Stabilize,
         "ability" => ActionType.Ability,
+        "disengage" => ActionType.Disengage,
         _ => null,
     };
 
@@ -44,6 +45,7 @@ internal static class RulesWireMapping
         ActionType.Defend => "defend",
         ActionType.Stabilize => "stabilize",
         ActionType.Ability => "ability",
+        ActionType.Disengage => "disengage",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
@@ -101,6 +103,23 @@ internal static class RulesWireMapping
         ConditionResultKind.Resisted => "resisted",
         ConditionResultKind.Wasted => "wasted",
         _ => throw new ArgumentOutOfRangeException(nameof(result), result, null),
+    };
+
+    /// <summary>"opportunity" or "prepared" (3B.6).</summary>
+    public static string ToWire(ReactionKind kind) => kind switch
+    {
+        ReactionKind.Opportunity => "opportunity",
+        ReactionKind.Prepared => "prepared",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
+    /// <summary>"none", "blocked" or "fell" (3B.6, SPRINT_3B6 X14).</summary>
+    public static string ToWire(StopReason reason) => reason switch
+    {
+        StopReason.None => "none",
+        StopReason.Blocked => "blocked",
+        StopReason.Fell => "fell",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 
     public static string ToWire(EffectType type) => type switch

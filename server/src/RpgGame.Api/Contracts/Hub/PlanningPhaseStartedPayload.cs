@@ -18,6 +18,7 @@ public record PlanningPhaseStartedPayload(
 /// <param name="BaseMovementRange">The profile's movement range, before conditions.</param>
 /// <param name="BaseMaxAp">The profile's AP, before conditions.</param>
 /// <param name="Blocks">What the combatant's conditions stop it doing this round (3B.4 PR 3).</param>
+/// <param name="OpportunityAttacks">Strikes enemies that step out of its reach (3B.6): the client's threat preview reads it.</param>
 public record PlanningCombatantDto(
     string Id,
     string UserId,
@@ -38,4 +39,5 @@ public record PlanningCombatantDto(
     IReadOnlyList<ActiveConditionDto>? Conditions = null,
     int BaseMovementRange = 6,
     int BaseMaxAp = 4,
-    IReadOnlyList<ConditionBlockDto>? Blocks = null);
+    IReadOnlyList<ConditionBlockDto>? Blocks = null,
+    bool OpportunityAttacks = true);

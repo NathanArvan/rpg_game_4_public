@@ -36,6 +36,11 @@ public class CombatProfileValues
     /// before it existed: 0.
     /// </summary>
     public int? ConditionResist { get; set; }
+    /// <summary>
+    /// Makes passive opportunity attacks on enemies stepping out of its reach (3B.6). Null (the usual case, and
+    /// rows stored before 3B.6) means yes.
+    /// </summary>
+    public bool? OpportunityAttacks { get; set; }
 
     /// <summary>A deep copy (each combatant row needs its own instance). Copies every field, so keep it in step with them.</summary>
     public CombatProfileValues Copy() => new()
@@ -53,5 +58,6 @@ public class CombatProfileValues
         CanBeDowned = CanBeDowned,
         Abilities = Abilities?.Select(a => a.Copy()).ToList(),
         ConditionResist = ConditionResist,
+        OpportunityAttacks = OpportunityAttacks,
     };
 }

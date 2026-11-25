@@ -1,0 +1,15 @@
+{
+  // SPRINT_3B6 X2: an ability's move steps like any other move, so Dash out of reach provokes.
+  "description": "Opportunity attacks: dashing away from a goblin provokes",
+  "combatants": [
+    { "id": "Scout",  "side": "party", "at": [5, 5], "abilities": ["dash"] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Scout": ["ability dash 2,5"] },
+  "dice": [11, 3],
+  "expect": {
+    "positions": { "Scout": [2, 5] },
+    "hp": { "Scout": 17 },
+    "events": ["t1 Scout uses dash", "t1 Scout moves to 2,5 (dash)", "t1 s1 Goblin opportunity Scout: hit 3"]
+  }
+}

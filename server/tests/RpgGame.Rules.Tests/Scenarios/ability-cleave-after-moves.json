@@ -7,7 +7,7 @@
   ],
   "plans": {
     "Bruiser": ["ability cleave"],
-    "Runner":  ["move 8,5"],
+    "Runner":  ["disengage 8,5"],   // no opportunity attack from the Bruiser (3B.6)
     "Comer":   ["move 4,5"]
   },
   "dice": [11, 6],                       // Comer: hit for 6

@@ -188,7 +188,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
 
         // The map only matters for moves (bounds and the starting cell), including abilities that
         // move (Dash, Charge; checked against the profile below).
-        var hasMove = action.Actions.Any(e => e.Type is "move" or "ability");
+        var hasMove = action.Actions.Any(e => e.Type is "move" or "disengage" or "ability");
         var map = hasMove
             ? await redisState.GetMapAsync(encounterId)
                 ?? throw new GameActionException("Map data not found.", isActionRejected: true)
@@ -257,6 +257,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         switch (entry.Type)
         {
             case "move":
+            case "disengage": // a move that provokes no opportunity attacks (3B.6)
                 if (entry.TargetCell is null)
                     throw new GameActionException("Move action requires a target cell.", isActionRejected: true);
                 break;

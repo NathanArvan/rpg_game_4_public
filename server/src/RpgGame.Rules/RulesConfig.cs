@@ -19,6 +19,12 @@ public sealed record RulesConfig
     /// <summary>AP cost of one Move (roadmap 3B.2). All of a round's moves share the mover's MovementRange cells.</summary>
     public int MoveApCost { get; init; } = 1;
 
+    /// <summary>
+    /// AP cost of one Disengage (3B.6, SPRINT_3B6 X4): a move that doesn't provoke opportunity attacks. More
+    /// than a Move, so stepping away safely costs something.
+    /// </summary>
+    public int DisengageApCost { get; init; } = 2;
+
     /// <summary>AP cost of one melee attack.</summary>
     public int MeleeApCost { get; init; } = 2;
 
@@ -54,6 +60,7 @@ public sealed record RulesConfig
         ActionType.RangedAttack => RangedApCost,
         ActionType.Defend => DefendApCost,
         ActionType.Stabilize => StabilizeApCost,
+        ActionType.Disengage => DisengageApCost,
         ActionType.Ability => throw new ArgumentException("An ability's cost comes from its definition: use ApCost(action, profile).", nameof(type)),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown action type."),
     };

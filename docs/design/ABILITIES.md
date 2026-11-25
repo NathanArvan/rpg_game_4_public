@@ -117,6 +117,8 @@ Targeting
 
 ### A5. Effects run in their own phase, in definition order ✅
 
+> 3B.6: a move effect's steps provoke opportunity attacks like any move (Dash, Charge); `MoveEffect.Disengage` (default false) makes an ability move that doesn't. No shipped ability sets it yet.
+
 Each effect kind has a fixed phase:
 
 | Effect | Phase | Notes |

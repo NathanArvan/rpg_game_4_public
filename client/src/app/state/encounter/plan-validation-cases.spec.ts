@@ -49,6 +49,7 @@ function parse(text: string): PlannedActionEntry {
   const cell = (s: string): Position => at(s.replace('@', '').split(',').map(Number));
   switch (verb) {
     case 'move': return entry('move', rest[0] ? { targetCell: cell(rest[0]) } : {});
+    case 'disengage': return entry('disengage', rest[0] ? { targetCell: cell(rest[0]) } : {});
     case 'melee': return entry('melee_attack', { targetCombatantId: rest[0] });
     case 'ranged': return entry('ranged_attack', { targetCombatantId: rest[0] });
     case 'stabilize': return entry('stabilize', { targetCombatantId: rest[0] });

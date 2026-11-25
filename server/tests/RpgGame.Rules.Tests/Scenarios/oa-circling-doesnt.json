@@ -1,0 +1,11 @@
+{
+  // TICK_RESOLUTION D5 / SPRINT_3B6 X2: moving while staying within an enemy's reach never provokes.
+  "description": "Opportunity attacks: circling a goblin cell by cell provokes nothing",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] }
+  ],
+  "plans": { "Hero": ["move 5,6", "move 6,6", "move 7,6"] },
+  "dice": [],
+  "expect": { "positions": { "Hero": [7, 6] }, "hp": { "Hero": 20 } }
+}

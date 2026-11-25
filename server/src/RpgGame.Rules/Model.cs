@@ -44,6 +44,11 @@ public enum ActionType
     /// queue slot; each of its effects resolves in its own phase of that tick.
     /// </summary>
     Ability,
+    /// <summary>
+    /// A move that doesn't provoke passive opportunity attacks (3B.6, SPRINT_3B6 X4). Shares the movement
+    /// budget and path rules of <see cref="Move"/>; prepared movement reactions still see it.
+    /// </summary>
+    Disengage,
 }
 
 /// <summary>
@@ -104,6 +109,12 @@ public sealed record CombatProfile(
     /// </summary>
     public int ConditionResist { get; init; }
 
+    /// <summary>
+    /// Whether this combatant makes passive opportunity attacks on enemies that step out of its reach
+    /// (3B.6, SPRINT_3B6 X5). True by default; false for harmless things such as a training dummy.
+    /// </summary>
+    public bool OpportunityAttacks { get; init; } = true;
+
     /// <summary>The loadout's ability with this id, or null.</summary>
     public AbilityDefinition? FindAbility(string? id) =>
         id is null ? null : Abilities.FirstOrDefault(a => a.Id == id);
@@ -115,6 +126,7 @@ public sealed record CombatProfile(
         && MeleeAccuracy == other.MeleeAccuracy && RangedAccuracy == other.RangedAccuracy
         && Dodge == other.Dodge && BaseDamage == other.BaseDamage && MaxAp == other.MaxAp
         && CanBeDowned == other.CanBeDowned && ConditionResist == other.ConditionResist
+        && OpportunityAttacks == other.OpportunityAttacks
         && Abilities.SequenceEqual(other.Abilities);
 
     public override int GetHashCode() =>
@@ -188,7 +200,7 @@ public sealed record EncounterState(
     int GridHeight,
     IReadOnlyList<CombatantState> Combatants);
 
-/// <param name="TargetCell">Set for <see cref="ActionType.Move"/> and abilities that move to a cell.</param>
+/// <param name="TargetCell">Set for <see cref="ActionType.Move"/>, <see cref="ActionType.Disengage"/> and abilities that move to a cell.</param>
 /// <param name="TargetCombatantId">Set for attacks, Stabilize and single-target abilities.</param>
 /// <param name="AbilityId">Set for <see cref="ActionType.Ability"/>: which loadout ability.</param>
 /// <param name="TargetCombatantIds">Abilities that pick several targets (3B.3 PR 2).</param>
@@ -203,6 +215,7 @@ public sealed record PlannedAction(
     public static PlannedAction Melee(string targetId) => new(ActionType.MeleeAttack, TargetCombatantId: targetId);
     public static PlannedAction Ranged(string targetId) => new(ActionType.RangedAttack, TargetCombatantId: targetId);
     public static PlannedAction Defend() => new(ActionType.Defend);
+    public static PlannedAction Disengage(int x, int y) => new(ActionType.Disengage, new GridPosition(x, y));
     public static PlannedAction Stabilize(string targetId) => new(ActionType.Stabilize, TargetCombatantId: targetId);
     public static PlannedAction Ability(string abilityId, string? targetId = null) =>
         new(ActionType.Ability, TargetCombatantId: targetId, AbilityId: abilityId);

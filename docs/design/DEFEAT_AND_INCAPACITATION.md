@@ -244,3 +244,10 @@ Conditions' periodic damage (Burning, Poisoned) resolves once at the start of th
 | 6 | Does a side with only Downed/Stable members lose? | **Yes**, downed counts as out |
 | 7 | Overkill instant death (e.g. damage ≥ MaxHp past 0)? | **No**, keep it simple; revisit with abilities |
 | 8 | Do downed bodies keep blocking movement? | **Yes** for 3B.5 (consistent with quirk 9); revisit with 4.x terrain |
+
+---
+
+## Falling mid-move (3B.6)
+
+Since 3B.6 a combatant can fall during the Movement phase: an opportunity attack resolves at the movement step that provoked it (`SPRINT_3B6.md` X3). The usual 0-HP check runs after that step's reactions; a mover who goes Downed (or dies) stops on the cell it reached, its remaining path is cut, and like anyone who falls it loses the rest of its queue, including the same tick's attack (a Charge's strike). It falls in that tick, so the finishing-blow rule treats it as down this round, and its bleedout doesn't count down until the next end of round.
+

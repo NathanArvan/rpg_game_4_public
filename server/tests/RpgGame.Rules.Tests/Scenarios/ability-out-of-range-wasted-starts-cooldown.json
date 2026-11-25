@@ -6,7 +6,7 @@
   ],
   "plans": {
     "Bruiser": ["ability power_strike Goblin"],
-    "Goblin":  ["move 3,0"]
+    "Goblin":  ["disengage 3,0"]   // no opportunity attack from the Bruiser (3B.6)
   },
   "dice": [],
   "expect": {

@@ -186,7 +186,7 @@ public class ResolutionService(
         }).ToList();
 
         return new ResolutionPayload(tickResults, newRoundNumber, outcome.DefeatedThisRound.ToList(), updatedCombatants,
-            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired, periodic);
+            ToQueues(outcome.ResolvedPlans, records), endOfRound, outcome.RevivedThisRound.ToList(), expired, periodic, []);
     }
 
     // ----- Inbound mapping -----
@@ -266,26 +266,35 @@ public class ResolutionService(
             new PositionDto(m.FinalPosition.X, m.FinalPosition.Y),
             m.WasBlocked,
             m.BlockedById,
-            m.AbilityId)).ToList();
+            m.AbilityId,
+            RulesWireMapping.ToWire(m.StopReason),
+            m.Disengaging)).ToList();
 
-        var attacks = tick.Attacks.Select(a =>
+        AttackResult ToAttack(AttackOutcome a, string feedText) => new(
+            a.AttackerId, NameOf(a.AttackerId),
+            a.TargetId, NameOf(a.TargetId),
+            RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
+            a.TargetHpAfter, a.TargetDefeated, a.Wasted,
+            feedText,
+            a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge, r.ConditionAccuracy, r.ConditionDodge) : null,
+            RulesWireMapping.ToWire(a.WastedReason),
+            RulesWireMapping.ToWire(a.TargetStatus),
+            a.FinishingBlow,
+            a.AbilityId,
+            a.MoveBonus,
+            a.ConditionDamage);
+
+        var attacks = tick.Attacks.Select(a => ToAttack(a, ResolutionFeedFormatter.Attack(a, NameOf(a.AttackerId), NameOf(a.TargetId),
+            a.AbilityId is null ? null : AbilityNameOf(a.AttackerId, a.AbilityId)))).ToList();
+
+        var reactions = tick.Reactions.Select(x =>
         {
-            var attackerName = NameOf(a.AttackerId);
-            var targetName = NameOf(a.TargetId);
-            return new AttackResult(
-                a.AttackerId, attackerName,
-                a.TargetId, targetName,
-                RulesWireMapping.ToWire(a.AttackType), a.Hit, a.Damage,
-                a.TargetHpAfter, a.TargetDefeated, a.Wasted,
-                ResolutionFeedFormatter.Attack(a, attackerName, targetName,
-                    a.AbilityId is null ? null : AbilityNameOf(a.AttackerId, a.AbilityId)),
-                a.Roll is { } r ? new AttackRollDto(r.D20, r.Accuracy, r.TargetDodge, r.ConditionAccuracy, r.ConditionDodge) : null,
-                RulesWireMapping.ToWire(a.WastedReason),
-                RulesWireMapping.ToWire(a.TargetStatus),
-                a.FinishingBlow,
-                a.AbilityId,
-                a.MoveBonus,
-                a.ConditionDamage);
+            var reactorName = NameOf(x.ReactorId);
+            var triggerName = NameOf(x.TriggerId);
+            var abilityName = x.AbilityId is null ? null : AbilityNameOf(x.ReactorId, x.AbilityId);
+            var feed = ResolutionFeedFormatter.Reaction(x, reactorName, triggerName, abilityName);
+            return new ReactionResult(x.ReactorId, reactorName, x.TriggerId, triggerName, RulesWireMapping.ToWire(x.Kind),
+                x.AbilityId, abilityName, x.Step, x.Attack is { } a ? ToAttack(a, feed) : null, feed);
         }).ToList();
 
         var effects = tick.Effects.Select(e => new EffectResult(
@@ -337,7 +346,7 @@ public class ResolutionService(
                 ResolutionFeedFormatter.Blocked(b.Block, name, conditionName));
         }).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions, blocked);
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions, blocked, reactions, []);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -381,6 +390,21 @@ public class ResolutionService(
                     OccurredAt = now,
                     EventType = "movement",
                     Payload = JsonSerializer.Serialize(new { movement.CombatantId, movement.FinalPosition, movement.WasBlocked }, _jsonOptions),
+                });
+            }
+            foreach (var reaction in tick.Reactions ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = reaction.Kind == "opportunity" ? "opportunity_attack" : "reaction_fired",
+                    Payload = JsonSerializer.Serialize(new
+                    {
+                        AttackerId = reaction.ReactorId, TargetId = reaction.TriggerId, reaction.AbilityId, reaction.Attack?.Roll,
+                        reaction.Attack?.Hit, reaction.Attack?.Damage, reaction.Attack?.TargetNewHp, reaction.Step,
+                    }, _jsonOptions),
                 });
             }
             foreach (var use in tick.AbilityUses ?? [])

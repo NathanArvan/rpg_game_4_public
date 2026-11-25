@@ -1,0 +1,23 @@
+{
+  // SPRINT_3B6 X4: Disengage is a move that doesn't provoke passive opportunity attacks, and it costs 2 AP. Hero's
+  // Disengage + melee fits 4 AP; Rogue's Disengage, Disengage, melee doesn't, so the melee is cut.
+  "description": "Disengage: stepping away provokes nothing, and costs 2 AP",
+  "combatants": [
+    { "id": "Hero",   "side": "party", "at": [5, 5] },
+    { "id": "Goblin", "side": "enemy", "at": [6, 5] },
+    { "id": "Archer", "side": "enemy", "at": [2, 5] },
+    { "id": "Rogue",  "side": "party", "at": [5, 9] },
+    { "id": "Grunt",  "side": "enemy", "at": [6, 9] }
+  ],
+  "plans": {
+    "Hero":  ["disengage 3,5", "melee Archer"],
+    "Rogue": ["disengage 4,9", "disengage 3,9", "melee Grunt"]
+  },
+  "dice": [12, 5],                       // tick 2: Hero hits the Archer for 5
+  "expect": {
+    "ticks": 2,
+    "positions": { "Hero": [3, 5], "Rogue": [3, 9] },
+    "hp": { "Hero": 20, "Rogue": 20, "Archer": 15 },
+    "events": ["t1 Hero moves to 3,5 (disengage)", "t1 Rogue moves to 4,9 (disengage)", "t2 Hero melee Archer: hit 5"]
+  }
+}

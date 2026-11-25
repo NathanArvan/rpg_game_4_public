@@ -135,11 +135,14 @@ public sealed record HealEffect(DamageDie? Die, int Bonus = 0, bool CanRevive = 
 /// The cells come out of the round's shared <see cref="CombatProfile.MovementRange"/> (Charge). False:
 /// the ability's own cells, on top of the budget (Dash).
 /// </param>
+/// <param name="Disengage">The move doesn't provoke passive opportunity attacks (3B.6, SPRINT_3B6 X2). No shipped
+/// ability sets it yet (a future "Tumble").</param>
 public sealed record MoveEffect(
     MoveTo To,
     int MaxCells,
     bool UsesMovementBudget = true,
-    MovePath Path = MovePath.Walk) : AbilityEffect;
+    MovePath Path = MovePath.Walk,
+    bool Disengage = false) : AbilityEffect;
 
 /// <summary>
 /// Puts a condition on each target, resolved in the Effects phase in plan order, then target order

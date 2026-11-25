@@ -33,6 +33,22 @@ internal static class ResolutionFeedFormatter
     }
 
     /// <summary>
+    /// A reaction (3B.6): "Goblin's opportunity attack on Mira hits for 4 damage (HP: 12 → 8)", "… misses",
+    /// "… — goes down!", "… — defeated!". A prepared reaction is named after its ability (PR 2).
+    /// </summary>
+    public static string Reaction(ReactionOutcome reaction, string reactorName, string triggerName, string? abilityName)
+    {
+        var who = $"{reactorName}'s {(reaction.Kind == ReactionKind.Opportunity ? "opportunity attack" : abilityName)} on {triggerName}";
+        if (reaction.Attack is not { } attack) return $"{reactorName}'s {abilityName} fires";
+        if (attack.Wasted) return $"{who} fails — {WastedReasonText(attack.WastedReason)}";
+        if (!attack.Hit) return $"{who} misses";
+        var damage = $"{attack.Damage} damage{ConditionSuffix(attack)}";
+        if (attack.TargetStatus == CombatantStatus.Downed) return $"{who} hits for {damage} — goes down!";
+        if (attack.TargetDefeated) return $"{who} hits for {damage} — defeated!";
+        return $"{who} hits for {damage} (HP: {attack.TargetHpBefore} → {attack.TargetHpAfter})";
+    }
+
+    /// <summary>
     /// An attack made by an ability (3B.3), named after it: "Brakka's Power Strike hits Goblin for 9 damage".
     /// A bonus for moving first shows after the damage: "for 8 damage (+3 from moving)".
     /// </summary>

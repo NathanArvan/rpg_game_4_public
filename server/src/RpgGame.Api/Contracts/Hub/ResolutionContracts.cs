@@ -7,6 +7,7 @@ namespace RpgGame.Api.Contracts.Hub;
 /// <param name="ExpiredConditions">Conditions that ran out at the end of the round (3B.4).</param>
 /// <param name="Periodic">Periodic damage and healing at the end of the round, before bleedout (3B.4 PR 2):
 /// combatant order, then the order the conditions were applied.</param>
+/// <param name="UnusedReactions">Prepared reactions that never fired this round (3B.6 PR 2; empty until then).</param>
 public record ResolutionPayload(
     IReadOnlyList<TickResult> Ticks,
     int NewRoundNumber,
@@ -16,7 +17,16 @@ public record ResolutionPayload(
     IReadOnlyList<BleedoutResultDto> EndOfRound,
     IReadOnlyList<string>? RevivedCombatantIds = null,
     IReadOnlyList<ExpiredConditionDto>? ExpiredConditions = null,
-    IReadOnlyList<PeriodicResultDto>? Periodic = null);
+    IReadOnlyList<PeriodicResultDto>? Periodic = null,
+    IReadOnlyList<UnusedReactionDto>? UnusedReactions = null);
+
+/// <summary>A prepared reaction that was watching at the end of the round and never fired (3B.6 PR 2). No AP refund.</summary>
+public record UnusedReactionDto(
+    string CombatantId,
+    string CombatantName,
+    string AbilityId,
+    string AbilityName,
+    string FeedText);
 
 /// <summary>
 /// End of round for a combatant who was already downed when it started (3B.5): one bleedout
@@ -53,6 +63,8 @@ public record QueuedActionDto(
 /// <param name="Heals">Heals this tick, resolved with the attacks and netted with their damage (3B.3).</param>
 /// <param name="Conditions">Conditions applied this tick (3B.4): Defend's Guarded at the start of the tick,
 /// then abilities' conditions in the Effects phase.</param>
+/// <param name="Reactions">Reactions this tick (3B.6), in resolution order: by movement step, then mover, then reactor.</param>
+/// <param name="Watching">Combatants whose prepared reaction started watching this tick (3B.6 PR 2; empty until then).</param>
 public record TickResult(
     int TickIndex,
     IReadOnlyList<MovementResult> Movements,
@@ -61,7 +73,35 @@ public record TickResult(
     IReadOnlyList<AbilityUseResult>? AbilityUses = null,
     IReadOnlyList<HealResult>? Heals = null,
     IReadOnlyList<ConditionResult>? Conditions = null,
-    IReadOnlyList<BlockedActionResult>? Blocked = null);
+    IReadOnlyList<BlockedActionResult>? Blocked = null,
+    IReadOnlyList<ReactionResult>? Reactions = null,
+    IReadOnlyList<WatchingResult>? Watching = null);
+
+/// <summary>
+/// One reaction (3B.6): <see cref="ReactorId"/> reacted to <see cref="TriggerId"/>. An opportunity attack fires when the
+/// trigger steps out of the reactor's reach; a prepared one when its trigger is met.
+/// </summary>
+/// <param name="Kind">"opportunity" or "prepared".</param>
+/// <param name="AbilityId">The prepared ability that fired; null for an opportunity attack.</param>
+/// <param name="Step">The movement step it fired on, from 1 (the trigger's first step is 1); 0 for one that fired outside movement.</param>
+/// <param name="Attack">The attack it made, if any. Its target HP is the HP after that step's reactions.</param>
+public record ReactionResult(
+    string ReactorId,
+    string ReactorName,
+    string TriggerId,
+    string TriggerName,
+    string Kind,
+    string? AbilityId,
+    string? AbilityName,
+    int Step,
+    AttackResult? Attack,
+    string FeedText);
+
+/// <summary>A combatant whose prepared reaction started watching this tick (3B.6 PR 2).</summary>
+public record WatchingResult(
+    string CombatantId,
+    string AbilityId,
+    string AbilityName);
 
 /// <summary>
 /// A queued action a condition stopped this tick (3B.4 PR 3): a Stunned combatant's action, or a Rooted
@@ -100,6 +140,8 @@ public record HealResult(
     string FeedText);
 
 /// <param name="AbilityId">The ability that made this move (Dash, Charge), or null for a plain move (3B.3).</param>
+/// <param name="StopReason">"none", "blocked" (someone in the way) or "fell" (a reaction dropped it mid-path, 3B.6).</param>
+/// <param name="Disengaging">A Disengage: it provoked no opportunity attacks (3B.6).</param>
 public record MovementResult(
     string CombatantId,
     string CombatantName,
@@ -107,12 +149,15 @@ public record MovementResult(
     PositionDto FinalPosition,
     bool WasBlocked,
     string? BlockedByCombatantId,
-    string? AbilityId = null);
+    string? AbilityId = null,
+    string StopReason = "none",
+    bool Disengaging = false);
 
 /// <param name="AbilityId">The ability that made this attack, or null for a basic attack (3B.3).</param>
 /// <param name="MoveBonus">Damage included in <paramref name="Damage"/> because the ability moved its caster far enough (Charge).</param>
 /// <param name="ConditionDamage">How much conditions changed <paramref name="Damage"/>, signed: the attacker's damage dealt plus
 /// the target's damage taken (3B.4).</param>
+/// <param name="InterceptedFromId">The attack was meant for this combatant and an Intercept took it (3B.6 PR 3; null until then).</param>
 public record AttackResult(
     string AttackerId,
     string AttackerName,
@@ -131,19 +176,22 @@ public record AttackResult(
     bool FinishingBlow,
     string? AbilityId = null,
     int MoveBonus = 0,
-    int ConditionDamage = 0);
+    int ConditionDamage = 0,
+    string? InterceptedFromId = null);
 
 /// <summary>The hit check: hit when D20 + Accuracy ≥ TargetDodge. Null on a wasted attack.</summary>
 /// <param name="Accuracy">Everything added to the d20, conditions included.</param>
 /// <param name="TargetDodge">The target's Dodge, conditions included.</param>
 /// <param name="ConditionAccuracy">The part of <paramref name="Accuracy"/> from the attacker's conditions (3B.4).</param>
 /// <param name="ConditionDodge">The part of <paramref name="TargetDodge"/> from the target's conditions (3B.4).</param>
+/// <param name="ReactionDodge">The part of <paramref name="TargetDodge"/> from a prepared reaction such as Parry (3B.6 PR 3; 0 until then).</param>
 public record AttackRollDto(
     int D20,
     int Accuracy,
     int TargetDodge,
     int ConditionAccuracy = 0,
-    int ConditionDodge = 0);
+    int ConditionDodge = 0,
+    int ReactionDodge = 0);
 
 /// <param name="TargetCombatantId">Stabilize: who was being stabilized.</param>
 /// <param name="WastedReason">Stabilize: why it did nothing ("target_not_downed", "out_of_melee_reach", …), or null.</param>

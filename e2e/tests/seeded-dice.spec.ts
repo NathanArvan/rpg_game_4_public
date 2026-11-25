@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectPlanningRound, feedEntries, newActor, startQuickBattle, tokenAt } from './support/actors';
+import { cell, expectPlanningRound, feedEntries, newActor, startQuickBattle, tokenAt } from './support/actors';
 
 /**
  * Exact outcomes with seeded dice (TESTING_ROADMAP item 6). The stack must run with Dice:Seed=1:
@@ -120,4 +120,30 @@ test('Seeded dice: Slowed, Shield Bash\'s stun and Weakened (Crowd Control prese
   // Round 3: Goblin 1 acts again (no chip); the Bruiser has one AP less.
   await expect(page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' }).locator('.chip')).toHaveCount(0);
   await expect(actionBar.locator('.ap-budget')).toHaveText('AP 0/3 (-1 Weakened)');
+});
+
+test("Seeded dice: the Brute's opportunity attack rolls first, at the Bruiser's first step (Reactions preset, 3B.6)", async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Reactions');
+
+  // Same plan as the Reactions test in quick-battle.spec.ts: the Bruiser (9,10) walks away from the Brute (9,9),
+  // the Skirmisher (11,10) Disengages away from Goblin 1, and the Scout defends.
+  await cell(page, 9, 12).click();
+  await tokenAt(page, 11, 10).click();
+  await page.getByTestId('disengage-toggle').click();
+  await cell(page, 11, 12).click();
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expectPlanningRound(page, 2, 30_000);
+
+  // The opportunity attack takes the round's first d20 (a miss), so the goblins' attacks roll after it.
+  for (const line of [
+    'Bruiser moves to (9, 12)',
+    'Skirmisher disengages to (11, 12)',
+    "Brute's opportunity attack on Bruiser misses",
+    "Brute's Power Strike on Bruiser fails — target out of range",
+  ])
+    await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1);
+  await expect(feedEntries(page).filter({ hasText: 'Goblin 2 swings at Scout and misses' })).toHaveCount(2);
+  await expect(feedEntries(page).filter({ hasText: 'opportunity attack on Skirmisher' })).toHaveCount(0);
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Bruiser' }).locator('td').nth(1)).toHaveText('24/24');
 });

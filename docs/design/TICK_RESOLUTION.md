@@ -257,16 +257,18 @@ This ensures that adding reactive actions in 3B+ is inserting logic into existin
 
 ## Decision 5: Opportunity Attacks and Disengagement ✅
 
-**Choice: Moving away from an adjacent enemy provokes a passive opportunity attack. Moving into melee range of an enemy also provokes. The Disengage action avoids provocation. Opportunity attacks are a passive reaction — free, always available to melee-capable combatants, weaker than proactive attacks.**
+**Choice: Moving away from an adjacent enemy provokes a passive opportunity attack. The Disengage action avoids provocation. Opportunity attacks are a passive reaction — free and always available to combatants whose profile allows them.**
+
+> **As built (3B.6 PR 1, `SPRINT_3B6.md` X2–X5):** only **leaving** reach provokes (moving into reach is the **Brace** prepared reaction instead); an opportunity attack is a **full** weapon hit (not half), rolled and netted at the movement step it was provoked on, and a mover it drops stops there; **Disengage costs 2 AP**; the requirement is the profile value `opportunityAttacks` (default true), and a combatant that moves in the same tick doesn't react. The tables below are updated to match.
 
 ### Provocation Rules
 
 | Movement | Provokes? | Notes |
 |---|---|---|
 | Moving away from an adjacent enemy | **Yes** | The "sticky melee" rule. Retreating has a cost. |
-| Moving into a cell adjacent to an enemy | **Yes** | Approaching has a cost. Punishes reckless charges. |
-| Moving past an enemy (through adjacent cell, out the other side) | **Yes, once** | Triggers on entry. One opportunity attack per tick per reactor, so passing through doesn't trigger twice. |
-| Moving while using Disengage | **No** | Disengage costs 1 AP and replaces a normal Move. The combatant moves without provoking any reactions. |
+| Moving into a cell adjacent to an enemy | **No** (3B.6, X2) | Paths are server-picked, so nobody could plan around it. "Strike whoever comes close" is the Brace prepared reaction (PR 2). |
+| Moving past an enemy (through adjacent cell, out the other side) | **Yes, once** | Triggers on leaving. One opportunity attack per tick per reactor. |
+| Moving while using Disengage | **No** | Disengage costs 2 AP (X4) and replaces a normal Move. The combatant moves without provoking passive reactions. |
 | Moving while already adjacent (circling an enemy) | **No** | Lateral movement that maintains adjacency doesn't provoke. Only transitions into or out of adjacency trigger. |
 
 ### Opportunity Attack Properties
@@ -274,25 +276,24 @@ This ensures that adding reactive actions in 3B+ is inserting logic into existin
 | Property | Value | Notes |
 |---|---|---|
 | AP cost | 0 (passive) | Free reaction. No AP spent. |
-| Damage | Half of a normal melee attack (rounded down) | Enough to matter as a tax on movement, not enough to be a primary damage source. |
+| Damage | A full melee weapon hit (3B.6, X5) | Weapon die + damage dealt, then the target's damage taken (source tags `melee`, `opportunity`). No ability bonuses, no conditions applied. |
 | Hit check | Normal hit roll | Can miss. Not guaranteed damage. |
 | Limit | One per tick per combatant | If multiple enemies provoke in the same tick, only one opportunity attack fires. The combatant reacts to the first provocation in processing order. |
-| Requirement | Melee capability | Ranged-only combatants cannot make opportunity attacks. |
+| Requirement | `opportunityAttacks` on the profile (default true) | Also: standing, not Stunned, and not moving itself this tick (X5). |
 
 ### Disengage
 
-Disengage is a Movement-phase action that costs 1 AP. The combatant moves normally but does not provoke passive reactions (opportunity attacks) from any enemy during that move. Disengage does **not** prevent *prepared* reactions with movement triggers — a character who explicitly prepared an action against movement still reacts, because they committed AP to watching for exactly this situation.
+Disengage is a Movement-phase action that costs 2 AP (3B.6; 1 AP would have made it free, since a Move already costs 1). The combatant moves normally but does not provoke passive reactions (opportunity attacks) from any enemy during that move. Disengage does **not** prevent *prepared* reactions with movement triggers — a character who explicitly prepared an action against movement still reacts, because they committed AP to watching for exactly this situation.
 
 This creates a meaningful distinction:
-- Passive opportunity attacks: avoided by Disengage (free defense is bypassed by a 1 AP cost).
+- Passive opportunity attacks: avoided by Disengage (free defense is bypassed by a 2 AP cost).
 - Prepared movement reactions: not avoided by Disengage (committed AP is not easily nullified).
 
 Players must weigh: "Is spending 1 AP on safe movement worth it, or do I eat the opportunity attack and keep my AP for offense?"
 
-### Not Implemented in 3A
+### Built in 3B.6
 
-Opportunity attacks and Disengage are part of the reactive action system and land when that system is built (3B+). In 3A, movement never provokes and Disengage doesn't exist as an action type. The path-based movement resolution in 3A is the prerequisite — it processes cell-by-cell transitions, which is where provocation checks will be inserted.
-
+Opportunity attacks and Disengage landed in 3B.6 PR 1: after each lockstep movement step the resolver finds the opportunity attacks that step provoked, rolls them, nets them as one batch and runs the 0-HP check (`RoundResolver.ResolveStepReactions`, `SPRINT_3B6.md` X3). Prepared reactions follow in PRs 2–3.
 ---
 
 ## Decision 6: Path-Based Movement ✅

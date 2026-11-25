@@ -594,6 +594,8 @@ namespace RpgGame.Infrastructure.Data.Migrations
 
                             b1.Property<int>("MovementRange");
 
+                            b1.Property<bool?>("OpportunityAttacks");
+
                             b1.Property<string>("ProfileId")
                                 .IsRequired();
 

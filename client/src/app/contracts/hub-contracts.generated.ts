@@ -11,6 +11,15 @@ export interface AbilityDto {
   targeting: AbilityTargetingDto;
   move: AbilityMoveDto | null;
   appliesConditions: AbilityConditionDto[] | null;
+  activation: string;
+  trigger: AbilityTriggerDto | null;
+}
+
+export interface AbilityTriggerDto {
+  kind: string;
+  range: number | null;
+  attackKind: string | null;
+  description: string;
 }
 
 export interface AbilityMoveDto {
@@ -60,6 +69,7 @@ export interface CombatantDto {
   maxAp: number;
   abilities: AbilityDto[] | null;
   conditions: ActiveConditionDto[] | null;
+  opportunityAttacks: boolean;
 }
 
 export interface ConditionDto {
@@ -221,6 +231,7 @@ export interface PlanningCombatantDto {
   baseMovementRange: number;
   baseMaxAp: number;
   blocks: ConditionBlockDto[] | null;
+  opportunityAttacks: boolean;
 }
 
 export interface PlayerLockedInPayload {
@@ -260,6 +271,15 @@ export interface ResolutionPayload {
   revivedCombatantIds: string[] | null;
   expiredConditions: ExpiredConditionDto[] | null;
   periodic: PeriodicResultDto[] | null;
+  unusedReactions: UnusedReactionDto[] | null;
+}
+
+export interface UnusedReactionDto {
+  combatantId: string;
+  combatantName: string;
+  abilityId: string;
+  abilityName: string;
+  feedText: string;
 }
 
 export interface BleedoutResultDto {
@@ -295,6 +315,27 @@ export interface TickResult {
   heals: HealResult[] | null;
   conditions: ConditionResult[] | null;
   blocked: BlockedActionResult[] | null;
+  reactions: ReactionResult[] | null;
+  watching: WatchingResult[] | null;
+}
+
+export interface ReactionResult {
+  reactorId: string;
+  reactorName: string;
+  triggerId: string;
+  triggerName: string;
+  kind: string;
+  abilityId: string | null;
+  abilityName: string | null;
+  step: number;
+  attack: AttackResult | null;
+  feedText: string;
+}
+
+export interface WatchingResult {
+  combatantId: string;
+  abilityId: string;
+  abilityName: string;
 }
 
 export interface BlockedActionResult {
@@ -330,6 +371,8 @@ export interface MovementResult {
   wasBlocked: boolean;
   blockedByCombatantId: string | null;
   abilityId: string | null;
+  stopReason: string;
+  disengaging: boolean;
 }
 
 export interface AttackResult {
@@ -351,6 +394,7 @@ export interface AttackResult {
   abilityId: string | null;
   moveBonus: number;
   conditionDamage: number;
+  interceptedFromId: string | null;
 }
 
 export interface AttackRollDto {
@@ -359,6 +403,7 @@ export interface AttackRollDto {
   targetDodge: number;
   conditionAccuracy: number;
   conditionDodge: number;
+  reactionDodge: number;
 }
 
 export interface EffectResult {

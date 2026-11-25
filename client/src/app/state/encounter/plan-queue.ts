@@ -11,7 +11,9 @@ import { Position } from '../map/map.state.model';
  *    cooldown can be queued at most once per round;
  *  - an ability that moves (Dash, Charge) moves the planner too: a move to a cell within its
  *    maxCells of where the earlier moves end, a move to a target estimated toward it; cells of a
- *    move that uses the movement budget count toward it.
+ *    move that uses the movement budget count toward it;
+ *  - a Disengage (3B.6) is a move in every way (budget, route, Rooted) that costs 2 AP and provokes
+ *    no opportunity attacks.
  */
 
 /** A queue entry with every optional field empty, so callers only give what their action uses. */
@@ -26,7 +28,13 @@ export const DEFAULT_AP_COSTS: Readonly<Record<string, number>> = {
   ranged_attack: 2,
   defend: 1,
   stabilize: 2,
+  disengage: 2,
 };
+
+/** A plain move or a Disengage (3B.6): both walk to a target cell and share the movement budget. */
+export function isMoveType(type: string): boolean {
+  return type === 'move' || type === 'disengage';
+}
 
 /** AP budget for a combatant whose server DTO doesn't carry one. */
 export const DEFAULT_MAX_AP = 4;
@@ -103,7 +111,7 @@ export function skipsRoundReason(c: { characterName: string; maxAp: number; bloc
 
 /** Whether the entry would move its user: a move, or an ability with a move effect (Dash, Charge). */
 export function entryMoves(action: PlannedActionEntry, abilities: readonly AbilityDto[]): boolean {
-  return action.type === 'move' || (action.type === 'ability' && !!abilities.find(a => a.id === action.abilityId)?.move);
+  return isMoveType(action.type) || (action.type === 'ability' && !!abilities.find(a => a.id === action.abilityId)?.move);
 }
 
 /**
@@ -212,7 +220,7 @@ export function walkQueue(
   let pos = start;
   let cells = 0;
   for (const a of queue) {
-    if (a.type === 'move' && a.targetCell) {
+    if (isMoveType(a.type) && a.targetCell) {
       if (pos) cells += chebyshev(pos, a.targetCell);
       pos = a.targetCell;
       continue;
@@ -268,6 +276,23 @@ export function abilityCellError(
   if (move.usesMovementBudget && cellsUsed + steps > movementRange)
     return `Moves this round exceed maximum range (${movementRange} squares).`;
   return null;
+}
+
+/** An enemy that could strike a mover stepping out of its reach (3B.6): only its position at planning time is known. */
+export interface Threat {
+  id: string;
+  name: string;
+  position: Position;
+}
+
+/**
+ * The enemies whose melee reach `path` steps out of (SPRINT_3B6 X2), each once, in the order given: the
+ * opportunity attacks a plain move along it would provoke if nobody else moved. A forecast from planning
+ * positions only (enemies may move, and an enemy that moves in the same tick doesn't react).
+ */
+export function provokedBy(path: readonly Position[], threats: readonly Threat[], reach = MELEE_REACH): Threat[] {
+  return threats.filter(t => path.some((cell, i) =>
+    i > 0 && chebyshev(t.position, path[i - 1]) <= reach && chebyshev(t.position, cell) > reach));
 }
 
 /** What {@link validatePlan} needs to know about the planner and the board. */
@@ -330,7 +355,7 @@ export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFa
       if (shape) return fail(shape);
     }
 
-    if (root && (action.type === 'move' || ability?.move)) return fail(`This combatant is ${root.conditionName} and can't move.`);
+    if (root && (isMoveType(action.type) || ability?.move)) return fail(`This combatant is ${root.conditionName} and can't move.`);
 
     ap += entryCost(action, costs, facts.abilities);
     if (ap > facts.maxAp)
@@ -346,7 +371,7 @@ export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFa
       continue;
     }
 
-    if (action.type !== 'move') continue;
+    if (!isMoveType(action.type)) continue;
     if (!action.targetCell) return fail('Move action requires a target cell.');
     if (!onGrid(action.targetCell, w, h)) return fail(outOfBoundsError(w, h));
     if (!walked.position) return fail('Current position not found.');
@@ -372,6 +397,8 @@ export function describeAction(
 ): string {
   if (action.type === 'move' && action.targetCell)
     return `Move to (${action.targetCell.x}, ${action.targetCell.y})`;
+  if (action.type === 'disengage' && action.targetCell)
+    return `Disengage to (${action.targetCell.x}, ${action.targetCell.y})`;
   const target = action.targetCombatantId ? nameOf(action.targetCombatantId) : undefined;
   if (action.type === 'melee_attack') return target ? `Melee Attack on ${target}` : 'Melee Attack';
   if (action.type === 'ranged_attack') return target ? `Ranged Attack on ${target}` : 'Ranged Attack';
