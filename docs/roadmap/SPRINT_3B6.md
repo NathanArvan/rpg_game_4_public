@@ -1,8 +1,8 @@
 # Sprint — Slice 3B.6: Prepared Reactions & Opportunity Attacks
 
-> **Purpose:** Implementation guide for Slice 3B.6. Hand this to Claude Code alongside `CLAUDE.md`. The starting point is `TICK_RESOLUTION.md` Decisions 4 (reactive actions) and 5 (opportunity attacks and Disengage). The decisions below (X1–X16) make those concrete, and a few of them **change** D5 (see X2, X4). Settle the ones marked *to confirm* before PR 1, then treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` and `SPRINT_3B4.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (A1 reserves `activation: "prepared"` for this slice, A9 split it out).
+> **Purpose:** Implementation guide for Slice 3B.6. Hand this to Claude Code alongside `CLAUDE.md`. The starting point is `TICK_RESOLUTION.md` Decisions 4 (reactive actions) and 5 (opportunity attacks and Disengage). The decisions below (X1–X16) make those concrete, and a few of them **change** D5 (see X2, X4). They are all settled; treat them as locked and note any change made during implementation here, as `SPRINT_3B3.md` and `SPRINT_3B4.md` did. For the high-level plan see `ROADMAP_STRATEGIC.md`. For how abilities work see `ABILITIES.md` (A1 reserves `activation: "prepared"` for this slice, A9 split it out).
 >
-> **Status:** ⬜ Not started. Decisions X2, X3, X4, X7, X9, X10, X12 and the slice scope were settled on 2026-11-25.
+> **Status:** ⬜ Not started. All decisions are settled (2026-11-25): X2–X5, X7–X10, X12, X13 and the slice scope were chosen explicitly; the rest were accepted as written.
 >
 > **Goal:** Movement has a cost near enemies. Stepping out of an enemy's reach gives them a free **opportunity attack** (a full weapon hit, rolled and applied on the spot), unless the mover pays for a **Disengage**. Combatants can also spend AP and the rest of their queue on a **prepared reaction**: they watch for a trigger for the rest of the round and act the moment it happens. 3B.6 ships movement triggers (**Brace**: strike whoever steps into reach; **Overwatch**: shoot the first enemy who moves nearby) and attack triggers (**Parry**: harder to hit for the attacks aimed at you; **Intercept**: take a hit meant for an adjacent ally). The enemy AI uses them a little. All of it can be tried in a new **Reactions** Quick Battle.
 
@@ -27,7 +27,7 @@
 
 ## Decisions
 
-Recommendations are written as the decision. ✅ **Decided** marks the ones chosen explicitly on 2026-11-25. **To confirm** marks the remaining ones that have a real alternative worth a look. The rest follow from existing locked decisions.
+All decisions are locked (2026-11-25). ✅ **Decided** marks the ones chosen explicitly; the rest follow from existing locked decisions.
 
 ### X1. Two kinds of reaction, one place in the resolver
 
@@ -71,12 +71,12 @@ Moving **into** reach no longer provokes passively. "Strike whoever comes close"
 - It doesn't provoke **passive** opportunity attacks during that move. It **doesn't** protect against **prepared** movement reactions (Brace, Overwatch: the roadmap's lean, "committed AP is not easily nullified").
 - `PlanValidator` and `plan-queue.ts` treat it like a Move for the budget and for "measured from where the previous move ends".
 
-### X5. Who can make an opportunity attack, and how hard it hits ✅ Decided (damage)
+### X5. Who can make an opportunity attack, and how hard it hits ✅ Decided
 
 - **Damage: a full melee hit** with the weapon die (✅ decided, instead of D5's half). It's a normal hit check, with no special bonus: `d20 + MeleeAccuracy + condition accuracy (melee) ≥ Dodge + condition dodge (melee)`. Guarded, Blessed, Exposed and the rest apply. Damage is `BaseDamage` die + `damageDealt`, then the target's `damageTaken` with source tags `["melee", "opportunity"]`. No ability bonuses, and it never applies conditions.
 - **One passive reaction per combatant per tick** (D4). If several movers provoke the same reactor in one tick, it reacts to the first in processing order (earliest step, then mover plan order).
 - **Can react:** Standing, not blocked from acting (Stunned blocks reactions too; Rooted doesn't), and `CombatProfile.OpportunityAttacks` is true. That's a new profile value, default **true**, with `opportunityAttacks` in `profiles.json` and as a battle-preset override. Set it false for the Training Dummy preset's dummy and for anything meant to be harmless.
-- **To confirm: a combatant whose own action this tick moves it can't make opportunity attacks in that tick** (plain move, Disengage, or an ability move, even if its path ended early). Reason: two adjacent fighters who both step back in the same tick would otherwise each "leave" the other and trade free hits, and a combatant mid-stride isn't set to strike. *Alternative:* anyone standing can react at any step, including movers between their own steps.
+- **A combatant whose own action this tick moves it can't make opportunity attacks in that tick** (plain move, Disengage, or an ability move, even if its path ended early). Reason: two adjacent fighters who both step back in the same tick would otherwise each "leave" the other and trade free hits, and a combatant mid-stride isn't set to strike. *Rejected alternative:* anyone standing can react at any step, including movers between their own steps.
 - An opportunity attack doesn't use AP, doesn't count as the reactor's attack for `requiresHit` (`TickHits`), and isn't affected by what the reactor queued this tick. A reactor who also has a melee attack queued this tick still makes it in the Attack phase.
 
 ### X6. Prepared reactions are abilities
@@ -124,20 +124,20 @@ One trigger per preparation. The first event that matches fires it, and it stops
 
 Plans are already private until resolution: the AI plans when the phase opens, and players never see enemy queues. A prepared reaction is just part of the plan, so the other side only learns about it when it fires during playback. During playback, every screen shows a watching badge (👁) on the watcher's token from the start of its tick, because resolution is public. Per-player hiding is 3C.
 
-### X12. Movement triggers: Brace and Overwatch ✅ Decided (scope)
+### X12. Movement triggers: Brace and Overwatch ✅ Decided
 
 Checked at the same hook as opportunity attacks (after each lockstep step, X3) and resolved in the same batch.
 
 | Trigger | Fires when | Notes |
 |---|---|---|
 | `enemy_enters_reach` (Brace) | An enemy's step ends within the watcher's `MeleeReach` and started outside it | The entering-provokes rule from D5, now something you pay for. Hits before the enemy's Attack phase: a Grunt that Brace drops doesn't get to swing that tick |
-| `enemy_moves_within` (Overwatch) | **To confirm:** an enemy takes a step that ends within `range` of the watcher, including an enemy who was already inside and moves | Classic overwatch: any movement in the zone. *Alternative:* only crossing from outside to inside. Line of sight joins the check in 3M.2 |
+| `enemy_moves_within` (Overwatch) | An enemy takes a step that ends within `range` of the watcher, including an enemy who was already inside and moves | Classic overwatch: any movement in the zone. *Rejected alternative:* only crossing from outside to inside. Line of sight joins the check in 3M.2 |
 
 - Disengage doesn't stop either one (X4).
 - A movement trigger fires on movement steps only. Someone who stands still inside the zone, or walks in during the watcher's *earlier* ticks (before watching started), doesn't trigger it.
 - Ranged prepared attacks use the normal ranged hit check (`RangedAccuracy`) and are a ranged attack for conditions (Dazzled applies).
 
-### X13. Attack triggers: Parry and Intercept (interrupt) ✅ Decided (scope)
+### X13. Attack triggers: Parry and Intercept (interrupt) ✅ Decided
 
 Checked **after** the tick's Movement phase and before any Attack-phase roll, against the tick's collected attacks: basic melee and ranged, and attack effects of abilities with `combatant` / `combatants` targeting. `auto` (Cleave) targets are found after movement, so they're known here too and count.
 
@@ -148,7 +148,7 @@ Checked **after** the tick's Movement phase and before any Attack-phase roll, ag
 
 - Both happen before the rolls, so they're true interrupts. The attacks then roll and net together as usual (D3). Mutual kills are still possible.
 - An attack on a target that's already wasted (out of reach, target down) doesn't trigger anything: the reach check runs first, so Parry isn't spent on an attack that was never going to happen.
-- **To confirm: numbers.** Parry +4 Dodge (1 AP, cooldown 1); Intercept (1 AP, cooldown 2). Cheap because they're defensive and end the queue.
+- **Numbers:** Parry +4 Dodge, melee only (1 AP, cooldown 1); Intercept (1 AP, cooldown 2). Cheap because they're defensive and end the queue; retune after playtesting.
 
 ### X14. Movement step outcome when a mover falls
 
@@ -195,7 +195,7 @@ Follow the design loop for each PR: rules + scenarios first (`dotnet test server
 - `RoundResolver.ResolveMovementPhase`:
   - Disengage builds a `Mover` exactly like Move (budget, Rooted block reported as `BlockKind.Move`), flagged `Disengaging`. Ability movers take `Disengaging` from their `MoveEffect`.
   - After each lockstep step's positions are applied, call `ResolveStepReactions(round, tick, step, stepMoves)`. `stepMoves` holds each mover that actually stepped (`from`, `to`). The method finds provocations (X2, X5), rolls them (reuse `RollAttack` / `ComputeAttack` with an opportunity flag: weapon die, melee, source tags `melee` + `opportunity`), nets the batch, updates HP and calls `ResolveFalls`. A fallen mover gets `Stopped = true`, `StopReason = Fell`, and is dropped from the remaining steps.
-  - `round.PassiveUsedThisTick` resets at the start of each tick. Reactors whose own action this tick moves them are skipped (X5, to confirm).
+  - `round.PassiveUsedThisTick` resets at the start of each tick. Reactors whose own action this tick moves them are skipped (X5).
 - `Outcomes.cs`: `ReactionOutcome(string ReactorId, string TriggerId, ReactionKind Kind /* Opportunity | Prepared */, string? AbilityId, int Step, AttackOutcome? Attack)` on `TickOutcome.Reactions` (in resolution order); `MovementOutcome.StopReason` (X14). The `AttackOutcome` inside uses `AttackType = MeleeAttack`, and its HP before / after are the HP around the step batch.
 - `PlanValidator`: Disengage costs 2, uses the movement budget, measured from the previous move's end, and is rejected while Rooted ("This combatant is Rooted and can't move.").
 - `EnemyAi`: the X15 PR 1 rule. `DestinationNear` and the walk helpers are unchanged.
@@ -253,7 +253,7 @@ New Quick Battle preset **`reactions.json`** ("Reactions"): the party starts **n
   - `oa-mover-downed-stops.json` (path cut, no attack from the mover that tick)
   - `oa-mover-killed-monster.json`
   - `oa-guarded-and-exposed-apply.json`
-  - `oa-reactor-moving-cant.json` (X5, to confirm)
+  - `oa-reactor-moving-cant.json` (X5)
   - `oa-stunned-cant-react.json`, `oa-flag-false-cant-react.json`
   - `oa-dash-provokes.json`, `oa-charge-provokes-from-left-enemy.json`
   - `oa-step-batch-nets.json` (two reactors hit the same mover on one step: netted, then the fall check)
