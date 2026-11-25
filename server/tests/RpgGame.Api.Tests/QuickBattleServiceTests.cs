@@ -116,6 +116,21 @@ public class QuickBattleServiceTests
     }
 
     [Fact]
+    public async Task Start_ControlPreset_StoresStunRootSlowAndHasteAbilities()
+    {
+        await Service().StartAsync("user-1", "control");
+
+        var combatants = await _db.EncounterCombatants.ToListAsync();
+        AbilityValues Ability(string who, string id) => combatants.Single(c => c.CharacterName == who).Profile!.Abilities!.Single(a => a.Id == id);
+        var bash = Ability("Bruiser", "shield_bash");
+        Assert.Equal(("stunned", 0), (bash.Effects[1].Condition!.Id, bash.Effects[1].Duration));
+        Assert.Equal(("stunned", 1), (Ability("Shaman", "hex").Effects[0].Condition!.Id, Ability("Shaman", "hex").Effects[0].Duration));
+        Assert.Equal(["move"], Ability("Scout", "entangle").Effects[0].Condition!.Modifiers.Blocks);
+        Assert.Equal(-2, Ability("Goblin 1", "hamstring").Effects[1].Condition!.Modifiers.Movement);
+        Assert.Equal(1, Ability("Skirmisher", "haste").Effects[0].Condition!.Modifiers.Ap);
+    }
+
+    [Fact]
     public async Task Start_SeedsMapHpAndAnActiveEncounterWithTheTimerOff()
     {
         var r = await Service().StartAsync("user-1", "skirmish");

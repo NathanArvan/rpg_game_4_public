@@ -54,4 +54,29 @@ public class AiPlanningService(
         await redisState.AddLockedInBatchAsync(encounterIdStr, lockedIn.Select(l => l.CombatantId));
         return lockedIn;
     }
+
+    public async Task<AutoLockInResult> LockInUnableToActAsync(Guid encounterId)
+    {
+        var loaded = await EncounterStateLoader.LoadAsync(db, redisState, encounterId);
+        var encounterIdStr = encounterId.ToString();
+        var emptyPlan = JsonSerializer.Serialize(new PlannedActionArray([]), _jsonOptions);
+
+        var lockedIn = new List<AiLockIn>();
+        foreach (var (id, record) in loaded.Records)
+        {
+            var state = record.State;
+            if (state.IsDefeated || !ConditionMath.CannotAct(state.Profile, state.Conditions)) continue;
+            if (await redisState.IsLockedInAsync(encounterIdStr, id)) continue;
+            await redisState.SetPlannedActionAsync(encounterIdStr, id, emptyPlan);
+            lockedIn.Add(new AiLockIn(id, state.Name));
+            logger.LogInformation("AutoLockIn: encounter={EncounterId} combatant={CombatantId} can't act this round", encounterId, id);
+        }
+        if (lockedIn.Count == 0) return new AutoLockInResult([], false);
+        await redisState.AddLockedInBatchAsync(encounterIdStr, lockedIn.Select(l => l.CombatantId));
+
+        bool all = true;
+        foreach (var (id, record) in loaded.Records)
+            if (!record.State.IsDefeated && !await redisState.IsLockedInAsync(encounterIdStr, id)) { all = false; break; }
+        return new AutoLockInResult(lockedIn, all);
+    }
 }

@@ -102,6 +102,12 @@ describe('formatFeedLine conditions (3B.4)', () => {
       .toEqual(['[party]Kestrel', "'s ", '[ability]Mark', ': ', '[enemy]Goblin 1', ' is ', '[condition]Marked', ' until the end of next round']);
   });
 
+  it('styles the condition in a blocked-action line (3B.4 PR 3)', () => {
+    expect(show(formatFeedLine("Goblin 1 is Stunned and can't act", sides).segments))
+      .toEqual(['[enemy]Goblin 1', ' is ', '[condition]Stunned', " and can't act"]);
+    expect(show(formatFeedLine("Kestrel is Rooted and can't move", sides).segments)).toContain('[condition]Rooted');
+  });
+
   it('styles Guarded, refreshes, misses, resists and expiries', () => {
     expect(show(formatFeedLine('Goblin 1 is Guarded until the end of the round', sides).segments))
       .toEqual(['[enemy]Goblin 1', ' is ', '[condition]Guarded', ' until the end of the round']);

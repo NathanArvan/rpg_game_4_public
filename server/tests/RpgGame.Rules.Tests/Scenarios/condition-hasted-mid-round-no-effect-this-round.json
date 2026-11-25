@@ -1,0 +1,28 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C6): Haste in tick 1 doesn't stretch this round's locked-in move; next round it does.
+  "description": "Conditions: Hasted applied mid-round counts from the next round",
+  "combatants": [
+    { "id": "Mira", "side": "party", "at": [0, 0], "abilities": ["haste"] },
+    { "id": "Hero", "side": "party", "at": [1, 0] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Mira": ["ability haste Hero"], "Hero": ["move 1,0", "move 1,9"] },
+      "dice": [],
+      "expect": {
+        "positions": { "Hero": [1, 6] },
+        "conditions": { "Hero": { "hasted": 0 } },
+        "events": ["t1 Mira haste Hero: hasted applied (1)", "t2 Hero moves to 1,6"]
+      }
+    },
+    {
+      "plans": { "Hero": ["move 1,9", "move 1,14", "defend", "defend", "defend"] },
+      "dice": [],
+      "expect": {
+        "ticks": 5,
+        "positions": { "Hero": [1, 14] },
+        "conditions": { "Hero": {} }
+      }
+    }
+  ]
+}

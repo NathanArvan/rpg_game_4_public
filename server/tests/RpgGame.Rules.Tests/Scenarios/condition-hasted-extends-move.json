@@ -1,0 +1,16 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C3, C6): Hasted (+2 movement, +1 AP) at the start of the round grows both budgets.
+  "description": "Conditions: a Hasted hero moves 8 cells and still has 4 AP for two attacks",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0], "conditions": [{ "id": "hasted", "rounds": 0 }] },
+    { "id": "G", "side": "enemy", "at": [9, 0] }
+  ],
+  "plans": { "Hero": ["move 8,0", "melee G", "melee G"] },
+  "dice": [12, 4, 11, 5],
+  "expect": {
+    "ticks": 3,
+    "positions": { "Hero": [8, 0] },
+    "hp": { "G": 11 },
+    "conditions": { "Hero": {} }
+  }
+}

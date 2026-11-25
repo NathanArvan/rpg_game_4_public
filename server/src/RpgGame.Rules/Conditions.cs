@@ -162,6 +162,49 @@ public static class ConditionMath
         return (int)Math.Floor(scaled / 100.0);
     }
 
+    /// <summary>
+    /// The movement budget for a round (C3, C6): the profile's range plus every condition's movement, never
+    /// below 0. Worked out from the conditions at the start of the planning phase and used for the whole round.
+    /// </summary>
+    public static int EffectiveMovementRange(CombatProfile profile, IReadOnlyList<ActiveCondition> conditions) =>
+        Math.Max(0, profile.MovementRange + conditions.Sum(c => c.Definition.Modifiers.Movement));
+
+    /// <summary>The AP budget for a round (C3, C6): the profile's AP plus every condition's AP, never below 0.</summary>
+    public static int EffectiveMaxAp(CombatProfile profile, IReadOnlyList<ActiveCondition> conditions) =>
+        Math.Max(0, profile.MaxAp + conditions.Sum(c => c.Definition.Modifiers.Ap));
+
+    /// <summary>
+    /// The profile with its round budgets (<see cref="CombatProfile.MaxAp"/>, <see cref="CombatProfile.MovementRange"/>)
+    /// replaced by the effective ones, so budget checks written against a profile work unchanged.
+    /// </summary>
+    public static CombatProfile EffectiveProfile(CombatProfile profile, IReadOnlyList<ActiveCondition> conditions) =>
+        conditions.Count == 0
+            ? profile
+            : profile with
+            {
+                MaxAp = EffectiveMaxAp(profile, conditions),
+                MovementRange = EffectiveMovementRange(profile, conditions),
+            };
+
+    /// <summary>
+    /// Whether the conditions stop the bearer doing <paramref name="kind"/> (C8). <see cref="BlockKind.All"/>
+    /// also blocks moves.
+    /// </summary>
+    public static bool IsBlocked(IReadOnlyList<ActiveCondition> conditions, BlockKind kind) =>
+        BlockingCondition(conditions, kind) is not null;
+
+    /// <summary>The first condition that blocks <paramref name="kind"/> (for the feed), or null.</summary>
+    public static ActiveCondition? BlockingCondition(IReadOnlyList<ActiveCondition> conditions, BlockKind kind) =>
+        conditions.FirstOrDefault(c => c.Definition.Modifiers.Blocks.Contains(BlockKind.All))
+        ?? (kind == BlockKind.Move ? conditions.FirstOrDefault(c => c.Definition.Modifiers.Blocks.Contains(BlockKind.Move)) : null);
+
+    /// <summary>
+    /// The bearer skips the round at planning (C8): its conditions block every action, or leave it 0 AP.
+    /// The Api locks such a combatant in with an empty plan; the enemy AI doesn't plan it.
+    /// </summary>
+    public static bool CannotAct(CombatProfile profile, IReadOnlyList<ActiveCondition> conditions) =>
+        IsBlocked(conditions, BlockKind.All) || EffectiveMaxAp(profile, conditions) == 0;
+
     private static bool Matches(AttackKindFilter filter, AttackKind kind) => filter switch
     {
         AttackKindFilter.Melee => kind == AttackKind.Melee,

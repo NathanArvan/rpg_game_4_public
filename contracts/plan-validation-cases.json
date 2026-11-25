@@ -8,6 +8,9 @@
     "result: { ap, cells } when the plan is legal, or { error } with the server's exact message (the first rule broken).",
     "Queue entries: 'move X,Y' (or 'move' with no cell), 'melee ID', 'ranged ID', 'stabilize ID', 'defend', and",
     "'ability ID [TARGET | [T1,T2,...]] [@X,Y]' (TARGET = targetCombatantId, [..] = targetCombatantIds, @X,Y = targetCell).",
+    "Conditions (3B.4 PR 3): optional conditions ([{ name, movement, ap, blocks: ['all' | 'move'] }]) active at the start of",
+    "planning. The server sums them into the budgets; the client receives the effective maxAp / movementRange and blocks",
+    "from the server (the client harness works them out the same way before calling validatePlan).",
     "The abilities are test versions (only what validation reads); they don't follow the shipped abilities.json."
   ],
   "grid": { "width": 20, "height": 20 },
@@ -130,6 +133,29 @@
     { "name": "a move after Charge still shares the budget", "abilities": ["charge"], "positions": { "g": [5, 0] },
       "queue": ["ability charge g", "move 7,0"], "expect": { "error": "Moves this round exceed maximum range (6 squares)." } },
     { "name": "Charge at a target with no known position covers no cells", "abilities": ["charge"],
-      "queue": ["ability charge g", "move 3,0"], "expect": { "ap": 4, "cells": 3 } }
+      "queue": ["ability charge g", "move 3,0"], "expect": { "ap": 4, "cells": 3 } },
+
+    { "name": "Slowed shrinks the movement budget", "conditions": [{ "name": "Slowed", "movement": -2 }], "queue": ["move 5,0"],
+      "expect": { "error": "Moves this round exceed maximum range (4 squares)." } },
+    { "name": "Slowed still allows a move within the smaller budget", "conditions": [{ "name": "Slowed", "movement": -2 }], "queue": ["move 4,0"],
+      "expect": { "ap": 1, "cells": 4 } },
+    { "name": "Hasted extends the movement and AP budgets", "conditions": [{ "name": "Hasted", "movement": 2, "ap": 1 }],
+      "queue": ["move 8,0", "melee g", "melee g"], "expect": { "ap": 5, "cells": 8 } },
+    { "name": "Weakened plans are checked against the smaller AP budget", "conditions": [{ "name": "Weakened", "ap": -1 }],
+      "queue": ["melee g", "melee g"], "expect": { "error": "Not enough AP: this plan costs 4 AP but only 3 AP are available." } },
+    { "name": "Slowed and Hasted add up", "conditions": [{ "name": "Slowed", "movement": -2 }, { "name": "Hasted", "movement": 2, "ap": 1 }],
+      "queue": ["move 6,0"], "expect": { "ap": 1, "cells": 6 } },
+    { "name": "a Stunned combatant can't plan anything", "conditions": [{ "name": "Stunned", "blocks": ["all"] }], "queue": ["defend"],
+      "expect": { "error": "This combatant is Stunned and can't act this round." } },
+    { "name": "a Stunned combatant's empty plan is legal", "conditions": [{ "name": "Stunned", "blocks": ["all"] }], "queue": [],
+      "expect": { "ap": 0, "cells": 0 } },
+    { "name": "a Rooted combatant can't move", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "queue": ["melee g", "move 1,0"],
+      "expect": { "error": "This combatant is Rooted and can't move." } },
+    { "name": "a Rooted combatant can't Dash", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "abilities": ["dash"],
+      "queue": ["ability dash @2,0"], "expect": { "error": "This combatant is Rooted and can't move." } },
+    { "name": "a Rooted combatant can't Charge", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "abilities": ["charge"],
+      "positions": { "g": [5, 0] }, "queue": ["ability charge g"], "expect": { "error": "This combatant is Rooted and can't move." } },
+    { "name": "a Rooted combatant can still attack", "conditions": [{ "name": "Rooted", "blocks": ["move"] }], "queue": ["melee g", "melee g"],
+      "expect": { "ap": 4, "cells": 0 } }
   ]
 }

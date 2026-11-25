@@ -1,4 +1,4 @@
-import { AbilityDto, ActiveConditionDto, PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
+import { AbilityDto, ActiveConditionDto, ConditionBlockDto, PlannedActionEntry, TickResult } from '../../contracts/hub-contracts.generated';
 
 /** Where a combatant stands in the fight (3B.5). Anyone not standing is out of the fight. */
 export type CombatantStatus = 'standing' | 'downed' | 'stable' | 'dead';
@@ -26,10 +26,16 @@ export interface Combatant {
   isAiControlled: boolean;
   /** Combat profile display name, e.g. "Bruiser" (empty for combatants from before profiles). */
   profileName: string;
-  /** Max cells moved per round (shared by all of the round's moves), from the combat profile. */
+  /** Cells moved this round (shared by all of the round's moves): the profile's, changed by conditions (3B.4). */
   movementRange: number;
-  /** Action points per round, from the combat profile (3B.2). */
+  /** Action points this round (3B.2): the profile's, changed by conditions (3B.4). */
   maxAp: number;
+  /** The profile's movement range, before conditions. */
+  baseMovementRange: number;
+  /** The profile's AP, before conditions. */
+  baseMaxAp: number;
+  /** What the combatant's conditions stop it doing this round (3B.4 PR 3): 'all' (skips the round) or 'move'. */
+  blocks: ConditionBlockDto[];
   /** Ability loadout (3B.3). */
   abilities: AbilityDto[];
   /** Abilities on cooldown: ability id → rounds left before it can be planned again (3B.3). */

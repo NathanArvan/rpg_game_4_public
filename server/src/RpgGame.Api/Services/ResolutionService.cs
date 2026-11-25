@@ -328,7 +328,16 @@ public class ResolutionService(
                 ResolutionFeedFormatter.Condition(c, sourceName, targetName, conditionName, abilityName));
         }).ToList();
 
-        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions);
+        var blocked = tick.Blocked.Select(b =>
+        {
+            var name = NameOf(b.CombatantId);
+            var conditionName = conditionLookup.TryGetValue(b.ConditionId, out var c) ? c.Name : b.ConditionId;
+            return new BlockedActionResult(b.CombatantId, name, RulesWireMapping.ToWire(b.Action.Type), b.Action.AbilityId,
+                b.ConditionId, conditionName, b.Block == BlockKind.All ? "all" : "move",
+                ResolutionFeedFormatter.Blocked(b.Block, name, conditionName));
+        }).ToList();
+
+        return new TickResult(tick.Index, movements, attacks, effects, abilityUses, heals, conditions, blocked);
     }
 
     /// <summary>The resolved queues, in plan order, with each action's AP cost (so clients can show what ran in which tick).</summary>
@@ -344,7 +353,7 @@ public class ResolutionService(
                 return new CombatantQueueDto(
                     p.Key,
                     state.Name,
-                    state.Profile.MaxAp,
+                    ConditionMath.EffectiveMaxAp(state.Profile, state.Conditions),
                     p.Value.Select(a => new QueuedActionDto(
                         RulesWireMapping.ToWire(a.Type),
                         config.ApCost(a, state.Profile),
@@ -405,6 +414,17 @@ public class ResolutionService(
                     OccurredAt = now,
                     EventType = condition.Result == "wasted" ? "condition_wasted" : $"condition_{condition.Result}",
                     Payload = JsonSerializer.Serialize(new { condition.SourceId, condition.TargetId, condition.ConditionId, condition.AbilityId, condition.RoundsLeft }, _jsonOptions),
+                });
+            }
+            foreach (var blocked in tick.Blocked ?? [])
+            {
+                events.Add(new GameEvent
+                {
+                    Id = Guid.NewGuid(),
+                    EncounterId = encounterId,
+                    OccurredAt = now,
+                    EventType = "action_blocked",
+                    Payload = JsonSerializer.Serialize(new { blocked.CombatantId, blocked.ActionType, blocked.AbilityId, blocked.ConditionId }, _jsonOptions),
                 });
             }
             foreach (var attack in tick.Attacks)

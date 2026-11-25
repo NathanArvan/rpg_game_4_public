@@ -94,9 +94,9 @@ Delivers: Characters have abilities (discrete mechanical packages) instead of cl
 
 *Map note:* abilities ship before walls (3M.2), so ability range checks are distance-only at first. Keep the range check in one place in `RoundResolver` so 3M.2 can add line of sight there, and 3M.4 the high-ground range bonus.
 
-### 🔄 Slice 3B.4 — Conditions & Status Effects
+### ✅ Slice 3B.4 — Conditions & Status Effects
 
-*Status: in progress (`SPRINT_3B4.md`, three PRs). PR 1 done: conditions are data in `Conditions/conditions.json` (no table), applied by an `apply_condition` ability effect (Effects phase, on a hit if the ability attacks) and copied into each ability snapshot; they change hit chance (accuracy / dodge, optionally melee or ranged only) and damage (dealt, and taken as a percent and/or flat amount, optionally only from tagged sources); durations count full rounds after the current one and are shown in words; the same condition refreshes rather than stacks; falling clears them; Defend grants Guarded (+3 Dodge) from the start of its tick. Active conditions live in a per-encounter Redis hash. Battle Cry, Stoneskin and Mark in a new **Conditions** Quick Battle; the AI buffs and debuffs. PR 2 done: conditions can deal or heal damage once at the start of the end of round (Burning, Poisoned, Regenerating), netted per combatant and run through the bearer's damage taken with the condition's tags; anyone it drops falls then (no bleedout tick that round) and an end-of-round death can end the encounter. `ConditionResist` (profile / preset value, 0–100, Brute 25%) lets a combatant shrug off a harmful condition from an enemy on a d100, rolled only when above 0. Firebolt now sets its target Burning; new Envenom (Goblin 2 in the Conditions preset). To do: movement / AP modifiers and Stunned / Rooted (PR 3; budgets change from the next round, blocks from the next tick).*
+*Status: done (`SPRINT_3B4.md`, three PRs). PR 1: conditions are data in `Conditions/conditions.json` (no table), applied by an `apply_condition` ability effect (Effects phase, on a hit if the ability attacks) and copied into each ability snapshot; they change hit chance (accuracy / dodge, optionally melee or ranged only) and damage (dealt, and taken as a percent and/or flat amount, optionally only from tagged sources); durations count full rounds after the current one and are shown in words; the same condition refreshes rather than stacks; falling clears them; Defend grants Guarded (+3 Dodge) from the start of its tick. Active conditions live in a per-encounter Redis hash. Battle Cry, Stoneskin and Mark in a new **Conditions** Quick Battle; the AI buffs and debuffs. PR 2: conditions can deal or heal damage once at the start of the end of round (Burning, Poisoned, Regenerating), netted per combatant and run through the bearer's damage taken with the condition's tags; anyone it drops falls then (no bleedout tick that round) and an end-of-round death can end the encounter. `ConditionResist` (profile / preset value, 0–100, Brute 25%) lets a combatant shrug off a harmful condition from an enemy on a d100, rolled only when above 0. Firebolt now sets its target Burning; new Envenom (Goblin 2 in the Conditions preset). PR 3: conditions change the round's movement and AP budgets from the next planning phase (Slowed, Hasted, Weakened; the client shows the server's effective numbers), and block actions from the next tick: Stunned voids the rest of a round (a stunned combatant is locked in with an empty plan at planning, and a round where nobody can act resolves on its own), Rooted stops plain moves and abilities' moves. A blocked action is reported and starts no cooldown. Hamstring, Haste, Entangle, Sap, Shield Bash (stun for the rest of the round) and Hex (stun into the next round) in a new **Crowd Control** Quick Battle; the AI plans within its budgets and doesn't walk while Rooted. Shove (forced movement, a stretch goal) is not built.*
 
 Delivers: Abilities and environmental effects can apply conditions (stunned, burning, slowed, etc.) that modify combatant behavior for a duration. Conditions are the game's own vocabulary. Resistance comes from a `ConditionResist` value on the combat profile (0% by default). Resonance-triggered secondary effects (e.g., "applies Burning at resonance 3") use this system.
 
@@ -267,8 +267,8 @@ Done        3B.0 Manual Testing Spike (encounter end #90 → enemy AI #91 → Qu
 Done        3B.1 Combat Profiles
 Done        3B.2 Action Points
 Done        3B.5 Defeat & Incapacitation
-Now         3B.4 Conditions & Status Effects (PR 2 of 3 done; 3B.3 Abilities & Cooldowns done)
-Next        3B.4 Conditions → 3B.6 Prepared Reactions & Opportunity Attacks
+Done        3B.4 Conditions & Status Effects (3B.3 Abilities & Cooldowns done)
+Next        3B.6 Prepared Reactions & Opportunity Attacks
 Then        3M.1 Large Maps & Camera → 3M.2 Map Format, Walls & Buildings → 3M.5 Ley Points & Resonance → 3M.3 Terrain Types → 3M.4 Elevation
 Then        3C.1 Vision & Fog → 3C.2 Info Sharing → 3C.3 Hidden Enemies
 Decision    [optional: 4.2 Items as fixed loadouts] → Character Stats & Progression decision
@@ -313,7 +313,7 @@ Phase 3A was the critical path and is done. The goal of 3B + 3M + 3C is one comp
 
 **3B.3** — No new tables (`ABILITIES.md` A2). Abilities live in a JSON catalog (`Abilities/abilities.json`); profiles and battle presets list a loadout; each combatant's loadout definitions are snapshotted into the `EncounterCombatant.Profile` JSONB. Migrations `AddAbilityLoadouts`, `AddHealEffects` (PR 2: the heal effect's `Amount` and `CanRevive` in the snapshot JSON) and `AddMovementEffects` (PR 3: the move effect and `bonusIfMoved`) only update the model snapshot. Per-character loadouts (`character_abilities`) wait for progression. No acquisition rules. (`spell_definitions` / `character_known_spells` no longer exist.)
 
-**3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot (migration `AddConditionResist`, model snapshot only).
+**3B.4** — No new tables (`SPRINT_3B4.md` C1). Conditions live in a JSON catalog (`Conditions/conditions.json`); an ability's `apply_condition` effect carries a copy of the condition's definition inside the `EncounterCombatant.Profile` JSONB snapshot. Migration `AddConditionEffects` (PR 1) only updates the model snapshot; PR 2 adds `ConditionResist` to the snapshot (migration `AddConditionResist`, model snapshot only). PR 3 needs no migration (movement, AP and block modifiers were stored from PR 1).
 
 **3B.5** — Add `is_incapacitated`, `is_dead` to character state (Postgres or Redis-only during encounters — decision deferred).
 
@@ -434,11 +434,12 @@ Per-tick, three phases in fixed order. See `TICK_RESOLUTION.md` for the full loo
 ```
 for tick in 0..max_ticks:
     (start)              — Defend grants Guarded (3B.4)
-    Phase 1 (Movement)  — path-based, cell-by-cell, Speed tiebreaker for conflicts
+    (start)              — conditions that block every action (Stunned) void the combatant's action (3B.4)
+    Phase 1 (Movement)  — path-based, cell-by-cell, Speed tiebreaker for conflicts; Rooted blocks moves (3B.4)
     Phase 2 (Attacks)    — snapshot HP → hit checks → damage → net deltas → apply → defeat check
     Phase 3 (Effects)    — stabilize, conditions from abilities, environment
 
-End of round: periodic condition effects and falls (3B.4 PR 2) → bleedout → cooldowns → conditions count down and expire → reset AP, advance round
+End of round: periodic condition effects and falls (3B.4 PR 2) → bleedout → cooldowns → conditions count down and expire → reset AP (to the budgets the remaining conditions leave, 3B.4 PR 3), advance round
 ```
 
 ### Ability Effect Schema (3B.3)

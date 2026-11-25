@@ -78,5 +78,16 @@ public class RoundOrchestrator(
         var aiLockIns = await aiPlanningSvc.PlanAndLockInAsync(encounterId);
         foreach (var lockIn in aiLockIns)
             await group.SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(lockIn.CharacterName));
+
+        // Combatants whose conditions stop them acting this round (Stunned) skip it: locked in with an empty plan
+        // (3B.4 PR 3, SPRINT_3B4 C8). If that leaves nobody to wait for, the round resolves on its own.
+        var skipped = await aiPlanningSvc.LockInUnableToActAsync(encounterId);
+        foreach (var lockIn in skipped?.LockedIn ?? [])
+            await group.SendAsync(HubEvents.Events.PlayerLockedIn, new PlayerLockedInPayload(lockIn.CharacterName));
+        if (skipped is { AllLockedIn: true })
+        {
+            logger.LogInformation("RoundOrchestrator: nobody can act in round {Round}; resolving", payload.RoundNumber);
+            await ResolveAndAdvanceAsync(encounterId, sessionId);
+        }
     }
 }

@@ -2,7 +2,7 @@ import { AbilityDto, PlannedActionEntry } from '../../contracts/hub-contracts.ge
 import {
   DEFAULT_AP_COSTS, abilityUnavailableReason, apSpent, canAfford, canAffordEntry, canTargetWithAbility, describeQueue, entry,
   abilityTakesTargets, maxTargets, moveCellsUsed, projectedPosition, targetShapeError,
-  abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue,
+  abilityCellError, abilityTakesCell, estimateMoveToTarget, walkQueue, blockOf, entryMoves, skipsRoundReason,
 } from './plan-queue';
 import { makeAbility } from '../../testing/builders';
 
@@ -166,5 +166,30 @@ describe('multi-target abilities (3B.3)', () => {
     it('describes a Dash with its cell', () => {
       expect(describeQueue([dashTo(3, 4)], () => undefined, () => 'Dash')).toBe('Dash to (3, 4)');
     });
+  });
+});
+
+describe('conditions at planning (3B.4 PR 3)', () => {
+  const stunned = { kind: 'all', conditionName: 'Stunned' };
+  const rooted = { kind: 'move', conditionName: 'Rooted' };
+  const dash: AbilityDto = makeAbility({ id: 'dash', name: 'Dash', apCost: 1, cooldown: 2, move: { to: 'cell', maxCells: 3, usesMovementBudget: false } });
+
+  it('says why a combatant skips the round: stunned, or no AP', () => {
+    expect(skipsRoundReason({ characterName: 'Brakka', maxAp: 4, blocks: [stunned] })).toBe("Brakka is Stunned and can't act this round.");
+    expect(skipsRoundReason({ characterName: 'Brakka', maxAp: 0, blocks: [] })).toBe("Brakka has no AP this round and can't act.");
+    expect(skipsRoundReason({ characterName: 'Brakka', maxAp: 3, blocks: [rooted] })).toBeNull();
+  });
+
+  it('knows which entries move their user', () => {
+    expect(entryMoves(move(1, 0), [])).toBeTrue();
+    expect(entryMoves(entry('ability', { abilityId: 'dash', targetCell: { x: 1, y: 0 } }), [dash])).toBeTrue();
+    expect(entryMoves(melee('g'), [])).toBeFalse();
+    expect(blockOf([rooted], 'move')).toEqual(rooted);
+    expect(blockOf([rooted], 'all')).toBeUndefined();
+  });
+
+  it('marks an ability that moves as unavailable while Rooted', () => {
+    expect(abilityUnavailableReason(dash, [], 4, DEFAULT_AP_COSTS, [dash], {}, [rooted])).toBe("Rooted: can't move");
+    expect(abilityUnavailableReason(powerStrike, [], 4, DEFAULT_AP_COSTS, [powerStrike], {}, [rooted])).toBeNull();
   });
 });

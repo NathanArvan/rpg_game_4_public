@@ -212,6 +212,8 @@ Per the 3B.0 "ongoing cost" rule. Fixed priority, still deterministic:
 4. A stronger single-target attack off cooldown instead of a basic melee.
 5. Otherwise today's behaviour.
 
+*Added in 3B.4 (`SPRINT_3B4.md` C14):* between steps 1 and 2, a ready ability that only applies conditions (a buff someone it reaches lacks, or a debuff its target lacks); step 4 prefers a melee ability that would add a condition the target lacks (Hamstring). It plans within the AP and movement its conditions leave it, isn't planned while Stunned (or at 0 AP), and doesn't walk or charge while Rooted.
+
 The AI never uses an ability to finish off a Downed enemy (same as today).
 
 ### A14. What 3B.3 explicitly doesn't do

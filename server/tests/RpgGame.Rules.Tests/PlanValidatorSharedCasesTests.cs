@@ -43,8 +43,12 @@ public partial class PlanValidatorTests
         var positions = c.Positions?.ToDictionary(p => p.Key, p => new GridPosition(p.Value[0], p.Value[1]));
         var queue = c.Queue.Select(text => ParseAction(text, name)).ToList();
 
+        var conditions = (c.Conditions ?? []).Select(x => new ActiveCondition(new ConditionDefinition(
+            x.Name.ToLowerInvariant(), x.Name, Harmful: true, Tags: [],
+            new Modifiers(Movement: x.Movement, Ap: x.Ap, Blocks: (x.Blocks ?? []).Select(b => Enum.Parse<BlockKind>(b, ignoreCase: true)).ToList())), 0)).ToList();
+
         var check = PlanValidator.Validate(start, profile, queue, file.Grid.Width, file.Grid.Height,
-            cooldowns: c.Cooldowns, positions: positions);
+            cooldowns: c.Cooldowns, positions: positions, conditions: conditions);
 
         if (c.Expect.Error is { } error)
             Assert.Equal(error, check.Error);
@@ -121,6 +125,7 @@ public partial class PlanValidatorTests
     private sealed record AbilityDto(string Name, int ApCost, int Cooldown, TargetingDto Targeting, MoveDto? Move);
     private sealed record TargetingDto(string Kind, int? Count);
     private sealed record MoveDto(string To, int MaxCells, bool UsesMovementBudget);
+    private sealed record ConditionCase(string Name, int Movement, int Ap, List<string>? Blocks);
     private sealed record Expectation(string? Error, int? Ap, int? Cells);
 
     private sealed class Case
@@ -131,6 +136,7 @@ public partial class PlanValidatorTests
         public List<string>? Abilities { get; init; }
         public Dictionary<string, int>? Cooldowns { get; init; }
         public Dictionary<string, int[]>? Positions { get; init; }
+        public List<ConditionCase>? Conditions { get; init; }
         public List<string> Queue { get; init; } = [];
         public Expectation Expect { get; init; } = new(null, null, null);
 

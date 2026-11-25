@@ -33,7 +33,8 @@ public class ConditionCatalogTests : IDisposable
     public void ShippedConditions_Load_AndMapToTheRulesEngine()
     {
         var catalog = TestProfiles.Catalog.Abilities.Conditions;
-        Assert.Equal(["blessed", "dazzled", "exposed", "emboldened", "fortified", "marked", "flame_ward", "burning", "poisoned", "regenerating"],
+        Assert.Equal(["blessed", "dazzled", "exposed", "emboldened", "fortified", "marked", "flame_ward", "burning", "poisoned", "regenerating",
+            "slowed", "hasted", "rooted", "weakened", "stunned"],
             catalog.All.Select(c => c.Id));
 
         var dazzled = ConditionMapping.ToRules(catalog.Find("dazzled")!);
@@ -43,6 +44,18 @@ public class ConditionCatalogTests : IDisposable
         var ward = ConditionMapping.ToRules(catalog.Find("flame_ward")!);
         Assert.Equal(new DamageTakenModifier(-50, 0, ["flame"]), ward.Modifiers.DamageTaken);
         Assert.False(ward.Harmful);
+    }
+
+    [Fact]
+    public void ShippedBudgetAndBlockConditions_MapToTheRulesEngine()
+    {
+        var catalog = TestProfiles.Catalog.Abilities.Conditions;
+        Modifiers M(string id) => ConditionMapping.ToRules(catalog.Find(id)!).Modifiers;
+        Assert.Equal(new Modifiers(Movement: -2), M("slowed"));
+        Assert.Equal(new Modifiers(Movement: 2, Ap: 1), M("hasted"));
+        Assert.Equal(new Modifiers(Ap: -1), M("weakened"));
+        Assert.Equal([BlockKind.Move], M("rooted").Blocks);
+        Assert.Equal([BlockKind.All], M("stunned").Blocks);
     }
 
     [Fact]

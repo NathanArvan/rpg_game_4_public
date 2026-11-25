@@ -1,0 +1,23 @@
+{
+  // 3B.4 PR 3: movement, AP and action denial. Party: the Bruiser has Shield Bash (a hit Stuns for the rest
+  // of the round) and Power Strike; the Skirmisher has Haste (+2 movement, +1 AP next round), Mend and Charge;
+  // the Scout has Entangle (Rooted: can't move) and Twin Shot.
+  // Enemies: Goblins with Hamstring (a hit Slows: 2 fewer cells next round); the Shaman (a Grunt) with Sap
+  // (1 less AP next round) and Hex (Stunned this round and the next); the Ogre (a Brute) charges and has a 25%
+  // chance to shrug off a harmful condition.
+  // Kept apart from the Conditions preset so that battle (and its seeded E2E test) plays as before.
+  // Used by the control E2E tests: keep Goblin 1 a 2-cell walk from the Bruiser at the start.
+  "id": "control",
+  "name": "Crowd Control",
+  "description": "Try Shield Bash, Haste, Entangle, Hamstring, Sap and Hex: stuns, roots, slows and haste, against goblins, a hexing shaman and an ogre.",
+  "order": 7,
+  "combatants": [
+    { "name": "Bruiser",    "side": "party", "profile": "bruiser",    "at": [9, 12],  "abilities": ["shield_bash", "power_strike"] },
+    { "name": "Skirmisher", "side": "party", "profile": "skirmisher", "at": [10, 13], "abilities": ["haste", "mend", "charge"] },
+    { "name": "Scout",      "side": "party", "profile": "scout",      "at": [11, 13], "abilities": ["entangle", "twin_shot"] },
+    { "name": "Goblin 1",   "side": "enemy", "profile": "grunt",      "at": [9, 9],   "abilities": ["hamstring"] },
+    { "name": "Goblin 2",   "side": "enemy", "profile": "grunt",      "at": [12, 7],  "abilities": ["hamstring"] },
+    { "name": "Shaman",     "side": "enemy", "profile": "grunt",      "at": [11, 5],  "abilities": ["sap", "hex"] },
+    { "name": "Ogre",       "side": "enemy", "profile": "brute",      "at": [8, 5] }
+  ]
+}

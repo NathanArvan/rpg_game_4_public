@@ -270,6 +270,10 @@ export function buildTimeline(
     }
     pendingFeed.push(...guards.map(g => g.feedText));
 
+    // Actions a condition stopped (3B.4 PR 3): Stunned / Rooted, said as the tick starts.
+    const blocked = tick.blocked ?? [];
+    pendingFeed.push(...blocked.map(b => b.feedText));
+
     // Movement: one beat per cell, every mover stepping in lockstep (as the rules resolve it).
     const uses = tick.abilityUses ?? [];
     const abilityNameOf = (m: MovementResult) => m.abilityId
@@ -415,6 +419,15 @@ export function buildTimeline(
     // Nothing visible happened this tick (defends, idles): a short beat for it.
     if (beats.length === beatsBefore)
       beats.push({ tick: t, phase: 'idle', durationMs: timing.idleMs, feed: takeFeed() });
+
+    // A blocked action shows on the tick's first beat: ⛔ and the condition's name over the combatant.
+    if (blocked.length > 0) {
+      const first = beats[beatsBefore];
+      const shown = [...new Map(blocked.map(b => [b.combatantId, b])).values()]; // once per combatant per tick
+      first.auras = [...(first.auras ?? []), ...shown.map(b => ({ combatantId: b.combatantId, kind: 'debuff' as const }))];
+      first.floats = [...(first.floats ?? []),
+        ...shown.map(b => ({ combatantId: b.combatantId, text: `⛔ ${b.conditionName.toUpperCase()}`, kind: 'debuff' as const }))];
+    }
 
     // Guarded shows as the tick starts: on its first beat, with a short cue over the defender.
     if (guards.length > 0) {

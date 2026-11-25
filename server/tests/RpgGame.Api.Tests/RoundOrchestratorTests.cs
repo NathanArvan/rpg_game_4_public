@@ -113,6 +113,42 @@ public class RoundOrchestratorTests
     }
 
     [Fact]
+    public async Task StartPlanningPhase_LocksInTheStunned_AfterTheAi()
+    {
+        var orchestrator = CreateOrchestrator();
+        _ai.Setup(a => a.PlanAndLockInAsync(_encounterId, null)).ReturnsAsync([new AiLockIn("m1", "Goblin")]);
+        _ai.Setup(a => a.LockInUnableToActAsync(_encounterId))
+            .ReturnsAsync(new AutoLockInResult([new AiLockIn("p1", "Brakka")], AllLockedIn: false));
+
+        await orchestrator.StartPlanningPhaseAsync(_encounterId, _sessionId, new PlanningPhaseStartedPayload(2, 0, [], []));
+
+        Assert.Equal(
+            [HubEvents.Events.PlanningPhaseStarted, HubEvents.Events.PlayerLockedIn, HubEvents.Events.PlayerLockedIn],
+            _sent);
+        Assert.Equal("Brakka", Assert.IsType<PlayerLockedInPayload>(_sentPayloads[2]).CharacterName);
+        _resolution.Verify(r => r.ResolveRoundAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartPlanningPhase_WhenTheOnlyHeroIsStunned_ResolvesWithoutInput()
+    {
+        var orchestrator = CreateOrchestrator();
+        _ai.Setup(a => a.LockInUnableToActAsync(_encounterId))
+            .ReturnsAsync(new AutoLockInResult([new AiLockIn("p1", "Brakka")], AllLockedIn: true));
+        ResolutionReturns(3, ["p1"],
+            new PlanningCombatantDto("p1", "u1", "Brakka", 0, 10, true, "player"),
+            new PlanningCombatantDto("m1", "gm", "Goblin", 5, 20, false, "monster"));
+
+        await orchestrator.StartPlanningPhaseAsync(_encounterId, _sessionId, new PlanningPhaseStartedPayload(2, 0, [], []));
+
+        _resolution.Verify(r => r.ResolveRoundAsync(_encounterId), Times.Once);
+        Assert.Equal(
+            [HubEvents.Events.PlanningPhaseStarted, HubEvents.Events.PlayerLockedIn, HubEvents.Events.AllLockedIn,
+             HubEvents.Events.ResolutionCompleted, HubEvents.Events.CombatantDefeated, HubEvents.Events.EncounterEnded],
+            _sent);
+    }
+
+    [Fact]
     public async Task TimerOff_NextRoundHasNoCountdownAndNoTimer()
     {
         ResolutionReturns(3, [],

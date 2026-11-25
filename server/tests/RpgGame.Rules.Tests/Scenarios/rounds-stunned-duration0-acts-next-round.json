@@ -1,0 +1,21 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C5, C8): a duration-0 stun voids the rest of the round it lands in, then expires:
+  // the Goblin acts normally the next round.
+  "description": "Rounds: stunned with duration 0, the Goblin acts again next round",
+  "combatants": [
+    { "id": "Bruiser", "side": "party", "at": [0, 0], "abilities": ["shield_bash"] },
+    { "id": "Goblin", "side": "enemy", "at": [1, 0] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Bruiser": ["ability shield_bash Goblin"], "Goblin": ["move 1,0", "melee Bruiser"] },
+      "dice": [14, 2],
+      "expect": { "hp": { "Bruiser": 20 }, "conditions": { "Goblin": {} }, "events": ["t2 Goblin stunned: melee Bruiser blocked"] }
+    },
+    {
+      "plans": { "Goblin": ["melee Bruiser", "melee Bruiser"] },
+      "dice": [15, 5, 3],
+      "expect": { "hp": { "Bruiser": 15 }, "events": ["t1 Goblin melee Bruiser: hit 5", "t2 Goblin melee Bruiser: miss"] }
+    }
+  ]
+}

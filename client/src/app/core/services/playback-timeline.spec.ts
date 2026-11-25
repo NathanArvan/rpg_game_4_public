@@ -1,6 +1,6 @@
 import { AttackResult, HealResult, MovementResult, ResolutionPayload, TickResult } from '../../contracts/hub-contracts.generated';
 import {
-  makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeConditionResult, makeEffect,
+  makeAbilityCondition, makeAbility, makeAbilityUse, makeActiveCondition, makeAttack, makeBleedout, makeBlocked, makeConditionResult, makeEffect,
   makeExpiredCondition, makeHeal, makeMove, makePayload, makePeriodic, makePlanningCombatant, makeTick,
 } from '../../testing/builders';
 import { PLAYBACK_TIMING, buildTimeline, periodicIcon, positionsAfterResolution, positionsBeforeResolution } from './playback-timeline';
@@ -258,6 +258,19 @@ describe('playback timeline: conditions (3B.4)', () => {
     expect(first.floats).toContain({ combatantId: 'g', text: 'Guarded', kind: 'buff' });
     expect(first.auras).toContain({ combatantId: 'g', kind: 'buff' });
     expect(first.feed).toContain('g is Guarded until the end of the round');
+  });
+
+  it('shows a blocked action on the first beat of its tick: ⛔ and the feed line (3B.4 PR 3)', () => {
+    const beats = buildTimeline(payload(
+      tick(0, { attacks: [attack('a', 'g', true, 2)] }),
+      tick(1, { blocked: [makeBlocked({ combatantId: 'g', feedText: 'g is Stunned and can\'t act' })] }),
+    ));
+
+    const first = beats.find(b => b.tick === 1)!;
+    expect(first.phase).toBe('idle');
+    expect(first.floats).toContain({ combatantId: 'g', text: '⛔ STUNNED', kind: 'debuff' });
+    expect(first.auras).toContain({ combatantId: 'g', kind: 'debuff' });
+    expect(first.feed).toEqual(['Tick 2', 'g is Stunned and can\'t act']);
   });
 
   it('plays ability conditions in the effects beat, with the definition from the caster\'s loadout', () => {

@@ -48,8 +48,9 @@ const ABILITY = String.raw`(?<='s )(?!attack |stabilize )[\p{L}\p{N} ]+?(?= (?:h
 
 // Condition names in the server's condition lines (3B.4): after "is ", "is still ", "is no longer ",
 // "isn't " or "resists ", a capitalised name, up to " until", " for N", ",", " —" or the end; and in periodic
-// lines (3B.4 PR 2) after "damage from " / "heals N from ", up to " (" or the end.
-const CONDITION = String.raw`(?<=(?:\bis (?:still |no longer )?|\bisn't |\bresists |\bdamage from |\bheals \d+ from ))\p{Lu}[\p{L}\p{N} ]*?(?= until | for \d|,| —| \(|$)`;
+// lines (3B.4 PR 2) after "damage from " / "heals N from ", up to " (" or the end; and in blocked lines (3B.4 PR 3),
+// "Brakka is Stunned and can't act", up to " and can't".
+const CONDITION = String.raw`(?<=(?:\bis (?:still |no longer )?|\bisn't |\bresists |\bdamage from |\bheals \d+ from ))\p{Lu}[\p{L}\p{N} ]*?(?= until | for \d|,| —| \(| and can't|$)`;
 
 export function formatFeedLine(text: string, sides: NameSides): FeedLine {
   if (text === BATTLE_START_LINE || /^— Round \d+ Resolution —$/.test(text) || text.startsWith('— Encounter over')) {

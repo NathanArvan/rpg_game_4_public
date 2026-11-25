@@ -52,7 +52,20 @@ public sealed record TickOutcome(
     /// conditions in the Effects phase, in plan order then target order.
     /// </summary>
     public IReadOnlyList<ConditionOutcome> Conditions { get; init; } = [];
+
+    /// <summary>
+    /// Actions that didn't resolve this tick because a condition stopped them (3B.4 PR 3, SPRINT_3B4 C8): a
+    /// Stunned combatant's queued action, or a Rooted combatant's plain move. In plan order.
+    /// </summary>
+    public IReadOnlyList<BlockedAction> Blocked { get; init; } = [];
 }
+
+/// <summary>
+/// A queued action a condition stopped (3B.4 PR 3): <paramref name="ConditionId"/> blocks every action
+/// (<see cref="BlockKind.All"/>, Stunned) or moves (<see cref="BlockKind.Move"/>, Rooted). A blocked ability
+/// isn't used, so its cooldown doesn't start.
+/// </summary>
+public sealed record BlockedAction(string CombatantId, PlannedAction Action, string ConditionId, BlockKind Block = BlockKind.All);
 
 /// <summary>
 /// One periodic effect at the end of a round (3B.4 PR 2): a condition's damage or healing on its bearer.

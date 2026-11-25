@@ -11,8 +11,8 @@ import {
 } from '../../../state/encounter/encounter.actions';
 import {
   DEFAULT_AP_COSTS, MELEE_REACH, abilityCellError, abilityTakesCell, abilityTakesTargets, apCost, apSpent, canAfford,
-  canAffordEntry, canTargetWithAbility, chebyshev, chebyshevPath, describeQueue, entry, estimateMoveToTarget, maxTargets,
-  walkQueue,
+  blockOf, canAffordEntry, canTargetWithAbility, chebyshev, chebyshevPath, describeQueue, entry, entryMoves, estimateMoveToTarget,
+  maxTargets, skipsRoundReason, walkQueue,
 } from '../../../state/encounter/plan-queue';
 
 import { GameHubService } from '../../../core/services/game-hub.service';
@@ -51,7 +51,7 @@ const TOKEN_INSET_PX = 3;
 const FADE_MS = 500;
 
 import { ConditionChipsComponent } from '../condition-chips/condition-chips.component';
-import { describeDuration } from '../condition-chips/condition-format';
+import { budgetNote, describeDuration } from '../condition-chips/condition-format';
 @Component({
   selector: 'app-grid',
   standalone: true,
@@ -141,10 +141,28 @@ export class GridComponent implements OnInit {
     return this.combatants.filter(c => isControlledBy(c, this.myUserId) && !c.isDefeated);
   }
 
-  /** The character being planned for: the one picked, or else the first living one. */
+  /** The character being planned for: the one picked, or else the first living one that can act this round. */
   get selected(): Combatant | null {
     const mine = this.myCombatants;
-    return mine.find(c => c.id === this.selectedCombatantId) ?? mine[0] ?? null;
+    return mine.find(c => c.id === this.selectedCombatantId) ?? mine.find(c => !skipsRoundReason(c)) ?? mine[0] ?? null;
+  }
+
+  /** Why the selected character skips this round (Stunned, 3B.4 PR 3), or null. The server has locked it in. */
+  get selectedSkips(): string | null {
+    const selected = this.selected;
+    return selected ? skipsRoundReason(selected) : null;
+  }
+
+  /** "-1 Weakened" when conditions change the selected character's AP this round (3B.4 PR 3). */
+  get apNote(): string {
+    const selected = this.selected;
+    return selected && selected.maxAp !== selected.baseMaxAp ? budgetNote(selected.conditions, 'ap') : '';
+  }
+
+  /** "-2 Slowed" when conditions change the selected character's movement this round. */
+  get moveNote(): string {
+    const selected = this.selected;
+    return selected && selected.movementRange !== selected.baseMovementRange ? budgetNote(selected.conditions, 'movement') : '';
   }
 
   get selectedPlan(): PlannedActionEntry[] {
@@ -156,12 +174,24 @@ export class GridComponent implements OnInit {
     return this.myCombatants.length > 1;
   }
 
+  /** Characters with a plan, counting those who skip this round (already locked in by the server) as done. */
   get plannedCount(): number {
-    return this.myCombatants.filter(c => (this.myPlans[c.id]?.length ?? 0) > 0).length;
+    return this.myCombatants.filter(c => skipsRoundReason(c) || (this.myPlans[c.id]?.length ?? 0) > 0).length;
+  }
+
+  /** Characters who can act this round and have a plan: Lock In needs at least one. */
+  get actingPlannedCount(): number {
+    return this.myCombatants.filter(c => !skipsRoundReason(c) && (this.myPlans[c.id]?.length ?? 0) > 0).length;
+  }
+
+  /** Every character this user controls skips this round: nothing to plan or lock in. */
+  get allSkip(): boolean {
+    const mine = this.myCombatants;
+    return mine.length > 0 && mine.every(c => skipsRoundReason(c));
   }
 
   get lockInLabel(): string {
-    if (this.lockedIn) return 'Locked in ✓';
+    if (this.lockedIn || this.allSkip) return 'Locked in ✓';
     return this.controlsSeveral ? `Lock In All (${this.plannedCount}/${this.myCombatants.length} planned)` : 'Lock In';
   }
 
@@ -326,6 +356,7 @@ export class GridComponent implements OnInit {
    */
   private isMoveTarget(combatant: Combatant, cell: Cell, queue: PlannedActionEntry[]): boolean {
     const start = this.positions[combatant.id];
+    if (skipsRoundReason(combatant) || blockOf(combatant.blocks, 'move')) return false; // Stunned / Rooted (3B.4)
     if (!start || !canAfford(queue, 'move', combatant.maxAp, this.apCosts, combatant.abilities)) return false;
     const { position, cells } = this.walk(combatant, queue);
     const from = position!;
@@ -598,7 +629,7 @@ export class GridComponent implements OnInit {
 
   get canAffordDefend(): boolean {
     const selected = this.selected;
-    return !!selected && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts, selected.abilities);
+    return !!selected && !skipsRoundReason(selected) && canAfford(this.selectedPlan, 'defend', selected.maxAp, this.apCosts, selected.abilities);
   }
 
   /** Cells the selected character can still move this round. */
@@ -686,15 +717,26 @@ export class GridComponent implements OnInit {
     }
   }
 
+  /**
+   * Whether the combatant's conditions allow the action this round (3B.4 PR 3, mirrors PlanValidator): nothing
+   * while it skips the round (Stunned), no moves while Rooted.
+   */
+  private conditionsAllow(combatant: Combatant, action: PlannedActionEntry): boolean {
+    if (skipsRoundReason(combatant)) return false;
+    return !(blockOf(combatant.blocks, 'move') && entryMoves(action, combatant.abilities));
+  }
+
   /** Appends an action to the character's queue if its AP allows, and sends the whole queue. */
   private plan(combatant: Combatant, action: PlannedActionEntry): void {
     const queue = this.myPlans[combatant.id] ?? [];
+    if (!this.conditionsAllow(combatant, action)) return;
     if (!canAffordEntry(queue, action, combatant.maxAp, this.apCosts, combatant.abilities)) return;
     this.setPlan(combatant, [...queue, action]);
   }
 
   /** Appends an action to a monster's queue (GM planning) if its AP allows, and sends it. */
   private planEnemy(enemy: Combatant, queue: PlannedActionEntry[], action: PlannedActionEntry): void {
+    if (!this.conditionsAllow(enemy, action)) return;
     if (!canAffordEntry(queue, action, enemy.maxAp, this.apCosts, enemy.abilities)) return;
     const next = [...queue, action];
     this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));
@@ -733,7 +775,7 @@ export class GridComponent implements OnInit {
   }
 
   onLockIn(): void {
-    if (this.lockedIn || this.plannedCount === 0) return;
+    if (this.lockedIn || this.actingPlannedCount === 0) return;
     this.lockedIn = true;
     if (this.armedAbilityId) this.store.dispatch(new DisarmAbility());
     this.hub.lockIn(this.joinCode);

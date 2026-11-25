@@ -1,0 +1,14 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C3, C6): Slowed (-2 movement) at the start of the round cuts the round's budget.
+  "description": "Conditions: a Slowed hero's 6-cell move stops after 4 cells",
+  "combatants": [
+    { "id": "Hero", "side": "party", "at": [0, 0], "move": 6, "conditions": [{ "id": "slowed", "rounds": 0 }] }
+  ],
+  "plans": { "Hero": ["move 6,0"] },
+  "dice": [],
+  "expect": {
+    "positions": { "Hero": [4, 0] },
+    "conditions": { "Hero": {} },
+    "events": ["t1 Hero moves to 4,0", "end Hero: slowed expires"]
+  }
+}

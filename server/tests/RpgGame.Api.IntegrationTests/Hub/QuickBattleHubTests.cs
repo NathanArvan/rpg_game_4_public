@@ -164,6 +164,40 @@ public class QuickBattleHubTests(ApiFactory api) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_round_where_the_only_hero_is_stunned_resolves_without_input()
+    {
+        var (battle, ids) = await StartAsync("it-hex");
+        var (hero, shaman) = (ids["Hero"], ids["Shaman"]);
+
+        // Round 1: the AI Shaman Hexes the Hero in tick 1 (no roll: the Hero has no resist) and walks next to it.
+        // Round 2: the Hero is Stunned, so it's locked in with nothing; the Shaman swings twice (d20 1, 1: misses).
+        api.Dice.Script(1, 1);
+        await _client.InvokeAsync(Methods.PlanAction, battle.JoinCode, Queue(Defend()), hero);
+        await _client.InvokeAsync(Methods.LockIn, battle.JoinCode);
+
+        var round1 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted);
+        var stun = round1.Ticks[0].Conditions!.Single(c => c.ConditionId == "stunned");
+        Assert.Equal((shaman, hero, 1), (stun.SourceId, stun.TargetId, stun.RoundsLeft));
+        Assert.Equal("Shaman's Hex: Hero is Stunned until the end of next round", stun.FeedText);
+
+        var round2 = await _client.NextAsync<PlanningPhaseStartedPayload>(Events.PlanningPhaseStarted, p => p.RoundNumber == 2);
+        var stunned = round2.Combatants.Single(c => c.Id == hero);
+        Assert.Equal([("all", "stunned"), ("move", "stunned")], stunned.Blocks!.Select(b => (b.Kind, b.ConditionId)));
+
+        // Nobody plans or locks in for round 2: it resolves on its own.
+        var resolved2 = await _client.NextAsync<ResolutionPayload>(Events.ResolutionCompleted, p => p.NewRoundNumber == 3);
+        Assert.Equal(0, api.Dice.Remaining);
+        Assert.Equal(2, resolved2.Ticks.SelectMany(t => t.Attacks).Count(a => a.AttackerId == shaman && !a.Hit));
+        Assert.DoesNotContain(resolved2.Queues!, q => q.CombatantId == hero && q.Actions.Count > 0);
+        Assert.Contains("Hero is no longer Stunned", resolved2.ExpiredConditions!.Select(x => x.FeedText));
+
+        var round3 = await _client.NextAsync<PlanningPhaseStartedPayload>(Events.PlanningPhaseStarted, p => p.RoundNumber == 3);
+        Assert.Empty(round3.Combatants.Single(c => c.Id == hero).Blocks!);
+
+        ContractShape.AssertEventsMatch(_client.Events);
+    }
+
+    [Fact]
     public async Task An_ability_on_the_wrong_side_is_rejected_over_the_wire_and_not_stored()
     {
         var (battle, ids) = await StartAsync("it-revive");

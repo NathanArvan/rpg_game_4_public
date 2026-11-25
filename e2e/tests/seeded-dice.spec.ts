@@ -85,3 +85,39 @@ test('Seeded dice: Firebolt sets the Ogre Burning, and it burns at the end of th
   await expect(ogreRow.locator('td').nth(1)).toHaveText('15/28');
   await expect(ogreRow.locator('.chip[data-condition="burning"]')).toContainText('this round');
 });
+
+test('Seeded dice: Slowed, Shield Bash\'s stun and Weakened (Crowd Control preset, 3B.4 PR 3)', async ({ browser }) => {
+  const page = await newActor(browser);
+  await startQuickBattle(page, 'Crowd Control');
+  const actionBar = page.locator('.action-bar');
+
+  // Round 1: the Bruiser (9,12) defends (the others too, unplanned). Goblin 1 walks next to it and Goblin 2's
+  // Hamstring Slows it.
+  await expect(actionBar).toContainText('Planning for Bruiser');
+  await actionBar.getByRole('button', { name: /Defend/ }).click();
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expectPlanningRound(page, 2, 30_000);
+  await expect(feedEntries(page).filter({ hasText: "Goblin 2's Hamstring: Bruiser is Slowed until the end of next round" })).toHaveCount(1);
+
+  // Round 2: Slowed shows in the action bar (2 cells instead of 4); the Bruiser Shield Bashes Goblin 1 (9,11) in tick 1.
+  await expect(actionBar.locator('[data-testid="move-note"]')).toHaveText('🦶 2 (-2 Slowed)');
+  await actionBar.locator('.ability-btn', { hasText: 'Shield Bash' }).click();
+  await tokenAt(page, 9, 11).click();
+  await expect(page.locator('.planned-action-display')).toContainText('Shield Bash on Goblin 1');
+  await page.getByRole('button', { name: /Lock In All/ }).click();
+  await expectPlanningRound(page, 3, 30_000);
+
+  // Goblin 1 is stunned for the rest of round 2: its tick-2 swing never happens. The Shaman's Sap Weakens the Bruiser.
+  for (const line of [
+    "Bruiser's Shield Bash hits Goblin 1 for 4 damage (HP: 10 → 6)",
+    "Bruiser's Shield Bash: Goblin 1 is Stunned until the end of the round",
+    "Goblin 1 is Stunned and can't act",
+    "Shaman's Sap: Bruiser is Weakened until the end of next round",
+    'Goblin 1 is no longer Stunned',
+  ])
+    await expect(feedEntries(page).filter({ hasText: line })).toHaveCount(1);
+
+  // Round 3: Goblin 1 acts again (no chip); the Bruiser has one AP less.
+  await expect(page.locator('app-encounter-tracker tr', { hasText: 'Goblin 1' }).locator('.chip')).toHaveCount(0);
+  await expect(actionBar.locator('.ap-budget')).toHaveText('AP 0/3 (-1 Weakened)');
+});

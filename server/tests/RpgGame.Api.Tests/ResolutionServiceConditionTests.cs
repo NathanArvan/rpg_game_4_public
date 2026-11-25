@@ -149,4 +149,63 @@ public partial class ResolutionServiceTests
         Assert.Equal("Shaman's Mark on Hero fails — target already defeated", wasted.FeedText);
         Assert.Contains(s.Db.GameEvents, e => e.EventType == "condition_wasted");
     }
+
+    // ----- Movement, AP and action denial (3B.4 PR 3) -----
+
+    [Fact]
+    public async Task ShieldBash_StunsForTheRest_OfTheRound_AndTheBlockedActionIsReported()
+    {
+        await using var s = new Scene();
+        var brakka = s.Player("Brakka", (0, 0), WithAbilities("shield_bash"));
+        var goblin = s.Monster("Goblin", (1, 0));
+        s.Queue(brakka, Ability("shield_bash", goblin));
+        s.Queue(goblin, new PlannedActionEntry("defend", null, null), new PlannedActionEntry("melee_attack", null, brakka));
+
+        // Guarded makes the Goblin's Dodge 13: the bash needs 13+.
+        var result = await s.Run(new ScriptedDice(15, 2));
+
+        Assert.Equal("Brakka's Shield Bash: Goblin is Stunned until the end of the round",
+            result.Ticks[0].Conditions!.Single(c => c.ConditionId == "stunned").FeedText);
+        var blocked = Assert.Single(result.Ticks[1].Blocked!);
+        Assert.Equal((goblin, "melee_attack", "stunned", "Stunned", "all", "Goblin is Stunned and can't act"),
+            (blocked.CombatantId, blocked.ActionType, blocked.ConditionId, blocked.ConditionName, blocked.Block, blocked.FeedText));
+        Assert.Empty(result.Ticks[1].Attacks);
+        Assert.Contains(s.Db.GameEvents, e => e.EventType == "action_blocked");
+        Assert.Contains("Goblin is no longer Stunned", result.ExpiredConditions!.Select(x => x.FeedText));
+    }
+
+    [Fact]
+    public async Task RootedMove_IsBlocked_AndReported()
+    {
+        await using var s = new Scene();
+        var goblin = s.Monster("Goblin", (1, 0));
+        s.Conditions[goblin] = [Stored("rooted", 0)];
+        s.Move(goblin, 4, 0);
+
+        var result = await s.Run(new ScriptedDice());
+
+        var blocked = Assert.Single(result.Ticks[0].Blocked!);
+        Assert.Equal(("move", "move", "Goblin is Rooted and can't move"), (blocked.ActionType, blocked.Block, blocked.FeedText));
+        Assert.Empty(result.Ticks[0].Movements);
+    }
+
+    [Fact]
+    public async Task NextPlanningPhase_CarriesEffectiveBudgets_BaseValues_AndBlocks()
+    {
+        await using var s = new Scene();
+        var hero = s.Player("Hero", (0, 0), WithAbilities("mark"));
+        var goblin = s.Monster("Goblin", (5, 0));
+        s.Conditions[hero] = [Stored("hasted", 1)];
+        s.Conditions[goblin] = [Stored("slowed", 1), Stored("weakened", 1), Stored("rooted", 1), Stored("stunned", 1)];
+
+        var result = await s.Run(new ScriptedDice());
+
+        var h = result.UpdatedCombatants.Single(c => c.Id == hero);
+        Assert.Equal((h.BaseMovementRange + 2, h.BaseMaxAp + 1), (h.MovementRange, h.MaxAp));
+        Assert.Empty(h.Blocks!);
+        var g = result.UpdatedCombatants.Single(c => c.Id == goblin);
+        Assert.Equal((g.BaseMovementRange - 2, g.BaseMaxAp - 1), (g.MovementRange, g.MaxAp));
+        Assert.Equal([("all", "stunned", "Stunned"), ("move", "stunned", "Stunned")],
+            g.Blocks!.Select(b => (b.Kind, b.ConditionId, b.ConditionName)));
+    }
 }

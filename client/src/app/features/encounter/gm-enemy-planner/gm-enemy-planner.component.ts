@@ -8,7 +8,7 @@ import { ArmAbility, DisarmAbility, GmClearEnemyPlan, GmSelectEnemy, GmSetEnemyP
 import { Combatant } from '../../../state/encounter/encounter.model';
 import { GameHubService } from '../../../core/services/game-hub.service';
 import { PlannedActionEntry } from '../../../contracts/hub-contracts.generated';
-import { DEFAULT_AP_COSTS, apSpent, canAfford, entry } from '../../../state/encounter/plan-queue';
+import { DEFAULT_AP_COSTS, apSpent, canAfford, entry, skipsRoundReason } from '../../../state/encounter/plan-queue';
 import { AbilityBarComponent } from '../ability-bar/ability-bar.component';
 
 @Component({
@@ -58,6 +58,11 @@ export class GmEnemyPlannerComponent {
     return queue.map(a => this.planSummary(a)).join(' · ');
   }
 
+  /** Why the monster skips this round (Stunned, 3B.4 PR 3): the server has locked it in with nothing. */
+  skips(enemy: Combatant): string | null {
+    return skipsRoundReason(enemy);
+  }
+
   apLabel(enemy: Combatant): string {
     return `${apSpent(this.getPlan(enemy.id) ?? [], this.apCosts, enemy.abilities)}/${enemy.maxAp} AP`;
   }
@@ -92,6 +97,7 @@ export class GmEnemyPlannerComponent {
   /** Appends a Defend to the monster's queue if its AP allows. */
   onDefend(enemy: Combatant): void {
     const queue = this.getPlan(enemy.id) ?? [];
+    if (skipsRoundReason(enemy)) return;
     if (!canAfford(queue, 'defend', enemy.maxAp, this.apCosts, enemy.abilities)) return;
     const next = [...queue, entry('defend')];
     this.store.dispatch(new GmSetEnemyPlan(enemy.id, next));

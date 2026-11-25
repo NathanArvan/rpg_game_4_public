@@ -48,7 +48,7 @@ Max queue length: 3 → 3 ticks
 - A: Melee Attack. B: No action (queue exhausted, implicitly idles). C: Move.
 - C moves first (Movement), then A's melee attack resolves against post-movement positions (Attacks). Adjacency checked at this point.
 
-After all ticks complete, process end-of-round effects: condition duration ticks, ley point volatility, cooldown decrements. As built (3B.4): periodic condition effects and any falls they cause (PR 2) → bleedout → cooldowns → conditions count down and expire. Condition modifiers to a round's budgets (AP, movement) apply from the next planning phase; blocks (Stunned, Rooted) and hit / damage modifiers from the next tick (`SPRINT_3B4.md` C6).
+After all ticks complete, process end-of-round effects: condition duration ticks, ley point volatility, cooldown decrements. As built (3B.4): periodic condition effects and any falls they cause (PR 2) → bleedout → cooldowns → conditions count down and expire. Condition modifiers to a round's budgets (AP, movement) apply from the next planning phase; blocks (Stunned, Rooted) and hit / damage modifiers from the next tick (`SPRINT_3B4.md` C6). As built (3B.4 PR 3): a combatant whose conditions block every action at the start of a tick (Stunned in an earlier tick, or since the round began) doesn't act in that tick; its action is reported as blocked and, for an ability, starts no cooldown. One that can't act when planning opens (Stunned, or 0 AP) is locked in with an empty plan.
 
 ### Sub-decisions
 
@@ -109,7 +109,7 @@ resolve_round(all_combatants):
 
 | Action Type | Phase | AP Cost (3A placeholder) | Notes |
 |---|---|---|---|
-| Move | Movement | 1 | Path-based. Since 3B.2, all of a round's moves share the combatant's movement range (see below) |
+| Move | Movement | 1 | Path-based. Since 3B.2, all of a round's moves share the combatant's movement range (see below). Since 3B.4 a Rooted combatant's move is blocked (reported, no movement) |
 | Melee Attack | Attack | 2 | Requires adjacency (Chebyshev ≤ 1) post-movement |
 | Ranged Attack | Attack | 2 | Requires target within range post-movement. Unlimited range in 3A. |
 | Defend | Start of its tick | 1 | No effect in 3A–3B.3. Since 3B.4 it grants **Guarded** (+3 Dodge) at the start of its own tick, before Movement, until the end of the round (`SPRINT_3B4.md` C7); its feed entry still comes with the Effects phase |

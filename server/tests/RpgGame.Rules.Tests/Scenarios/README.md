@@ -167,7 +167,8 @@ of the round every cooldown goes down by one, then each ability used this round 
 
 A combatant's `conditions` list and an ability's `apply_condition` effect name conditions by id. They
 come from the **shared library**, [`library/conditions.json`](library/conditions.json) (Blessed,
-Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward, Burning, Poisoned, Regenerating), owned by these tests like the ability
+Dazzled, Exposed, Emboldened, Fortified, Marked, Flame Ward, Burning, Poisoned, Regenerating, Slowed, Hasted, Rooted, Weakened,
+Stunned), owned by these tests like the ability
 library. A scenario's own `conditions` block adds or overrides entries, in the same shape as
 `server/src/RpgGame.Api/Conditions/conditions.json`:
 
@@ -178,8 +179,8 @@ library. A scenario's own `conditions` block adds or overrides entries, in the s
 ```
 
 Modifiers: `accuracy`, `dodge` (with `attackKind`: `any` / `melee` / `ranged`), `damageDealt`,
-`damageTaken` (`{ percent, flat, tags }`), `periodic` (`{ kind: "damage" | "heal", die, bonus }`), and,
-parsed but not acted on until PR 3, `movement`, `ap`, `blocks`. Numbers from several conditions are added up. **Guarded** (Defend's +3
+`damageTaken` (`{ percent, flat, tags }`), `periodic` (`{ kind: "damage" | "heal", die, bonus }`), `movement`, `ap` and
+`blocks` (`["all"]` or `["move"]`). Numbers from several conditions are added up. **Guarded** (Defend's +3
 Dodge) is built into the rules and needs no entry.
 
 An ability applies one with `{ "kind": "apply_condition", "condition": "marked", "duration": 1 }`
@@ -204,6 +205,16 @@ therefore acts at the end of the round it lands in and the next.
 **Resistance** (C9): a **harmful** condition from an **enemy** is resisted when the target's d100 is at
 or under its `conditionResist`. Beneficial conditions, and conditions from allies or yourself, are never
 rolled against, and nothing is rolled when `conditionResist` is 0.
+
+**Budgets and blocks** (3B.4 PR 3): `movement` and `ap` change the round's movement budget and AP from the
+conditions a combatant has when the round **starts** (a scenario's `conditions` list, or what the previous round left);
+a condition applied during the round changes nothing until the next round. A queue over the effective AP is cut. A
+combatant with `blocks: ["all"]` (Stunned) at the start of a tick doesn't act in that tick: the action is logged as
+blocked and an ability isn't used (no cooldown). `blocks: ["move"]` (Rooted) blocks plain moves (logged) and stops an
+ability's move without blocking the rest of it (a Rooted Charge strikes only if already in reach; Dash still starts its
+cooldown). An `"ai"` combatant that can't act (Stunned, or 0 AP) gets no plan; a Rooted one doesn't walk. Library
+abilities: `hamstring` (melee hit → Slowed 1), `haste` (ally → Hasted 1), `entangle` (Rooted 1), `sap` (Weakened 1),
+`shield_bash` (d4 melee hit → Stunned 0), `hex` (Stunned 1).
 
 The library's `firebolt` has no Burning (so older scenarios keep their dice); `ignite` is Firebolt as
 shipped from PR 2 (Burning on a hit, duration 1). `envenom` is a melee weapon hit that Poisons for 2.
@@ -266,7 +277,7 @@ When a check fails, the test lists every mismatch, for example
 The runner writes down everything a round did, one line per event. `expect.events` checks lines
 of it, and a failing scenario prints all of it, so a quick way to write expectations is to run
 the scenario once and copy the lines you care about. Within each tick (`t1`, `t2`, …) the order is:
-ability uses, Defend's Guarded, moves, attacks, heals, effects, conditions from abilities; then the end of round.
+blocked actions, ability uses, Defend's Guarded, moves, attacks, heals, effects, conditions from abilities; then the end of round.
 
 | Event | Line |
 |---|---|
@@ -274,6 +285,7 @@ ability uses, Defend's Guarded, moves, attacks, heals, effects, conditions from 
 | Move | `t1 Hero moves to 3,4`, `t1 Hero moves to 3,4 (blocked by Goblin)`, `t1 Hero stays at 2,2`; a move made by an ability adds its id: `t1 Scout moves to 9,5 (dash)`, `t1 Kestrel moves to 5,7 (charge) (blocked by Runner)` |
 | Attack | `t1 Hero melee Goblin: hit 5`, `t1 Scout ranged G1: miss`, `t2 Bruiser cleave G2: wasted out_of_range`, `t1 Goblin melee Hero: finishing blow`, `t1 Kestrel charge Goblin: hit 8 (+3 moved)`, `t1 A melee B: hit 3 (-4 conditions)`; when the target falls, `, Hero downed` / `, Goblin dead` is added |
 | Heal | `t1 Mira mend Hero: +6`, `t1 Mira mend Hero: +6, revived`, `t1 Mira mend Hero: +4, too late`, `t1 Mira mend Hero: wasted out_of_range` |
+| Blocked (3B.4 PR 3) | `t2 Goblin stunned: melee Hero blocked`, `t1 Hero rooted: move 3,0 blocked` (first in the tick) |
 | Effect | `t1 Hero defends`, `t1 Knight stabilizes Archer`, `t1 Knight stabilizes Archer: wasted target_not_downed` |
 | Condition (3B.4) | `t1 Kestrel mark Goblin: marked applied (1)`, `t1 Kestrel mark Goblin: marked refreshed (2)`, `t1 A blinding_strike B: dazzled wasted missed`, `t1 Kestrel mark Brute: marked resisted`; Defend's: `t1 B defend B: guarded applied (0)`. The number is rounds left |
 | End of round | Periodic effects first (3B.4 PR 2): `end G burning: -3`, `end G burning: -1 (-2 conditions)`, `end Mira regenerating: +4`, `end Hero burning: -3, Hero downed`; then `end Hero bleeds, 1 left`, `end Hero bleeds out`, `end Goblin: marked expires` |

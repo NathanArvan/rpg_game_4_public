@@ -31,8 +31,7 @@ import {
   PositionDto,
   QueuedActionDto,
   ResolutionPayload,
-  TickResult,
-} from '../contracts/hub-contracts.generated';
+  TickResult, BlockedActionResult } from '../contracts/hub-contracts.generated';
 import { Combatant } from '../state/encounter/encounter.model';
 
 // --- Abilities ---
@@ -135,6 +134,7 @@ export function makePlanningCombatant(overrides: Partial<PlanningCombatantDto> =
     id, userId: 'me', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     combatantType: 'player', isAiControlled: false, profileId: 'test', profileName: 'Test',
     movementRange: 6, maxAp: 4, status: 'standing', bleedoutRoundsLeft: 0, abilities: [], cooldowns: {}, conditions: [],
+    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [],
     ...overrides,
   };
 }
@@ -157,6 +157,7 @@ export function makeCombatant(overrides: Partial<Combatant> = {}): Combatant {
     id, userId: 'me', characterId: '', characterName: id, currentHp: 10, maxHp: 10, isDefeated: false,
     status: 'standing', bleedoutRoundsLeft: 0, combatantType: 'player', isAiControlled: false,
     profileName: 'Test', movementRange: 6, maxAp: 4, abilities: [], cooldowns: {}, conditions: [],
+    baseMovementRange: overrides.movementRange ?? 6, baseMaxAp: overrides.maxAp ?? 4, blocks: [],
     ...overrides,
   };
 }
@@ -233,7 +234,16 @@ export function makeAbilityUse(overrides: Partial<AbilityUseResult> = {}): Abili
 
 /** A tick with nothing in it; `tickIndex` defaults to 0. */
 export function makeTick(overrides: Partial<TickResult> = {}): TickResult {
-  return { tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], conditions: [], ...overrides };
+  return { tickIndex: 0, movements: [], attacks: [], effects: [], abilityUses: [], heals: [], conditions: [], blocked: [], ...overrides };
+}
+
+/** An action a condition stopped (3B.4 PR 3); defaults to `c1`'s melee attack blocked by Stunned. */
+export function makeBlocked(overrides: Partial<BlockedActionResult> = {}): BlockedActionResult {
+  const combatantId = overrides.combatantId ?? 'c1';
+  return {
+    combatantId, combatantName: combatantId, actionType: 'melee_attack', abilityId: null, conditionId: 'stunned',
+    conditionName: 'Stunned', block: 'all', feedText: `${combatantId} is Stunned and can't act`, ...overrides,
+  };
 }
 
 /** End-of-round bleedout for a downed combatant; defaults to one round fewer, 1 left. */

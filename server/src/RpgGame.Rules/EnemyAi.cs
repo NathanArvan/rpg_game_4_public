@@ -11,7 +11,9 @@ namespace RpgGame.Rules;
 /// condition on the target comes first), then basic melee attacks with what's left. Right after
 /// healing, it uses a ready condition ability (3B.4, SPRINT_3B4 C14): a buff if someone it would
 /// reach doesn't have it yet, or a debuff on its target if the target doesn't have it yet. With
-/// nothing to do, it defends.
+/// nothing to do, it defends. It plans within the AP and movement its conditions leave it (3B.4 PR 3); one
+/// whose conditions stop it acting (Stunned, or 0 AP) isn't planned (the Api locks it in with an empty plan),
+/// and a Rooted one doesn't walk or charge: it attacks if it's in reach, else defends.
 /// </summary>
 /// <remarks>
 /// <para>Pure and deterministic: same input, same plans. No dice, no I/O.</para>
@@ -69,6 +71,14 @@ public static class EnemyAi
         {
             if (!byId.TryGetValue(id, out var self) || self.IsDefeated) continue;
             if (self.Team.Length == 0) continue;
+            if (ConditionMath.CannotAct(self.Profile, self.Conditions))
+            {
+                if (self.Position is { } stuck) blockers.Add(stuck);
+                continue; // skips the round (SPRINT_3B4 C8)
+            }
+            // Plan within this round's budgets (C6).
+            self = self with { Profile = ConditionMath.EffectiveProfile(self.Profile, self.Conditions) };
+            bool rooted = ConditionMath.IsBlocked(self.Conditions, BlockKind.Move);
 
             // Not on the map (no position): it can't move, melee or reach anyone, so it just defends.
             if (self.Position is not { } from)
@@ -107,6 +117,13 @@ public static class EnemyAi
             {
                 AddAttacks(queue, state, self, from, target, apLeft, config);
                 plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()];
+                blockers.Add(from);
+                continue;
+            }
+
+            if (rooted)
+            {
+                plans[id] = queue.Count > 0 ? queue : [PlannedAction.Defend()]; // can't close the distance
                 blockers.Add(from);
                 continue;
             }

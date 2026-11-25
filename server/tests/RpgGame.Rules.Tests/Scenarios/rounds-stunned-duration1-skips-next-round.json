@@ -1,0 +1,34 @@
+{
+  // 3B.4 PR 3 (SPRINT_3B4 C5, C8): Hex stuns for the rest of this round and all of the next. The server locks a
+  // stunned combatant in with an empty plan; given a plan anyway, the resolver blocks it.
+  "description": "Rounds: a duration-1 stun skips the next round too",
+  "combatants": [
+    { "id": "Shaman", "side": "enemy", "at": [0, 5], "abilities": ["hex"] },
+    { "id": "Hero", "side": "party", "at": [0, 0] }
+  ],
+  "rounds": [
+    {
+      "plans": { "Shaman": ["ability hex Hero"], "Hero": ["move 0,1", "move 0,2"] },
+      "dice": [],
+      "expect": {
+        "positions": { "Hero": [0, 1] },
+        "conditions": { "Hero": { "stunned": 0 } },
+        "events": ["t1 Shaman hex Hero: stunned applied (1)", "t2 Hero stunned: move 0,2 blocked"]
+      }
+    },
+    {
+      "plans": { "Hero": ["move 0,3"] },
+      "dice": [],
+      "expect": {
+        "positions": { "Hero": [0, 1] },
+        "conditions": { "Hero": {} },
+        "events": ["t1 Hero stunned: move 0,3 blocked", "end Hero: stunned expires"]
+      }
+    },
+    {
+      "plans": { "Hero": ["move 0,3"] },
+      "dice": [],
+      "expect": { "positions": { "Hero": [0, 3] } }
+    }
+  ]
+}

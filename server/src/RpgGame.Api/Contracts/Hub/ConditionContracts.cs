@@ -44,6 +44,14 @@ public record ActiveConditionDto(
     int RoundsLeft,
     string? SourceId);
 
+/// <summary>Something a combatant's conditions stop it doing this round (3B.4 PR 3).</summary>
+/// <param name="Kind">"all" (can't act: skips the round) or "move" (can't move).</param>
+/// <param name="ConditionName">The condition that blocks it (the first one, if several do).</param>
+public record ConditionBlockDto(
+    string Kind,
+    string ConditionId,
+    string ConditionName);
+
 /// <summary>A condition an ability applies (3B.4), for tooltips.</summary>
 /// <param name="Duration">Full rounds it lasts after the round it lands in (0 = until the end of that round).</param>
 /// <param name="RequiresHit">Only on a hit.</param>

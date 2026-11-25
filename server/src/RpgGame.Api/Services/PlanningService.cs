@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RpgGame.Api.CombatProfiles;
+using RpgGame.Api.Conditions;
 using RpgGame.Api.Contracts.Hub;
 using RpgGame.Api.Models;
 using RpgGame.Domain.Entities;
@@ -59,9 +60,18 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
             throw new GameActionException("You are not in this encounter.", isActionRejected: true);
 
         // Lock in every living character you control. At least one must have a plan; the rest defend.
+        // Those who can't act this round (Stunned, 3B.4 PR 3) were locked in when the phase opened.
         var living = new List<CombatantRef>();
+        bool anyCantAct = false;
         foreach (var c in owned)
-            if (!await redisState.IsDefeatedAsync(encounterId, c.Id)) living.Add(c);
+        {
+            if (await redisState.IsDefeatedAsync(encounterId, c.Id)) continue;
+            if (CantActReason(await LoadBudgetAsync(encounterId, c.Id), "") is not null) { anyCantAct = true; continue; }
+            living.Add(c);
+        }
+        // Everyone you control skips this round: nothing to lock in (they already are), so not an error.
+        if (living.Count == 0 && anyCantAct)
+            return new LockInResult(gameSession.Id, "", "", false, encounterId, []);
 
         var unplanned = new List<CombatantRef>();
         foreach (var c in living)
@@ -159,6 +169,14 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         ActiveEncounterEntry activeEncounter)
     {
         var encounterId = activeEncounter.EncounterId;
+
+        // AP budget, movement range and abilities come from the combatant's combat profile (3B.1–3B.3), the budgets
+        // changed by its conditions (3B.4 PR 3).
+        var budget = await LoadBudgetAsync(encounterId, combatantId);
+        if (CantActReason(budget, await GetCombatantCharacterName(encounterId, combatantId)) is { } cantAct)
+            throw new GameActionException(cantAct, isActionRejected: true);
+        var rulesProfile = budget.Profile;
+
         if (action.Actions is not { Count: > 0 })
         {
             await redisState.ClearPlannedActionAsync(encounterId, combatantId);
@@ -176,17 +194,6 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
                 ?? throw new GameActionException("Map data not found.", isActionRejected: true)
             : null;
 
-        // AP budget, movement range and abilities come from the combatant's combat profile (3B.1–3B.3).
-        var combatantGuid = GuidParser.TryParse(combatantId);
-        var profile = combatantGuid is null
-            ? null
-            : await db.EncounterCombatants
-                .AsNoTracking()
-                .Where(c => c.Id == combatantGuid.Value)
-                .Select(c => c.Profile)
-                .FirstOrDefaultAsync();
-        var rulesProfile = CombatProfileMapping.ToRules(profile);
-
         var queue = action.Actions.Select(e => RulesWireMapping.ToPlannedAction(e)!).ToList();
         GridPosition? start = map is not null && map.Positions.TryGetValue(combatantId, out var current)
             ? new GridPosition(current.X, current.Y)
@@ -197,7 +204,7 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
             : [];
         var positions = map?.Positions.ToDictionary(kv => kv.Key, kv => new GridPosition(kv.Value.X, kv.Value.Y));
         var check = PlanValidator.Validate(start, rulesProfile, queue,
-            map?.GridWidth ?? 0, map?.GridHeight ?? 0, cooldowns: cooldowns, positions: positions);
+            map?.GridWidth ?? 0, map?.GridHeight ?? 0, cooldowns: cooldowns, positions: positions, conditions: budget.Conditions);
         if (!check.IsValid)
             throw new GameActionException(check.Error!, isActionRejected: true);
 
@@ -207,6 +214,36 @@ public class PlanningService(AppDbContext db, IRedisGameState redisState, ILogge
         await redisState.SetPlannedActionAsync(encounterId, combatantId, JsonSerializer.Serialize(action, _jsonOptions));
         return check.ApSpent;
     }
+
+    /// <summary>A combatant's profile and its conditions at the start of this planning phase (3B.4 PR 3).</summary>
+    private sealed record Budget(CombatProfile Profile, IReadOnlyList<ActiveCondition> Conditions);
+
+    private async Task<Budget> LoadBudgetAsync(string encounterId, string combatantId)
+    {
+        var combatantGuid = GuidParser.TryParse(combatantId);
+        var profile = combatantGuid is null
+            ? null
+            : await db.EncounterCombatants
+                .AsNoTracking()
+                .Where(c => c.Id == combatantGuid.Value)
+                .Select(c => c.Profile)
+                .FirstOrDefaultAsync();
+        var conditions = await redisState.GetConditionsAsync(encounterId, combatantId) ?? [];
+        return new Budget(CombatProfileMapping.ToRules(profile), conditions.Select(ConditionMapping.ToRules).ToList());
+    }
+
+    /// <summary>
+    /// Why the combatant skips this round (SPRINT_3B4 C8), or null if it can act: a condition blocks every action
+    /// (Stunned), or its conditions leave it no AP.
+    /// </summary>
+    internal static string? CantActReason(CombatProfile profile, IReadOnlyList<ActiveCondition> conditions, string name) =>
+        ConditionMath.BlockingCondition(conditions, BlockKind.All) is { } stun
+            ? $"{name} is {stun.Definition.Name} and can't act this round."
+            : ConditionMath.EffectiveMaxAp(profile, conditions) == 0
+                ? $"{name} has no AP this round and can't act."
+                : null;
+
+    private static string? CantActReason(Budget budget, string name) => CantActReason(budget.Profile, budget.Conditions, name);
 
     private static string Describe(PlannedActionArray action) =>
         action.Actions is { Count: > 0 } ? string.Join(",", action.Actions.Select(a => a.Type)) : "(cleared)";

@@ -78,15 +78,47 @@ export function cooldownBlock(
   return null;
 }
 
+/** What a combatant's conditions stop it doing this round (3B.4 PR 3): sent by the server, never recomputed. */
+export interface PlanBlock {
+  /** 'all' (can't act: skips the round) or 'move' (can't move). */
+  kind: string;
+  conditionName: string;
+}
+
+/** The condition that stops the combatant doing `kind` this round, or undefined. */
+export function blockOf(blocks: readonly PlanBlock[] | null | undefined, kind: 'all' | 'move'): PlanBlock | undefined {
+  return blocks?.find(b => b.kind === kind);
+}
+
+/**
+ * Why the combatant skips this round (SPRINT_3B4 C8), in the server's words, or null if it can act: a
+ * condition stops every action (Stunned), or it has no AP. The server locks such a combatant in by itself.
+ */
+export function skipsRoundReason(c: { characterName: string; maxAp: number; blocks?: readonly PlanBlock[] | null }): string | null {
+  const stun = blockOf(c.blocks, 'all');
+  if (stun) return `${c.characterName} is ${stun.conditionName} and can't act this round.`;
+  if (c.maxAp <= 0) return `${c.characterName} has no AP this round and can't act.`;
+  return null;
+}
+
+/** Whether the entry would move its user: a move, or an ability with a move effect (Dash, Charge). */
+export function entryMoves(action: PlannedActionEntry, abilities: readonly AbilityDto[]): boolean {
+  return action.type === 'move' || (action.type === 'ability' && !!abilities.find(a => a.id === action.abilityId)?.move);
+}
+
 /**
  * Why the ability can't be added to the queue right now, or null if it can (3B.3; mirrors the
- * server's PlanValidator): on cooldown, already queued (abilities with a cooldown are once per
- * round), or not enough AP left. Short text for the ability bar.
+ * server's PlanValidator): it moves while a condition stops moving (Rooted, 3B.4), on cooldown,
+ * already queued (abilities with a cooldown are once per round), or not enough AP left. Short text
+ * for the ability bar.
  */
 export function abilityUnavailableReason(
   ability: AbilityDto, queue: readonly PlannedActionEntry[], maxAp: number,
   costs: Readonly<Record<string, number>>, abilities: readonly AbilityDto[], cooldowns: Readonly<Record<string, number>>,
+  blocks: readonly PlanBlock[] = [],
 ): string | null {
+  const root = blockOf(blocks, 'move');
+  if (root && ability.move) return `${root.conditionName}: can't move`;
   const block = cooldownBlock(ability, queue, cooldowns);
   if (block?.reason === 'cooldown') return `On cooldown for ${block.left} more ${block.left === 1 ? 'round' : 'rounds'}`;
   if (block?.reason === 'once_per_round') return 'Already queued this round';
@@ -253,6 +285,8 @@ export interface PlanFacts {
   gridHeight: number;
   /** AP per basic action type; defaults to {@link DEFAULT_AP_COSTS}. */
   costs?: Readonly<Record<string, number>>;
+  /** What the planner's conditions stop it doing this round (3B.4 PR 3). maxAp / movementRange are already the effective values. */
+  blocks?: readonly PlanBlock[];
 }
 
 /** Result of {@link validatePlan}: the server's PlanCheck. */
@@ -275,6 +309,9 @@ export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFa
   const costs = facts.costs ?? DEFAULT_AP_COSTS;
   const positions = facts.positions ?? {};
   const { gridWidth: w, gridHeight: h, movementRange } = facts;
+  const stun = blockOf(facts.blocks, 'all');
+  if (queue.length > 0 && stun) return { error: `This combatant is ${stun.conditionName} and can't act this round.`, ap: 0, cells: 0 };
+  const root = blockOf(facts.blocks, 'move');
   let ap = 0;
   for (let i = 0; i < queue.length; i++) {
     const action = queue[i];
@@ -292,6 +329,8 @@ export function validatePlan(queue: readonly PlannedActionEntry[], facts: PlanFa
       const shape = targetShapeError(ability, action);
       if (shape) return fail(shape);
     }
+
+    if (root && (action.type === 'move' || ability?.move)) return fail(`This combatant is ${root.conditionName} and can't move.`);
 
     ap += entryCost(action, costs, facts.abilities);
     if (ap > facts.maxAp)

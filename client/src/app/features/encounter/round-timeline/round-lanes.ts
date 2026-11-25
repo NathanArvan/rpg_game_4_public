@@ -12,7 +12,7 @@ export type SlotKind = 'move' | 'melee_attack' | 'ranged_attack' | 'defend' | 's
 
 /** What happened. 'none' = nothing to report (idle, lost). */
 export type SlotOutcome =
-  'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'healed' | 'none';
+  'moved' | 'stayed' | 'blocked' | 'hit' | 'miss' | 'wasted' | 'defended' | 'stabilized' | 'healed' | 'stopped' | 'none';
 
 export interface LaneSlot {
   tick: number;
@@ -114,6 +114,10 @@ export function buildLanes(payload: ResolutionPayload, order: string[] = []): La
       const lost = () => slot(i, 'lost', action.apCost, 'none', label,
         `${name} went down, so this ${lowerFirst(what)} never happens.`);
       if (isDown) return lost();
+
+      // A condition stopped it (3B.4 PR 3): Stunned, or a Rooted move.
+      const stopped = (tick.blocked ?? []).find(b => b.combatantId === q.combatantId);
+      if (stopped) return slot(i, kind, action.apCost, 'stopped', label, `${stopped.feedText}: this ${lowerFirst(what)} never happens.`);
 
       if (kind === 'move') {
         const m = tick.movements.find(r => r.combatantId === q.combatantId);
